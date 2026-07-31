@@ -1,0 +1,4 @@
+@AGENTS.md
+
+This project uses AGENTS.md for all agent/coding instructions.
+Follow the guidance there for package structure, architecture, theme (dark by default), and utilities.
