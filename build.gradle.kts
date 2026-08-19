@@ -4,3 +4,9 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.android) apply false
     alias(libs.plugins.jetbrains.kotlin.compose) apply false
 }
+
+tasks.register("installRelease") {
+    group = "install"
+    description = "Build and install the release APK on a connected device."
+    dependsOn(":app:installRelease")
+}

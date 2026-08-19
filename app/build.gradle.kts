@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.template"
+    namespace = "com.brian.solwidget"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.template"
+        applicationId = "com.brian.solwidget"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -28,6 +28,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Debug keystore so :installRelease is available without a production keystore.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -66,4 +68,8 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
+
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
+    implementation(libs.androidx.work.runtime.ktx)
 }

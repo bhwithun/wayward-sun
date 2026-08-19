@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "template-app"
+rootProject.name = "sol-widget"
 include(":app")

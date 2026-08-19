@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!--
-        Dark-only default theme for the Activity.
-        Compose will also use a dark color scheme (see Theme.kt).
-    -->
-    <style name="Theme.Template" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
+    <style name="Theme.SolWidget" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0B1220</item>
+        <item name="android:statusBarColor">#0B1220</item>
+        <item name="android:navigationBarColor">#0B1220</item>
     </style>
 </resources>
