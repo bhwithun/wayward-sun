@@ -98,6 +98,7 @@ fun PowerChart(
         val to = Instant.ofEpochMilli(maxTime.toLong())
         if (layers.dteRates) {
             for (band in DteTou.bands(from, to)) {
+                if (band.period == DteTou.Period.OFF_PEAK) continue
                 val x1 = xOf(band.start).coerceIn(left, right)
                 val x2 = xOf(band.end).coerceIn(left, right)
                 if (x2 > x1) {
@@ -330,6 +331,7 @@ object ChartBitmapRenderer {
         if (layers.dteRates) {
             val bandPaint = Paint().apply { isAntiAlias = false }
             for (band in DteTou.bands(from, to)) {
+                if (band.period == DteTou.Period.OFF_PEAK) continue
                 val x1 = xOf(band.start).coerceIn(left, right)
                 val x2 = xOf(band.end).coerceIn(left, right)
                 if (x2 > x1) {
@@ -516,13 +518,13 @@ object ChartBitmapRenderer {
 }
 
 private fun touColor(period: DteTou.Period): Color = when (period) {
-    DteTou.Period.OFF_PEAK -> SolColors.TouOff
+    DteTou.Period.OFF_PEAK -> Color.Transparent
     DteTou.Period.MID_PEAK -> SolColors.TouMid
     DteTou.Period.PEAK -> SolColors.TouPeak
 }
 
 private fun touArgb(period: DteTou.Period): Int = when (period) {
-    DteTou.Period.OFF_PEAK -> 0x142EE6A6
+    DteTou.Period.OFF_PEAK -> android.graphics.Color.TRANSPARENT
     DteTou.Period.MID_PEAK -> 0x33C9A227
     DteTou.Period.PEAK -> 0x4DE07070
 }

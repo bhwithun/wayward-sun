@@ -9,6 +9,7 @@ object SolColors {
     val Navy = Color(0xFF0B1220)
     val Panel = Color(0xFF152036)
     val PanelAlt = Color(0xFF1C2B45)
+    val TableStripe = Color(0xFF2A4163)
     val Live = Color(0xFF2EE6A6)
     val Forecast = Color(0xFFF5C542)
     val Now = Color(0xFFFF8A4C)

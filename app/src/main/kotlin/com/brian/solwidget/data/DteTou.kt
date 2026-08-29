@@ -35,6 +35,20 @@ object DteTou {
     const val MID_PEAK_CENTS = 21.83
     const val PEAK_CENTS = 30.15
 
+    /**
+     * Rider 18 (Distributed Generation) outflow credits for residential D1.8,
+     * DTE Electric Rate Book Sheet D-115.00, Case U-21860, effective Mar 5, 2026.
+     * Tariff figures are **before PSCR**. Credited outflow is tariff + PSCR.
+     * Outflow is power-supply credit only (not 1:1 retail net metering).
+     */
+    const val PSCR_CENTS = 1.877
+    const val OUTFLOW_OFF_PEAK_CENTS = 4.583
+    const val OUTFLOW_MID_PEAK_CENTS = 8.884
+    const val OUTFLOW_PEAK_CENTS = 17.198
+    const val OUTFLOW_OFF_PEAK_WITH_PSCR_CENTS = OUTFLOW_OFF_PEAK_CENTS + PSCR_CENTS
+    const val OUTFLOW_MID_PEAK_WITH_PSCR_CENTS = OUTFLOW_MID_PEAK_CENTS + PSCR_CENTS
+    const val OUTFLOW_PEAK_WITH_PSCR_CENTS = OUTFLOW_PEAK_CENTS + PSCR_CENTS
+
     enum class Period(val cents: Double, val label: String) {
         OFF_PEAK(OFF_PEAK_CENTS, "Off-peak"),
         MID_PEAK(MID_PEAK_CENTS, "Mid-peak"),
