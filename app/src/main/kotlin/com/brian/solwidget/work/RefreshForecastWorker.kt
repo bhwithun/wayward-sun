@@ -7,6 +7,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.brian.solwidget.data.ForecastRepository
+import com.brian.solwidget.data.WeatherRepository
 import com.brian.solwidget.widget.WidgetUpdater
 import java.util.concurrent.TimeUnit
 
@@ -25,17 +26,41 @@ class RefreshForecastWorker(
     }
 }
 
+class RefreshWeatherWorker(
+    context: Context,
+    params: WorkerParameters
+) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        return try {
+            WeatherRepository.get(applicationContext).refresh(force = false)
+            WidgetUpdater.updateAll(applicationContext)
+            Result.success()
+        } catch (_: Exception) {
+            Result.retry()
+        }
+    }
+}
+
 object RefreshScheduler {
-    private const val UNIQUE_NAME = "solcast_refresh"
+    private const val SOLCAST_WORK = "solcast_refresh"
+    private const val WEATHER_WORK = "weather_refresh"
 
     fun ensure(context: Context) {
-        val request = PeriodicWorkRequestBuilder<RefreshForecastWorker>(6, TimeUnit.HOURS)
+        val workManager = WorkManager.getInstance(context)
+        val solcast = PeriodicWorkRequestBuilder<RefreshForecastWorker>(6, TimeUnit.HOURS)
             .setInitialDelay(30, TimeUnit.MINUTES)
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            UNIQUE_NAME,
+        workManager.enqueueUniquePeriodicWork(
+            SOLCAST_WORK,
             ExistingPeriodicWorkPolicy.KEEP,
-            request
+            solcast
+        )
+        val weather = PeriodicWorkRequestBuilder<RefreshWeatherWorker>(1, TimeUnit.HOURS)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            WEATHER_WORK,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            weather
         )
     }
 }

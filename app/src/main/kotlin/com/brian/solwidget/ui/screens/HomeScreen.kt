@@ -1,5 +1,6 @@
 package com.brian.solwidget.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,12 +25,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brian.solwidget.data.ChartLayer
@@ -41,6 +44,7 @@ import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.viewmodel.HomeViewModel
+import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
 import java.time.Instant
 import java.time.ZoneId
 
@@ -53,6 +57,13 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsState()
     val snapshot = state.snapshot
     val zone = ZoneId.systemDefault()
+    val context = LocalContext.current
+
+    LaunchedEffect(state.toastMessage) {
+        val message = state.toastMessage ?: return@LaunchedEffect
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        viewModel.consumeToast()
+    }
 
     Scaffold(
         topBar = {
@@ -85,21 +96,29 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(horizontal = 16.dp)
                 ) {
-                    snapshot.errorMessage?.let { message ->
-                        StatusBanner(message)
-                    }
+                    LayerToggles(
+                        layers = state.layers,
+                        onToggle = viewModel::setLayer,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                    snapshot.errorMessage
+                        ?.takeUnless { it.isSolcastQuotaMessage() }
+                        ?.let { message ->
+                            StatusBanner(message)
+                        }
                     if (snapshot.isDemo && snapshot.errorMessage == null) {
                         StatusBanner("Showing sample output until Solcast data is available.")
                     }
-
-                    LayerToggles(
-                        layers = state.layers,
-                        onToggle = viewModel::setLayer
-                    )
 
                     Text(
                         text = "2 days before through 2 days after",
@@ -144,6 +163,7 @@ fun HomeScreen(
                             CircularProgressIndicator()
                         }
                     }
+                    }
                 }
             }
         }
@@ -167,10 +187,11 @@ private fun StatusBanner(message: String) {
 @Composable
 private fun LayerToggles(
     layers: ChartLayers,
-    onToggle: (ChartLayer, Boolean) -> Unit
+    onToggle: (ChartLayer, Boolean) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         LayerChip("Solar", layers.solcast, Modifier.weight(1f)) { onToggle(ChartLayer.SOLCAST, it) }

@@ -28,7 +28,8 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val hasApiKey: Boolean = false,
     val now: Instant = Instant.now(),
-    val layers: ChartLayers = ChartLayers()
+    val layers: ChartLayers = ChartLayers(),
+    val toastMessage: String? = null
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -62,6 +63,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(now = Instant.now()) }
             }
         }
+        viewModelScope.launch {
+            while (true) {
+                delay(60 * 60 * 1000L)
+                val weather = weatherRepo.refresh(force = false)
+                _uiState.update { it.copy(weather = weather, now = Instant.now()) }
+                WidgetUpdater.updateAll(getApplication())
+            }
+        }
     }
 
     fun refresh(force: Boolean = true) {
@@ -76,7 +85,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     weather = weather.await(),
                     isLoading = false,
                     hasApiKey = !snapshot.isDemo || snapshot.errorMessage?.contains("API key") != true,
-                    now = Instant.now()
+                    now = Instant.now(),
+                    toastMessage = snapshot.errorMessage?.takeIf { it.isSolcastQuotaMessage() }
                 )
             }
             WidgetUpdater.updateAll(getApplication())
@@ -91,5 +101,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun consumeToast() {
+        _uiState.update { it.copy(toastMessage = null) }
+    }
+
     fun today(): LocalDate = LocalDate.now(ZoneId.systemDefault())
 }
+
+fun String.isSolcastQuotaMessage(): Boolean =
+    contains("request limit reached", ignoreCase = true) ||
+        contains("quota reached", ignoreCase = true)

@@ -31,5 +31,5 @@ com.brian.solwidget/
 - Keep live (green) and forecast (gold) visually distinct, with a now marker
 - Fixed axis ranges: solar 0–8 kW, precip 0–100%, temp -20–100°F. No dashed 8 kW capacity line.
 - DTE Dynamic Peak Pricing (D1.8) bands live in `DteTou.kt` (`America/Detroit`). Hours are year-round. App Rates metadata shows plan id (`D1.8` / Rider 18 Cat1), DTE marketing base cents, and this site's effective volumetric import cents from a dated bill (`RATES_AS_OF`: base + PSCR + other volumetric). Do not scrape DTE. Show cents on the app only, not the widget.
-- Local weather is Open-Meteo only (no API key, do not use Solcast). Overlay on the power chart: precip bars + thin white temp line (blue below 32°F). Do not show a current-kW hero number.
+- Local weather is Open-Meteo only (no API key, do not use Solcast). Overlay on the power chart: precip bars + thin white temp line (blue below 32°F). Hourly `weather_refresh` WorkManager + in-app hourly weather refresh; Solcast stays 6h / 4 auto pulls. Do not show a current-kW hero number.
 - App and widget charts share `ForecastSnapshot.range()`: 2 local days before today through the end of 2 local days after (fixed x-axis, not data extents)
