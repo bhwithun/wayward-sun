@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sol-cache",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "vars": {
+    "RESOURCE_ID": "84d7-8b52-33f3-bd7b"
+  },
+  // No id: Wrangler creates a local KV in `wrangler dev` and a real namespace on deploy.
+  "kv_namespaces": [
+    { "binding": "CACHE" }
+  ],
+  "triggers": {
+    "crons": ["0 0,6,12,18 * * *"]
+  }
+}

@@ -2,18 +2,10 @@ package com.brian.solwidget.data
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.Duration
 import java.time.Instant
 
 class SolcastApi {
-
-    fun fetchForecasts(resourceId: String, apiKey: String): String =
-        get("$BASE/rooftop_sites/${encode(resourceId)}/forecasts?format=json", apiKey)
-
-    fun fetchEstimatedActuals(resourceId: String, apiKey: String): String =
-        get("$BASE/rooftop_sites/${encode(resourceId)}/estimated_actuals?format=json", apiKey)
 
     fun parseCombined(actualsJson: String?, forecastsJson: String?): List<PowerPoint> {
         val live = parseArray(actualsJson, "estimated_actuals", SeriesKind.LIVE)
@@ -57,47 +49,7 @@ class SolcastApi {
         return null
     }
 
-    private fun get(url: String, apiKey: String): String {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 20_000
-            readTimeout = 20_000
-            setRequestProperty("Authorization", "Bearer $apiKey")
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "SolWidget/1.0 (Android)")
-        }
-        return try {
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                throw SolcastException(code, humanError(code, body))
-            }
-            body
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun humanError(code: Int, body: String): String {
-        val apiMessage = runCatching {
-            JSONObject(body).optJSONObject("error")?.optString("message")
-                ?: JSONObject(body).optString("message")
-        }.getOrNull()?.takeIf { it.isNotBlank() }
-
-        return when (code) {
-            401, 403 -> apiMessage ?: "Solcast rejected the API key."
-            404 -> apiMessage ?: "Rooftop site not found. Check the resource ID."
-            429 -> apiMessage ?: "Daily Solcast request limit reached (hobbyist accounts get 10/day)."
-            else -> apiMessage ?: "Solcast request failed (HTTP $code)."
-        }
-    }
-
-    private fun encode(value: String): String = java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
-
     companion object {
-        private const val BASE = "https://api.solcast.com.au"
-
         fun parseSolcastTime(value: String): Instant? {
             if (value.isBlank()) return null
             val trimmed = value.trim()

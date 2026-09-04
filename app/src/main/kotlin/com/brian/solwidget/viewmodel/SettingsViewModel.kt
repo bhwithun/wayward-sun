@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
-    val apiKey: String = "",
+    val cacheUrl: String = AppStorage.DEFAULT_CACHE_URL,
     val resourceId: String = AppStorage.DEFAULT_RESOURCE_ID,
     val placeQuery: String = "",
     val placeLabel: String = "",
@@ -36,7 +36,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
-                    apiKey = storage.apiKeyOnce(),
+                    cacheUrl = storage.cacheUrlOnce(),
                     resourceId = storage.resourceIdOnce(),
                     placeQuery = storage.placeQueryOnce(),
                     placeLabel = storage.placeLabelOnce()
@@ -45,8 +45,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun onApiKeyChange(value: String) {
-        _uiState.update { it.copy(apiKey = value, saved = false, errorMessage = null) }
+    fun onCacheUrlChange(value: String) {
+        _uiState.update { it.copy(cacheUrl = value, saved = false, errorMessage = null) }
     }
 
     fun onResourceIdChange(value: String) {
@@ -61,7 +61,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             try {
-                repo.saveSettings(_uiState.value.apiKey, _uiState.value.resourceId)
+                repo.saveSettings(_uiState.value.cacheUrl, _uiState.value.resourceId)
                 val query = _uiState.value.placeQuery.trim()
                 if (query.isBlank()) {
                     storage.clearPlace()
@@ -72,10 +72,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     weatherRepo.refresh(force = true)
                 }
                 RefreshScheduler.ensure(getApplication())
-                if (_uiState.value.apiKey.isNotBlank()) {
-                    repo.refresh(force = true)
-                    WidgetUpdater.updateAll(getApplication())
-                }
+                repo.refresh(force = true)
+                WidgetUpdater.updateAll(getApplication())
                 _uiState.update { it.copy(isSaving = false, saved = true) }
             } catch (error: Exception) {
                 _uiState.update {

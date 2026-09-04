@@ -17,14 +17,14 @@ import kotlinx.coroutines.withContext
 class ForecastRepository private constructor(context: Context) {
 
     private val storage = AppStorage(context.applicationContext)
-    private val api = SolcastApi()
+    private val parser = SolcastApi()
+    private val cacheApi = CacheApi()
     private val mutex = Mutex()
 
-    val apiKeyFlow = storage.apiKey
     val resourceIdFlow = storage.resourceId
 
-    suspend fun saveSettings(apiKey: String, resourceId: String) {
-        storage.setApiKey(apiKey)
+    suspend fun saveSettings(cacheUrl: String, resourceId: String) {
+        storage.setCacheUrl(cacheUrl)
         storage.setResourceId(resourceId.ifBlank { AppStorage.DEFAULT_RESOURCE_ID })
     }
 
@@ -40,22 +40,9 @@ class ForecastRepository private constructor(context: Context) {
     }
 
     suspend fun refresh(force: Boolean = false): ForecastSnapshot = mutex.withLock {
-        val apiKey = storage.apiKeyOnce()
         val resourceId = storage.resourceIdOnce()
         val used = storage.requestsUsed(utcDay())
-        val autoUsed = storage.autoFetchesUsed(utcDay())
         val lastFetch = storage.lastFetchAt().takeIf { it > 0L }?.let { Instant.ofEpochMilli(it) }
-
-        if (apiKey.isBlank()) {
-            return@withLock buildSnapshot(
-                forecastsJson = null,
-                actualsJson = null,
-                fetchedAt = null,
-                resourceId = resourceId,
-                requestsUsed = used,
-                errorMessage = "Add your Solcast API key in Settings to load live data."
-            )
-        }
 
         if (!force && lastFetch != null && Duration.between(lastFetch, Instant.now()) < MIN_AUTO_AGE) {
             return@withLock buildSnapshot(
@@ -68,55 +55,40 @@ class ForecastRepository private constructor(context: Context) {
             )
         }
 
-        if (!force && autoUsed >= DAILY_AUTO_LIMIT) {
-            return@withLock buildSnapshot(
-                forecastsJson = storage.cachedForecasts(),
-                actualsJson = storage.cachedActuals(),
-                fetchedAt = lastFetch,
-                resourceId = resourceId,
-                requestsUsed = used,
-                errorMessage = null
-            )
-        }
-
-        if (used + REQUESTS_PER_REFRESH > DAILY_LIMIT) {
-            return@withLock buildSnapshot(
-                forecastsJson = storage.cachedForecasts(),
-                actualsJson = storage.cachedActuals(),
-                fetchedAt = lastFetch,
-                resourceId = resourceId,
-                requestsUsed = used,
-                errorMessage = "Daily Solcast quota reached ($used/$DAILY_LIMIT). Cached data is shown."
-            )
-        }
-
         withContext(Dispatchers.IO) {
-            var billed = 0
             try {
-                val forecasts = api.fetchForecasts(resourceId, apiKey)
-                billed += 1
-                val actuals = api.fetchEstimatedActuals(resourceId, apiKey)
-                billed += 1
-                storage.recordRequests(utcDay(), billed, autoPull = !force)
-                storage.saveCache(forecasts, actuals, Instant.now().toEpochMilli())
+                val payload = cacheApi.fetchSnapshot(storage.cacheUrlOnce())
+                val fetchedAt = payload.fetchedAt ?: Instant.now()
+                storage.saveCache(payload.forecastsJson, payload.actualsJson, fetchedAt.toEpochMilli())
+                storage.saveWorkerQuota(
+                    payload.requestsDay ?: utcDay(),
+                    payload.requestsUsed,
+                    payload.autoFetchesUsed
+                )
+                if (payload.resourceId.isNotBlank()) {
+                    storage.setResourceId(payload.resourceId)
+                }
+                val skip = payload.message?.takeIf {
+                    it.contains("skipped", ignoreCase = true) ||
+                        it.contains("quota", ignoreCase = true) ||
+                        it.contains("limit reached", ignoreCase = true)
+                }
                 buildSnapshot(
-                    forecastsJson = forecasts,
-                    actualsJson = actuals,
-                    fetchedAt = Instant.now(),
-                    resourceId = resourceId,
-                    requestsUsed = used + billed,
-                    errorMessage = null
+                    forecastsJson = payload.forecastsJson,
+                    actualsJson = payload.actualsJson,
+                    fetchedAt = fetchedAt,
+                    resourceId = payload.resourceId.ifBlank { resourceId },
+                    requestsUsed = payload.requestsUsed,
+                    errorMessage = skip
                 )
             } catch (error: Exception) {
-                if (billed > 0) storage.recordRequests(utcDay(), billed, autoPull = false)
-                val currentUsed = storage.requestsUsed(utcDay())
                 buildSnapshot(
                     forecastsJson = storage.cachedForecasts(),
                     actualsJson = storage.cachedActuals(),
                     fetchedAt = storage.lastFetchAt().takeIf { it > 0L }?.let { Instant.ofEpochMilli(it) },
                     resourceId = resourceId,
-                    requestsUsed = currentUsed,
-                    errorMessage = error.message ?: "Unable to reach Solcast."
+                    requestsUsed = storage.requestsUsed(utcDay()),
+                    errorMessage = error.message ?: "Unable to reach the shared cache."
                 )
             }
         }
@@ -130,7 +102,7 @@ class ForecastRepository private constructor(context: Context) {
         requestsUsed: Int,
         errorMessage: String?
     ): ForecastSnapshot {
-        val parsed = api.parseCombined(actualsJson, forecastsJson)
+        val parsed = parser.parseCombined(actualsJson, forecastsJson)
         return if (parsed.isEmpty()) {
             ForecastSnapshot(
                 resourceId = resourceId,

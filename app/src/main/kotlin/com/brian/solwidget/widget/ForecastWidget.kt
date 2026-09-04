@@ -127,7 +127,7 @@ private fun WidgetContent(
         if (snapshot.isDemo) {
             Spacer(GlanceModifier.height(4.dp))
             Text(
-                text = "Sample data · add API key in the app",
+                text = "Sample data · waiting for shared cache",
                 style = TextStyle(color = muted, fontSize = 11.sp)
             )
         }

@@ -1,0 +1,12 @@
+{
+  "name": "sol-cache-worker",
+  "private": true,
+  "description": "Cloudflare Worker that shares one Solcast cache across devices.",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --ip 127.0.0.1",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.34.0"
+  }
+}

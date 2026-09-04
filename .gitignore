@@ -54,6 +54,12 @@ google-services.json
 .DS_Store
 Thumbs.db
 
+# Local Cloudflare Worker example
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
+worker/.secrets.env
+
 # Misc
 *.swp
 *~

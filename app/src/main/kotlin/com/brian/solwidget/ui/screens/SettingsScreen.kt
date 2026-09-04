@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,8 +21,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brian.solwidget.ui.theme.SolColors
@@ -42,7 +39,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Solcast settings") },
+                title = { Text("Settings") },
                 navigationIcon = {
                     TextButton(onClick = onBack) { Text("Back") }
                 },
@@ -63,18 +60,16 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                "This app uses your hobbyist rooftop site in the Solcast Toolkit. " +
-                    "The Graph: Live and Forecasts view is built from estimated actuals plus forecasts.",
+                "This app downloads the shared rooftop cache. " +
+                    "The Cloudflare Worker is the only client that calls Solcast.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = SolColors.Muted
             )
             OutlinedTextField(
-                value = state.apiKey,
-                onValueChange = viewModel::onApiKeyChange,
+                value = state.cacheUrl,
+                onValueChange = viewModel::onCacheUrlChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("API key") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                label = { Text("Cache URL") },
                 singleLine = true
             )
             OutlinedTextField(
@@ -99,7 +94,7 @@ fun SettingsScreen(
                 )
             }
             Text(
-                "Weather uses Open-Meteo (no extra API key) and does not count against your Solcast daily limit.",
+                "Weather uses Open-Meteo (no extra API key) and does not count against the Solcast daily limit.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SolColors.Muted
             )
@@ -107,8 +102,9 @@ fun SettingsScreen(
                 Text(message, color = SolColors.Forecast, style = MaterialTheme.typography.bodyMedium)
             }
             Text(
-                "Hobbyist accounts are limited to 10 API requests per UTC day. " +
-                    "Each refresh uses 2 requests (live + forecast). Automatic pulls are limited to 4 per UTC day (about every 6 hours). Tap Refresh to fetch extra.",
+                "Hobbyist Solcast accounts allow 10 requests per UTC day. " +
+                    "The Worker pulls at most 4 times per day (about every 6 hours). " +
+                    "Refresh in this app only re-downloads the shared cache.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SolColors.Muted
             )

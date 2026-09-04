@@ -125,7 +125,7 @@ fun HomeScreen(
                             StatusBanner(message)
                         }
                     if (snapshot.isDemo && snapshot.errorMessage == null) {
-                        StatusBanner("Showing sample output until Solcast data is available.")
+                        StatusBanner("Showing sample output until the shared cache has Solcast data.")
                     }
 
                     Text(

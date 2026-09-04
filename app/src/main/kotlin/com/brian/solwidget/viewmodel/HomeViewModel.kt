@@ -26,7 +26,6 @@ data class HomeUiState(
     val snapshot: ForecastSnapshot? = null,
     val weather: WeatherSnapshot? = null,
     val isLoading: Boolean = true,
-    val hasApiKey: Boolean = false,
     val now: Instant = Instant.now(),
     val layers: ChartLayers = ChartLayers(),
     val toastMessage: String? = null
@@ -44,18 +43,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val cached = repo.loadSnapshot()
             val weatherCached = weatherRepo.loadSnapshot()
-            val hasKey = storage.apiKeyOnce().isNotBlank()
             _uiState.update {
                 it.copy(
                     snapshot = cached,
                     weather = weatherCached,
                     isLoading = false,
-                    hasApiKey = hasKey,
                     now = Instant.now(),
                     layers = storage.chartLayersOnce()
                 )
             }
-            refresh(force = cached.fetchedAt == null && hasKey)
+            refresh(force = cached.fetchedAt == null)
         }
         viewModelScope.launch {
             while (true) {
@@ -84,7 +81,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     snapshot = snapshot,
                     weather = weather.await(),
                     isLoading = false,
-                    hasApiKey = !snapshot.isDemo || snapshot.errorMessage?.contains("API key") != true,
                     now = Instant.now(),
                     toastMessage = snapshot.errorMessage?.takeIf { it.isSolcastQuotaMessage() }
                 )

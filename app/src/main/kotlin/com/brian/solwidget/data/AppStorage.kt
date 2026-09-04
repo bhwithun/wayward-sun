@@ -19,7 +19,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class AppStorage(private val context: Context) {
 
     object Keys {
-        val API_KEY = stringPreferencesKey("solcast_api_key")
+        val CACHE_URL = stringPreferencesKey("solcast_cache_url")
         val RESOURCE_ID = stringPreferencesKey("solcast_resource_id")
         val CACHED_FORECASTS = stringPreferencesKey("cached_forecasts_json")
         val CACHED_ACTUALS = stringPreferencesKey("cached_actuals_json")
@@ -41,6 +41,7 @@ class AppStorage(private val context: Context) {
 
     companion object {
         const val DEFAULT_RESOURCE_ID = "84d7-8b52-33f3-bd7b"
+        const val DEFAULT_CACHE_URL = "https://sol-cache.brian-952.workers.dev"
     }
 
     fun getStringFlow(key: Preferences.Key<String>, default: String? = null): Flow<String?> =
@@ -67,17 +68,22 @@ class AppStorage(private val context: Context) {
         context.dataStore.edit { it[key] = value }
     }
 
-    val apiKey: Flow<String?> = getStringFlow(Keys.API_KEY)
     val resourceId: Flow<String> = getStringFlow(Keys.RESOURCE_ID, DEFAULT_RESOURCE_ID)
         .map { it?.ifBlank { DEFAULT_RESOURCE_ID } ?: DEFAULT_RESOURCE_ID }
 
-    suspend fun apiKeyOnce(): String = getStringOnce(Keys.API_KEY).orEmpty().trim()
+    suspend fun cacheUrlOnce(): String =
+        getStringOnce(Keys.CACHE_URL, DEFAULT_CACHE_URL)
+            ?.ifBlank { DEFAULT_CACHE_URL }
+            ?.trimEnd('/')
+            ?: DEFAULT_CACHE_URL
+
     suspend fun resourceIdOnce(): String =
         getStringOnce(Keys.RESOURCE_ID, DEFAULT_RESOURCE_ID)
             ?.ifBlank { DEFAULT_RESOURCE_ID }
             ?: DEFAULT_RESOURCE_ID
 
-    suspend fun setApiKey(value: String) = setString(Keys.API_KEY, value.trim())
+    suspend fun setCacheUrl(value: String) =
+        setString(Keys.CACHE_URL, value.trim().trimEnd('/').ifBlank { DEFAULT_CACHE_URL })
     suspend fun setResourceId(value: String) = setString(Keys.RESOURCE_ID, value.trim())
 
     suspend fun cachedForecasts(): String? = getStringOnce(Keys.CACHED_FORECASTS)
@@ -89,6 +95,14 @@ class AppStorage(private val context: Context) {
             prefs[Keys.CACHED_FORECASTS] = forecastsJson
             prefs[Keys.CACHED_ACTUALS] = actualsJson
             prefs[Keys.LAST_FETCH_AT] = fetchedAtMillis
+        }
+    }
+
+    suspend fun saveWorkerQuota(utcDay: String, requestsUsed: Int, autoFetchesUsed: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.REQUESTS_DAY] = utcDay
+            prefs[Keys.REQUESTS_USED] = requestsUsed
+            prefs[Keys.AUTO_FETCHES_USED] = autoFetchesUsed
         }
     }
 
