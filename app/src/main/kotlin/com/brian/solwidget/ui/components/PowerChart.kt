@@ -26,8 +26,10 @@ import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SeriesKind
+import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.ui.theme.SolColors
+import com.brian.solwidget.util.Formatters
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -65,7 +67,7 @@ fun PowerChart(
         val left = if (units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
         val right = size.width - 12.dp.toPx()
         val top = 16.dp.toPx()
-        val bottom = size.height - 32.dp.toPx()
+        val bottom = size.height - if (layers.solcast) 48.dp.toPx() else 32.dp.toPx()
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
@@ -89,6 +91,13 @@ fun PowerChart(
             alpha = 90
             textSize = 28f
             isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        val kwhPaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.parseColor("#E8EEF7")
+            textSize = 26f
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
         }
         val unitPaint = android.graphics.Paint().apply {
             color = android.graphics.Color.parseColor("#E8EEF7")
@@ -175,6 +184,11 @@ fun PowerChart(
         )
 
         val zone = ZoneId.systemDefault()
+        val dayTotals = if (layers.solcast) {
+            SolarDayLabels.summaries(points, zone).associateBy { it.date }
+        } else {
+            emptyMap()
+        }
         val firstDay = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         var day = firstDay
@@ -193,7 +207,20 @@ fun PowerChart(
             val label = DayLabel.format(day.atStartOfDay(zone))
             val labelX = xOf(noon)
             if (labelX in left..right) {
-                native.drawText(label, labelX - 36f, size.height - 6f, gridPaint)
+                if (layers.solcast) {
+                    native.drawText(label, labelX, bottom + 18.dp.toPx(), gridPaint)
+                    val totals = dayTotals[day]
+                    if (totals?.complete == true) {
+                        native.drawText(
+                            Formatters.kwh(totals.energyKwh),
+                            labelX,
+                            size.height - 6f,
+                            kwhPaint
+                        )
+                    }
+                } else {
+                    native.drawText(label, labelX, size.height - 6f, gridPaint)
+                }
             }
             day = day.plusDays(1)
         }
@@ -355,7 +382,7 @@ object ChartBitmapRenderer {
         val left = if (units != AxisUnits.NONE) 52f else 8f
         val right = width - 8f
         val top = 6f
-        val bottom = height - 22f
+        val bottom = height - if (layers.solcast) 80f else 22f
         val chartW = (right - left).coerceAtLeast(1f)
         val chartH = (bottom - top).coerceAtLeast(1f)
         val minTime = (rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.first().time)
@@ -438,12 +465,24 @@ object ChartBitmapRenderer {
         }
 
         val zone = ZoneId.systemDefault()
+        val dayTotals = if (layers.solcast) {
+            SolarDayLabels.summaries(points, zone).associateBy { it.date }
+        } else {
+            emptyMap()
+        }
         var day = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         val dayPaint = Paint().apply {
             color = 0x994A6288.toInt()
             textSize = 22f
             isAntiAlias = true
+            textAlign = Paint.Align.CENTER
+        }
+        val kwhPaint = Paint().apply {
+            color = 0xFFE8EEF7.toInt()
+            textSize = 40f
+            isAntiAlias = true
+            textAlign = Paint.Align.CENTER
         }
         while (!day.isAfter(lastDay)) {
             val midnightX = xOf(day.atStartOfDay(zone).toInstant())
@@ -453,7 +492,15 @@ object ChartBitmapRenderer {
             val label = DayLabel.format(day.atStartOfDay(zone))
             val labelX = xOf(day.atTime(12, 0).atZone(zone).toInstant())
             if (labelX in left + 12f..right - 12f) {
-                canvas.drawText(label, labelX - 28f, height - 4f, dayPaint)
+                if (layers.solcast) {
+                    canvas.drawText(label, labelX, bottom + 20f, dayPaint)
+                    val totals = dayTotals[day]
+                    if (totals?.complete == true) {
+                        canvas.drawText(Formatters.kwh(totals.energyKwh), labelX, height - 8f, kwhPaint)
+                    }
+                } else {
+                    canvas.drawText(label, labelX, height - 4f, dayPaint)
+                }
             }
             day = day.plusDays(1)
         }

@@ -36,7 +36,8 @@ data class DayTotals(
     val energyKwh: Double,
     val peakKw: Double,
     val liveEnergyKwh: Double,
-    val forecastEnergyKwh: Double
+    val forecastEnergyKwh: Double,
+    val complete: Boolean = false
 )
 
 data class ForecastSnapshot(
@@ -63,16 +64,8 @@ data class ForecastSnapshot(
             ?: points.maxByOrNull { it.periodEnd }
     }
 
-    fun totalsFor(date: LocalDate, zone: ZoneId = ZoneId.systemDefault()): DayTotals {
-        val dayPoints = points.filter { it.periodEnd.atZone(zone).toLocalDate() == date }
-        return DayTotals(
-            date = date,
-            energyKwh = dayPoints.sumOf { it.energyKwh },
-            peakKw = dayPoints.maxOfOrNull { it.kw } ?: 0.0,
-            liveEnergyKwh = dayPoints.filter { it.kind == SeriesKind.LIVE }.sumOf { it.energyKwh },
-            forecastEnergyKwh = dayPoints.filter { it.kind == SeriesKind.FORECAST }.sumOf { it.energyKwh }
-        )
-    }
+    fun totalsFor(date: LocalDate, zone: ZoneId = ZoneId.systemDefault()): DayTotals =
+        SolarDayLabels.summaryFor(points, date, zone)
 
     fun remainingTodayKwh(now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): Double {
         val today = now.atZone(zone).toLocalDate()

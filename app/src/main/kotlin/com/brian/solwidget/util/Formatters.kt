@@ -16,7 +16,8 @@ object Formatters {
         if (value >= 10.0) String.format(Locale.US, "%.1f kW", value)
         else String.format(Locale.US, "%.2f kW", value)
 
-    fun kwh(value: Double): String = String.format(Locale.US, "%.1f kWh", value)
+    fun kwh(value: Double): String =
+        String.format(Locale.US, "%d kWh", kotlin.math.round(value).toInt())
 
     fun cents(value: Double): String = String.format(Locale.US, "%.2f¢", value)
 
