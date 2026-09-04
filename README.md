@@ -1,15 +1,18 @@
 # Sol Widget
 
-Android app + home-screen widget for a home PV system on [Solcast](https://toolkit.solcast.com.au/).
+A household solar dashboard for one rooftop. It is an Android **app** plus a **home-screen widget**. Both show how much power the array is making and what Solcast thinks it will make next. Tap the widget to open the full graph.
 
-It plots the same series as the toolkit **Graph: Live and Forecasts** view:
+The main chart is the same idea as the Solcast Toolkit **Graph: Live and Forecasts** view, for a five-day window (two local days before today through two after):
 
-- **Live** — rooftop `estimated_actuals`
-- **Forecast** — rooftop `forecasts`
+- **Live** (green) — estimated actual production
+- **Forecast** (gold) — predicted production
+- a **now** marker
+
+The display is **layers you can turn on or off** individually in the app and on the widget: solar (live + forecast), **rain / precipitation**, temperature, and **DTE rate periods** (Dynamic Peak Pricing D1.8: off-peak, mid-peak, and peak hours in America/Detroit). It is not a commercial PV monitoring portal, not a utility account, and not a generic weather app. There is no current-kW hero number; the graph is the point.
+
+Hobbyist Solcast accounts allow **10 HTTP requests per UTC day**, and a full live+forecast pull uses **2**. Several phones and widgets would burn that quota independently. So **one Cloudflare Worker** is the only Solcast client. It pulls a few times a day, stores the snapshot, and every device just downloads that cache.
 
 Default rooftop resource ID: `84d7-8b52-33f3-bd7b`.
-
-Phones never call Solcast. A small Cloudflare Worker is the only Solcast client; every device downloads a shared cache.
 
 ## How Cloudflare is used
 
