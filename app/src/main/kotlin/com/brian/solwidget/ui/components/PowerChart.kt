@@ -20,14 +20,17 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.DayTempRange
 import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.WeatherPoint
+import com.brian.solwidget.data.dayTempRanges
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
 import java.time.Instant
@@ -66,7 +69,7 @@ fun PowerChart(
         val units = axisUnits(layers)
         val left = if (units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
         val right = size.width - 12.dp.toPx()
-        val top = 16.dp.toPx()
+        val top = if (layers.temperature) 32.dp.toPx() else 16.dp.toPx()
         val bottom = size.height - if (layers.solcast) 48.dp.toPx() else 32.dp.toPx()
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
@@ -87,8 +90,7 @@ fun PowerChart(
             bottom - ((kw / solarMax).toFloat().coerceIn(0f, 1f) * height)
 
         val gridPaint = android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#4A6288")
-            alpha = 90
+            color = android.graphics.Color.parseColor("#E8EEF7")
             textSize = 28f
             isAntiAlias = true
             textAlign = android.graphics.Paint.Align.CENTER
@@ -189,6 +191,7 @@ fun PowerChart(
         } else {
             emptyMap()
         }
+        val tempRanges = if (layers.temperature) dayTempRanges(weather, zone) else emptyMap()
         val firstDay = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         var day = firstDay
@@ -221,6 +224,10 @@ fun PowerChart(
                 } else {
                     native.drawText(label, labelX, size.height - 6f, gridPaint)
                 }
+                val temps = tempRanges[day]
+                if (temps != null) {
+                    drawTempRangeLabel(native, temps, labelX, 22.dp.toPx(), 26f)
+                }
             }
             day = day.plusDays(1)
         }
@@ -229,6 +236,39 @@ fun PowerChart(
             drawDemoWatermark(native, left, top, right, bottom)
         }
     }
+}
+
+private fun drawTempRangeLabel(
+    canvas: AndroidCanvas,
+    range: DayTempRange,
+    centerX: Float,
+    baselineY: Float,
+    textSize: Float
+) {
+    fun paint(color: Int) = Paint().apply {
+        this.color = color
+        this.textSize = textSize
+        isAntiAlias = true
+        textAlign = Paint.Align.LEFT
+    }
+    val hyphenPaint = paint(SolColors.Ink.toArgb())
+    if (range.lowF == range.highF) {
+        hyphenPaint.textAlign = Paint.Align.CENTER
+        canvas.drawText("${range.lowF}", centerX, baselineY, hyphenPaint)
+        return
+    }
+    val low = "${range.lowF}"
+    val hyphen = "-"
+    val high = "${range.highF}"
+    val lowPaint = paint(SolColors.TempLow.toArgb())
+    val highPaint = paint(SolColors.TempHot.toArgb())
+    val total = lowPaint.measureText(low) + hyphenPaint.measureText(hyphen) + highPaint.measureText(high)
+    var x = centerX - total / 2f
+    canvas.drawText(low, x, baselineY, lowPaint)
+    x += lowPaint.measureText(low)
+    canvas.drawText(hyphen, x, baselineY, hyphenPaint)
+    x += hyphenPaint.measureText(hyphen)
+    canvas.drawText(high, x, baselineY, highPaint)
 }
 
 private fun drawDemoWatermark(
@@ -381,7 +421,7 @@ object ChartBitmapRenderer {
         val units = axisUnits(layers)
         val left = if (units != AxisUnits.NONE) 52f else 8f
         val right = width - 8f
-        val top = 6f
+        val top = if (layers.temperature) 52f else 6f
         val bottom = height - if (layers.solcast) 80f else 22f
         val chartW = (right - left).coerceAtLeast(1f)
         val chartH = (bottom - top).coerceAtLeast(1f)
@@ -470,10 +510,11 @@ object ChartBitmapRenderer {
         } else {
             emptyMap()
         }
+        val tempRanges = if (layers.temperature) dayTempRanges(weather, zone) else emptyMap()
         var day = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         val dayPaint = Paint().apply {
-            color = 0x994A6288.toInt()
+            color = 0xFFE8EEF7.toInt()
             textSize = 22f
             isAntiAlias = true
             textAlign = Paint.Align.CENTER
@@ -500,6 +541,10 @@ object ChartBitmapRenderer {
                     }
                 } else {
                     canvas.drawText(label, labelX, height - 4f, dayPaint)
+                }
+                val temps = tempRanges[day]
+                if (temps != null) {
+                    drawTempRangeLabel(canvas, temps, labelX, 38f, 40f)
                 }
             }
             day = day.plusDays(1)

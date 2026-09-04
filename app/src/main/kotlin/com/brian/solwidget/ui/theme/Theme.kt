@@ -22,6 +22,7 @@ object SolColors {
     val TouPeak = Color(0x4DE07070)
     val Temp = Color(0xFFFFFFFF)
     val TempFreeze = Color(0xFF64B5F6)
+    val TempLow = Color(0xFF4EE6E6)
     val TempHot = Color(0xFFFF8A4C)
     val Precip = Color(0x665CA8FF)
 }
