@@ -47,12 +47,12 @@ object RefreshScheduler {
 
     fun ensure(context: Context) {
         val workManager = WorkManager.getInstance(context)
-        val solcast = PeriodicWorkRequestBuilder<RefreshForecastWorker>(6, TimeUnit.HOURS)
+        val solcast = PeriodicWorkRequestBuilder<RefreshForecastWorker>(5, TimeUnit.HOURS)
             .setInitialDelay(30, TimeUnit.MINUTES)
             .build()
         workManager.enqueueUniquePeriodicWork(
             SOLCAST_WORK,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             solcast
         )
         val weather = PeriodicWorkRequestBuilder<RefreshWeatherWorker>(1, TimeUnit.HOURS)

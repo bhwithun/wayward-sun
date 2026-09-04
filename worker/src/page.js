@@ -72,7 +72,7 @@ export function renderPage(snapshot, env, { local = false } = {}) {
     <h1>Shared Solcast cache</h1>
     <p>${where}</p>
     <div class="banner">
-      Automatic pulls are capped at 4 per UTC day (about every 6 hours) and 10 Solcast HTTP requests.
+      Automatic pulls are capped at 5 per UTC day (about every 5 hours) and 10 Solcast HTTP requests.
       The dashboard Refresh button uses those same rules — it cannot bypass them, so a public URL cannot burn extra quota.
     </div>
     <div class="grid">
@@ -85,7 +85,7 @@ export function renderPage(snapshot, env, { local = false } = {}) {
       <div class="card">
         <h2>Quota (UTC day ${escapeHtml(snapshot?.requestsDay || "—")})</h2>
         <div class="stat">${snapshot?.requestsUsed ?? 0} / 10 requests</div>
-        <div class="muted">${snapshot?.autoFetchesUsed ?? 0} / 4 automatic pulls</div>
+        <div class="muted">${snapshot?.autoFetchesUsed ?? 0} / 5 automatic pulls</div>
         <div class="muted" style="margin-top:8px">Solcast key in Worker: ${hasKey ? "yes" : "no (demo only)"}</div>
       </div>
     </div>

@@ -2,8 +2,8 @@
  * Shared Solcast cache. This Worker is the only Solcast client.
  *
  * GET  /cache     → latest forecasts + estimated actuals (public, for phones)
- * POST /refresh   → try an automatic Solcast pull (6h / 4 per UTC day)
- * Cron 00/06/12/18 UTC → same automatic pull
+ * POST /refresh   → try an automatic Solcast pull (~5h / 5 per UTC day)
+ * Cron 00/05/10/15/20 UTC → same automatic pull
  *
  * SOLCAST_API_KEY is a Wrangler secret. Phones never see it and never call Solcast.
  */
@@ -12,9 +12,10 @@ import { combinedPoints, demoSnapshot, utcDay } from "./demo.js";
 import { renderPage } from "./page.js";
 
 const DAILY_LIMIT = 10;
-const DAILY_AUTO_LIMIT = 4;
+const DAILY_AUTO_LIMIT = 5;
 const REQUESTS_PER_REFRESH = 2;
-const MIN_AUTO_AGE_MS = 6 * 60 * 60 * 1000;
+const MIN_AUTO_AGE_HOURS = 4;
+const MIN_AUTO_AGE_MS = MIN_AUTO_AGE_HOURS * 60 * 60 * 1000;
 const SNAPSHOT_KEY = "snapshot";
 const SOLCAST = "https://api.solcast.com.au";
 
@@ -111,14 +112,14 @@ async function refresh(env, { auto }) {
   if (existing && ageMs < MIN_AUTO_AGE_MS) {
     return {
       ...existing,
-      message: "Cache younger than 6 hours; skipped Solcast.",
+      message: `Cache younger than ${MIN_AUTO_AGE_HOURS} hours; skipped Solcast.`,
     };
   }
 
   if (auto && autoUsed >= DAILY_AUTO_LIMIT) {
     return {
       ...(existing ?? demoSnapshot(resourceId(env), now)),
-      message: "Daily automatic pull limit reached (4).",
+      message: `Daily automatic pull limit reached (${DAILY_AUTO_LIMIT}).`,
     };
   }
 

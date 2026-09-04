@@ -22,7 +22,7 @@ Cloudflare hosts one Worker named **`sol-cache`**. Think of it as a tiny program
 |---|---|
 | **Worker** (`worker/`) | The only process that calls Solcast. Serves a dashboard at `/` and JSON at `/cache`. |
 | **Workers KV** | Stores the latest forecasts + estimated actuals (`snapshot` key). |
-| **Cron** | `0 0,6,12,18 * * *` UTC — up to four automatic pulls per UTC day. |
+| **Cron** | `0 0,5,10,15,20 * * *` UTC — up to five automatic pulls per UTC day. |
 | **Wrangler** | CLI to run the Worker locally (`npm run dev`) and deploy it (`npx wrangler deploy`). |
 | **Secret** | `SOLCAST_API_KEY` lives on Cloudflare only (`npx wrangler secret put SOLCAST_API_KEY`). Never in git, never on the phones. |
 
@@ -32,7 +32,7 @@ Live URL: [https://sol-cache.brian-952.workers.dev](https://sol-cache.brian-952.
 Solcast API  ←  Worker (secret + cron + KV)  ←  GET /cache  ←  Android app / widget
 ```
 
-- **Ask for update** on the Worker dashboard (`POST /refresh`) uses the same 6-hour / 4-per-day rules as cron. There is no public force-refresh, so strangers with the URL cannot dump the hobbyist quota.
+- **Ask for update** on the Worker dashboard (`POST /refresh`) uses the same ~5-hour / 5-per-day rules as cron. There is no public force-refresh, so strangers with the URL cannot dump the hobbyist quota.
 - There is no `CACHE_SECRET` and no device `PUT`. The cache URL is readable by anyone who has it.
 - Weather (Open-Meteo) does **not** go through Cloudflare or Solcast.
 
@@ -56,8 +56,8 @@ Local preview: [http://127.0.0.1:8787/](http://127.0.0.1:8787/). More Worker det
 Hobbyist Solcast accounts allow **10 requests per UTC day**. Each Worker pull uses **2** (live + forecast). The Worker:
 
 - writes the last successful response to KV
-- auto-pulls at most **4 times per UTC day** (about every 6 hours)
-- skips Solcast if the snapshot is younger than 6 hours
+- auto-pulls at most **5 times per UTC day** (about every 5 hours)
+- skips Solcast if the snapshot is younger than 4 hours
 - serves that snapshot to every device
 
 Refresh in the Android app re-downloads `/cache`. It does not call Solcast.

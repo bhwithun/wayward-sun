@@ -31,7 +31,7 @@ Live URL: [https://sol-cache.brian-952.workers.dev](https://sol-cache.brian-952.
 | GET | `/` | Dashboard |
 | GET | `/health` | `{ ok, runtime, deployed }` |
 | GET | `/cache` | JSON snapshot for devices (public) |
-| POST | `/refresh` | Try an automatic Solcast pull (same 6h / 4-per-day rules as cron) |
+| POST | `/refresh` | Try an automatic Solcast pull (same ~5h / 5-per-day rules as cron) |
 
 There is no device `PUT`. There is no force-refresh on the public URL (that would let anyone spend quota).
 
@@ -39,5 +39,5 @@ There is no device `PUT`. There is no force-refresh on the public URL (that woul
 
 - Hobbyist limit: **10** HTTP requests per UTC day
 - One pull: **2** calls (forecasts + estimated actuals)
-- Automatic pulls: at most **4** per UTC day, skipped if the cache is younger than **6 hours**
-- Cron: `0 0,6,12,18 * * *` (UTC)
+- Automatic pulls: at most **5** per UTC day, skipped if the cache is younger than **4 hours**
+- Cron: `0 0,5,10,15,20 * * *` (UTC)
