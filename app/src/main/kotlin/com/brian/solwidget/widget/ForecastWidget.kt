@@ -100,7 +100,8 @@ private fun WidgetContent(
         rangeFrom = from,
         rangeTo = to,
         weather = weather,
-        layers = layers
+        layers = layers,
+        isDemo = snapshot.isDemo
     )
 
     val muted = ColorProvider(Color(0xFF9AA8BF))
@@ -114,7 +115,7 @@ private fun WidgetContent(
             .padding(14.dp)
     ) {
         Text(
-            "Wayward Sun  ·  ${snapshot.requestsUsed}/${snapshot.requestLimit}",
+            "Wayward Sun",
             style = TextStyle(color = muted, fontSize = 12.sp)
         )
         Spacer(GlanceModifier.height(6.dp))

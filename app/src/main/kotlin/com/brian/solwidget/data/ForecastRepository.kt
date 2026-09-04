@@ -35,31 +35,23 @@ class ForecastRepository private constructor(context: Context) {
             fetchedAt = storage.lastFetchAt().takeIf { it > 0L }?.let { Instant.ofEpochMilli(it) },
             resourceId = storage.resourceIdOnce(),
             requestsUsed = storage.requestsUsed(utcDay()),
+            source = storage.cachedSource(),
             errorMessage = null
         )
     }
 
     suspend fun refresh(force: Boolean = false): ForecastSnapshot = mutex.withLock {
         val resourceId = storage.resourceIdOnce()
-        val used = storage.requestsUsed(utcDay())
-        val lastFetch = storage.lastFetchAt().takeIf { it > 0L }?.let { Instant.ofEpochMilli(it) }
-
-        if (!force && lastFetch != null && Duration.between(lastFetch, Instant.now()) < MIN_AUTO_AGE) {
-            return@withLock buildSnapshot(
-                forecastsJson = storage.cachedForecasts(),
-                actualsJson = storage.cachedActuals(),
-                fetchedAt = lastFetch,
-                resourceId = resourceId,
-                requestsUsed = used,
-                errorMessage = null
-            )
-        }
-
         withContext(Dispatchers.IO) {
             try {
                 val payload = cacheApi.fetchSnapshot(storage.cacheUrlOnce())
                 val fetchedAt = payload.fetchedAt ?: Instant.now()
-                storage.saveCache(payload.forecastsJson, payload.actualsJson, fetchedAt.toEpochMilli())
+                storage.saveCache(
+                    payload.forecastsJson,
+                    payload.actualsJson,
+                    fetchedAt.toEpochMilli(),
+                    payload.source
+                )
                 storage.saveWorkerQuota(
                     payload.requestsDay ?: utcDay(),
                     payload.requestsUsed,
@@ -79,6 +71,7 @@ class ForecastRepository private constructor(context: Context) {
                     fetchedAt = fetchedAt,
                     resourceId = payload.resourceId.ifBlank { resourceId },
                     requestsUsed = payload.requestsUsed,
+                    source = payload.source,
                     errorMessage = skip
                 )
             } catch (error: Exception) {
@@ -88,6 +81,7 @@ class ForecastRepository private constructor(context: Context) {
                     fetchedAt = storage.lastFetchAt().takeIf { it > 0L }?.let { Instant.ofEpochMilli(it) },
                     resourceId = resourceId,
                     requestsUsed = storage.requestsUsed(utcDay()),
+                    source = storage.cachedSource(),
                     errorMessage = error.message ?: "Unable to reach the shared cache."
                 )
             }
@@ -100,9 +94,11 @@ class ForecastRepository private constructor(context: Context) {
         fetchedAt: Instant?,
         resourceId: String,
         requestsUsed: Int,
+        source: String?,
         errorMessage: String?
     ): ForecastSnapshot {
         val parsed = parser.parseCombined(actualsJson, forecastsJson)
+        val demo = parsed.isEmpty() || source.equals("demo", ignoreCase = true)
         return if (parsed.isEmpty()) {
             ForecastSnapshot(
                 resourceId = resourceId,
@@ -120,7 +116,7 @@ class ForecastRepository private constructor(context: Context) {
                 fetchedAt = fetchedAt,
                 requestsUsed = requestsUsed,
                 requestLimit = DAILY_LIMIT,
-                isDemo = false,
+                isDemo = demo,
                 errorMessage = errorMessage
             )
         }

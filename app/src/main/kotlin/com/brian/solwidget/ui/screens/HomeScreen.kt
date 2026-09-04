@@ -151,7 +151,8 @@ fun HomeScreen(
                             weather = weatherPoints,
                             rangeFrom = rangeFrom,
                             rangeTo = rangeTo,
-                            layers = state.layers
+                            layers = state.layers,
+                            isDemo = snapshot.isDemo
                         )
                     }
 
@@ -287,11 +288,6 @@ private fun LayerMetaPanel(
                 LegendKeys(type, "● Live" to SolColors.Live, "● Forecast" to SolColors.Forecast, "● Now" to SolColors.Now)
                 Text(snapshot.resourceId, color = SolColors.Ink, style = type.body)
                 Text(Formatters.asOf(snapshot.fetchedAt, now), color = SolColors.Muted, style = type.caption)
-                Text(
-                    "Solcast ${snapshot.requestsUsed}/${snapshot.requestLimit} requests today",
-                    color = SolColors.Muted,
-                    style = type.caption
-                )
             }
         }
         if (layers.temperature && (showOnly == null || showOnly == MetaPanel.TEMP)) {

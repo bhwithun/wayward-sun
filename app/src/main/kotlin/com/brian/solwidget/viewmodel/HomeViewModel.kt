@@ -52,7 +52,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     layers = storage.chartLayersOnce()
                 )
             }
-            refresh(force = cached.fetchedAt == null)
+            refresh(force = true)
         }
         viewModelScope.launch {
             while (true) {

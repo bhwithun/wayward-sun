@@ -11,7 +11,7 @@ const MUTED = "#9AA8BF";
 
 export function renderPage(snapshot, env, { local = false } = {}) {
   const points = combinedPoints(snapshot);
-  const chart = svgChart(points);
+  const chart = svgChart(points, snapshot?.source === "demo");
   const fetched = snapshot?.fetchedAt
     ? new Date(snapshot.fetchedAt).toLocaleString()
     : "never";
@@ -150,7 +150,7 @@ function previewJson(snapshot) {
   return JSON.stringify(copy, null, 2);
 }
 
-function svgChart(points) {
+function svgChart(points, dotted = false) {
   const w = 880;
   const h = 220;
   const padL = 36;
@@ -189,12 +189,16 @@ function svgChart(points) {
     .join("");
 
   const nx = xOf(now);
+  const mark = dotted
+    ? `<text x="${w / 2}" y="${h / 2}" fill="${INK}" fill-opacity="0.22" font-size="52" font-weight="700" text-anchor="middle" transform="rotate(-22 ${w / 2} ${h / 2})">DEMO DATA</text>`
+    : "";
   return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Power chart">
     <rect width="${w}" height="${h}" fill="${PANEL_ALT}" rx="8" />
     ${ticks}
-    <path d="${path(live)}" fill="none" stroke="${LIVE}" stroke-width="2.2" />
-    <path d="${path(forecast)}" fill="none" stroke="${FORECAST}" stroke-width="2.2" />
+    <path d="${path(live)}" fill="none" stroke="${LIVE}" stroke-width="2.2" stroke-linecap="round" ${dotted ? 'stroke-dasharray="4 7"' : ""} />
+    <path d="${path(forecast)}" fill="none" stroke="${FORECAST}" stroke-width="2.2" stroke-linecap="round" ${dotted ? 'stroke-dasharray="4 7"' : ""} />
     <line x1="${nx}" x2="${nx}" y1="${padT}" y2="${h - padB}" stroke="${NOW}" stroke-width="1.5" />
+    ${mark}
   </svg>`;
 }
 

@@ -3,6 +3,7 @@ package com.brian.solwidget.ui.components
 import android.graphics.Bitmap
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.LinearGradient
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
@@ -15,6 +16,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path as ComposePath
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
@@ -53,7 +55,8 @@ fun PowerChart(
     weather: List<WeatherPoint> = emptyList(),
     rangeFrom: Instant? = null,
     rangeTo: Instant? = null,
-    layers: ChartLayers = ChartLayers()
+    layers: ChartLayers = ChartLayers(),
+    isDemo: Boolean = false
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
         if (points.size < 2 && weather.size < 2) return@Canvas
@@ -155,8 +158,8 @@ fun PowerChart(
         if (layers.solcast) {
             val live = points.filter { it.kind == SeriesKind.LIVE }
             val forecast = points.filter { it.kind == SeriesKind.FORECAST }
-            drawSeries(live, ::xOf, ::yOf, SolColors.Live)
-            drawSeries(forecast, ::xOf, ::yOf, SolColors.Forecast)
+            drawSeries(live, ::xOf, ::yOf, SolColors.Live, dotted = isDemo)
+            drawSeries(forecast, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo)
         }
 
         if (layers.temperature && weather.size >= 2) {
@@ -194,14 +197,43 @@ fun PowerChart(
             }
             day = day.plusDays(1)
         }
+
+        if (isDemo) {
+            drawDemoWatermark(native, left, top, right, bottom)
+        }
     }
+}
+
+private fun drawDemoWatermark(
+    canvas: AndroidCanvas,
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float
+) {
+    val cx = (left + right) / 2f
+    val cy = (top + bottom) / 2f
+    val width = (right - left).coerceAtLeast(1f)
+    val paint = Paint().apply {
+        color = 0xFFE8EEF7.toInt()
+        alpha = 58
+        textSize = (width * 0.16f).coerceIn(40f, 92f)
+        isFakeBoldText = true
+        isAntiAlias = true
+        textAlign = Paint.Align.CENTER
+    }
+    canvas.save()
+    canvas.rotate(-22f, cx, cy)
+    canvas.drawText("DEMO DATA", cx, cy + paint.textSize * 0.35f, paint)
+    canvas.restore()
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
     series: List<PowerPoint>,
     xOf: (Instant) -> Float,
     yOf: (Double) -> Float,
-    color: Color
+    color: Color,
+    dotted: Boolean = false
 ) {
     if (series.size < 2) return
     val line = ComposePath()
@@ -220,16 +252,27 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
     }
     fill.lineTo(xOf(series.last().periodEnd), yOf(0.0))
     fill.close()
-    drawPath(
-        path = fill,
-        brush = Brush.verticalGradient(
-            colors = listOf(color.copy(alpha = 0.35f), color.copy(alpha = 0.02f))
+    if (!dotted) {
+        drawPath(
+            path = fill,
+            brush = Brush.verticalGradient(
+                colors = listOf(color.copy(alpha = 0.35f), color.copy(alpha = 0.02f))
+            )
         )
-    )
+    }
+    val strokeW = 3.dp.toPx()
     drawPath(
         path = line,
         color = color,
-        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+        style = Stroke(
+            width = strokeW,
+            cap = StrokeCap.Round,
+            pathEffect = if (dotted) {
+                PathEffect.dashPathEffect(floatArrayOf(strokeW, strokeW * 1.8f), 0f)
+            } else {
+                null
+            }
+        )
     )
 }
 
@@ -300,7 +343,8 @@ object ChartBitmapRenderer {
         rangeFrom: Instant? = null,
         rangeTo: Instant? = null,
         weather: List<WeatherPoint> = emptyList(),
-        layers: ChartLayers = ChartLayers()
+        layers: ChartLayers = ChartLayers(),
+        isDemo: Boolean = false
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(width.coerceAtLeast(8), height.coerceAtLeast(8), Bitmap.Config.ARGB_8888)
         if (points.size < 2 && weather.size < 2) return bitmap
@@ -415,8 +459,24 @@ object ChartBitmapRenderer {
         }
 
         if (layers.solcast) {
-            drawAndroidSeries(canvas, points.filter { it.kind == SeriesKind.LIVE }, ::xOf, ::yOf, 0xFF2EE6A6.toInt(), bottom)
-            drawAndroidSeries(canvas, points.filter { it.kind == SeriesKind.FORECAST }, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom)
+            drawAndroidSeries(
+                canvas,
+                points.filter { it.kind == SeriesKind.LIVE },
+                ::xOf,
+                ::yOf,
+                0xFF2EE6A6.toInt(),
+                bottom,
+                dotted = isDemo
+            )
+            drawAndroidSeries(
+                canvas,
+                points.filter { it.kind == SeriesKind.FORECAST },
+                ::xOf,
+                ::yOf,
+                0xFFF5C542.toInt(),
+                bottom,
+                dotted = isDemo
+            )
         }
 
         if (layers.temperature && weather.size >= 2) {
@@ -430,6 +490,9 @@ object ChartBitmapRenderer {
         }
         val nowX = xOf(now).coerceIn(left, right)
         canvas.drawLine(nowX, top, nowX, bottom, nowPaint)
+        if (isDemo) {
+            drawDemoWatermark(canvas, left, top, right, bottom)
+        }
         return bitmap
     }
 
@@ -439,7 +502,8 @@ object ChartBitmapRenderer {
         xOf: (Instant) -> Float,
         yOf: (Double) -> Float,
         color: Int,
-        baseline: Float
+        baseline: Float,
+        dotted: Boolean = false
     ) {
         if (series.size < 2) return
         val linePath = Path()
@@ -459,15 +523,18 @@ object ChartBitmapRenderer {
         fillPath.lineTo(xOf(series.last().periodEnd), baseline)
         fillPath.close()
 
-        val fillPaint = Paint().apply {
-            isAntiAlias = true
-            style = Paint.Style.FILL
-            shader = LinearGradient(
-                0f, 0f, 0f, baseline,
-                color and 0x00FFFFFF or 0x59000000,
-                color and 0x00FFFFFF,
-                Shader.TileMode.CLAMP
-            )
+        if (!dotted) {
+            val fillPaint = Paint().apply {
+                isAntiAlias = true
+                style = Paint.Style.FILL
+                shader = LinearGradient(
+                    0f, 0f, 0f, baseline,
+                    color and 0x00FFFFFF or 0x59000000,
+                    color and 0x00FFFFFF,
+                    Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawPath(fillPath, fillPaint)
         }
         val linePaint = Paint().apply {
             isAntiAlias = true
@@ -476,8 +543,10 @@ object ChartBitmapRenderer {
             this.color = color
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
+            if (dotted) {
+                pathEffect = DashPathEffect(floatArrayOf(3.5f, 7f), 0f)
+            }
         }
-        canvas.drawPath(fillPath, fillPaint)
         canvas.drawPath(linePath, linePaint)
     }
 
