@@ -304,8 +304,8 @@ private fun LayerMetaPanel(
                 LegendKeys(
                     type,
                     "– Temp °F" to SolColors.Temp,
-                    "– Below freeze" to SolColors.TempFreeze,
-                    "– Above 90°F" to SolColors.TempHot
+                    "– Glow below freeze" to SolColors.TempFreeze,
+                    "– Glow above 90°F" to SolColors.TempHot
                 )
             }
         }

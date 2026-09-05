@@ -48,6 +48,10 @@ private const val NIGHT_STROKE_DP = 0.9f
 private const val NIGHT_ALPHA = 0.7f
 private const val NIGHT_DASH_ON_DP = 9f
 private const val NIGHT_DASH_OFF_DP = 7f
+private const val GLOW_INNER_DP = 5f
+private const val GLOW_OUTER_DP = 9f
+private const val GLOW_INNER_ALPHA = 0.5f
+private const val GLOW_OUTER_ALPHA = 0.2f
 private const val BITMAP_PX_PER_DP = 2.75f
 
 private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP }
@@ -357,24 +361,37 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
 private const val FREEZE_F = 32.0
 private const val HOT_F = 90.0
 
-private fun tempBandColor(tempF: Double, night: Boolean = false): Color {
-    val color = when {
-        tempF < FREEZE_F -> SolColors.TempFreeze
-        tempF > HOT_F -> SolColors.TempHot
-        else -> SolColors.Temp
-    }
-    return if (night) color.copy(alpha = NIGHT_ALPHA) else color
+private enum class TempGlow { NONE, FREEZE, HOT }
+
+private fun tempGlow(tempF: Double): TempGlow = when {
+    tempF < FREEZE_F -> TempGlow.FREEZE
+    tempF > HOT_F -> TempGlow.HOT
+    else -> TempGlow.NONE
 }
 
-private fun tempBandArgb(tempF: Double, night: Boolean = false): Int {
-    val color = when {
-        tempF < FREEZE_F -> 0xFF64B5F6.toInt()
-        tempF > HOT_F -> 0xFFFF8A4C.toInt()
-        else -> 0xFFFFFFFF.toInt()
+private fun glowColor(kind: TempGlow): Color = when (kind) {
+    TempGlow.FREEZE -> SolColors.TempFreeze
+    TempGlow.HOT -> SolColors.TempHot
+    TempGlow.NONE -> Color.Transparent
+}
+
+private fun glowArgb(kind: TempGlow, alpha: Float): Int {
+    val rgb = when (kind) {
+        TempGlow.FREEZE -> 0x0064B5F6
+        TempGlow.HOT -> 0x00FF8A4C
+        TempGlow.NONE -> 0
     }
-    if (!night) return color
-    val alpha = (0xFF * NIGHT_ALPHA).toInt().coerceIn(0, 0xFF)
-    return (color and 0x00FFFFFF) or (alpha shl 24)
+    val a = (0xFF * alpha).toInt().coerceIn(0, 0xFF)
+    return rgb or (a shl 24)
+}
+
+private fun coreTempColor(night: Boolean): Color =
+    if (night) SolColors.Temp.copy(alpha = NIGHT_ALPHA) else SolColors.Temp
+
+private fun coreTempArgb(night: Boolean): Int {
+    if (!night) return 0xFFFFFFFF.toInt()
+    val a = (0xFF * NIGHT_ALPHA).toInt().coerceIn(0, 0xFF)
+    return 0x00FFFFFF or (a shl 24)
 }
 
 private fun tempSplitTs(t0: Double, t1: Double): List<Float> {
@@ -397,6 +414,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
 ) {
     val dayStroke = TEMP_STROKE_DP.dp.toPx()
     val nightStroke = NIGHT_STROKE_DP.dp.toPx()
+    val glowInner = GLOW_INNER_DP.dp.toPx()
+    val glowOuter = GLOW_OUTER_DP.dp.toPx()
     val nightDash = PathEffect.dashPathEffect(
         floatArrayOf(NIGHT_DASH_ON_DP.dp.toPx(), NIGHT_DASH_OFF_DP.dp.toPx()),
         0f
@@ -419,13 +438,37 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
             val midMillis = a.time.toEpochMilli() +
                 ((b.time.toEpochMilli() - a.time.toEpochMilli()) * midT).toLong()
             val night = isNight(Instant.ofEpochMilli(midMillis), sunDays)
+            val start = Offset(x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0)
+            val end = Offset(x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1)
+            val dash = if (night) nightDash else null
+            val nightScale = if (night) NIGHT_ALPHA else 1f
+            val glow = tempGlow(midTemp)
+            if (glow != TempGlow.NONE) {
+                val tint = glowColor(glow)
+                drawLine(
+                    color = tint.copy(alpha = GLOW_OUTER_ALPHA * nightScale),
+                    start = start,
+                    end = end,
+                    strokeWidth = glowOuter,
+                    cap = StrokeCap.Round,
+                    pathEffect = dash
+                )
+                drawLine(
+                    color = tint.copy(alpha = GLOW_INNER_ALPHA * nightScale),
+                    start = start,
+                    end = end,
+                    strokeWidth = glowInner,
+                    cap = StrokeCap.Round,
+                    pathEffect = dash
+                )
+            }
             drawLine(
-                color = tempBandColor(midTemp, night),
-                start = Offset(x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0),
-                end = Offset(x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1),
+                color = coreTempColor(night),
+                start = start,
+                end = end,
                 strokeWidth = if (night) nightStroke else dayStroke,
                 cap = if (night) StrokeCap.Butt else StrokeCap.Round,
-                pathEffect = if (night) nightDash else null
+                pathEffect = dash
             )
         }
     }
@@ -683,10 +726,13 @@ object ChartBitmapRenderer {
     ) {
         val dayStroke = TEMP_STROKE_DP * BITMAP_PX_PER_DP
         val nightStroke = NIGHT_STROKE_DP * BITMAP_PX_PER_DP
+        val glowInner = GLOW_INNER_DP * BITMAP_PX_PER_DP
+        val glowOuter = GLOW_OUTER_DP * BITMAP_PX_PER_DP
         val paint = Paint().apply {
             strokeWidth = dayStroke
             isAntiAlias = true
             strokeCap = Paint.Cap.ROUND
+            style = Paint.Style.STROKE
         }
         val nightDash = DashPathEffect(
             floatArrayOf(NIGHT_DASH_ON_DP * BITMAP_PX_PER_DP, NIGHT_DASH_OFF_DP * BITMAP_PX_PER_DP),
@@ -710,17 +756,28 @@ object ChartBitmapRenderer {
                 val midMillis = a.time.toEpochMilli() +
                     ((b.time.toEpochMilli() - a.time.toEpochMilli()) * midT).toLong()
                 val night = isNight(Instant.ofEpochMilli(midMillis), sunDays)
-                paint.color = tempBandArgb(midTemp, night)
+                val xStart = x1 + (x2 - x1) * t0
+                val yStart = y1 + (y2 - y1) * t0
+                val xEnd = x1 + (x2 - x1) * t1
+                val yEnd = y1 + (y2 - y1) * t1
+                val dash = if (night) nightDash else null
+                val nightScale = if (night) NIGHT_ALPHA else 1f
+                val glow = tempGlow(midTemp)
+                if (glow != TempGlow.NONE) {
+                    paint.pathEffect = dash
+                    paint.strokeCap = Paint.Cap.ROUND
+                    paint.color = glowArgb(glow, GLOW_OUTER_ALPHA * nightScale)
+                    paint.strokeWidth = glowOuter
+                    canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
+                    paint.color = glowArgb(glow, GLOW_INNER_ALPHA * nightScale)
+                    paint.strokeWidth = glowInner
+                    canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
+                }
+                paint.color = coreTempArgb(night)
                 paint.strokeWidth = if (night) nightStroke else dayStroke
                 paint.strokeCap = if (night) Paint.Cap.BUTT else Paint.Cap.ROUND
-                paint.pathEffect = if (night) nightDash else null
-                canvas.drawLine(
-                    x1 + (x2 - x1) * t0,
-                    y1 + (y2 - y1) * t0,
-                    x1 + (x2 - x1) * t1,
-                    y1 + (y2 - y1) * t1,
-                    paint
-                )
+                paint.pathEffect = dash
+                canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
             }
         }
     }
