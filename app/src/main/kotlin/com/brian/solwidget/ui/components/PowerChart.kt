@@ -44,8 +44,7 @@ import kotlin.math.max
 private val DayLabel = DateTimeFormatter.ofPattern("EEE d")
 
 private const val TEMP_STROKE_DP = 1.6f
-private const val NIGHT_STROKE_DP = 0.9f
-private const val NIGHT_ALPHA = 0.7f
+private const val NIGHT_ALPHA = 0.3f
 private const val NIGHT_DASH_ON_DP = 9f
 private const val NIGHT_DASH_OFF_DP = 7f
 private const val GLOW_INNER_DP = 5f
@@ -412,8 +411,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     yOfTemp: (Double) -> Float,
     sunDays: List<SunTimes>
 ) {
-    val dayStroke = TEMP_STROKE_DP.dp.toPx()
-    val nightStroke = NIGHT_STROKE_DP.dp.toPx()
+    val stroke = TEMP_STROKE_DP.dp.toPx()
     val glowInner = GLOW_INNER_DP.dp.toPx()
     val glowOuter = GLOW_OUTER_DP.dp.toPx()
     val nightDash = PathEffect.dashPathEffect(
@@ -466,7 +464,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
                 color = coreTempColor(night),
                 start = start,
                 end = end,
-                strokeWidth = if (night) nightStroke else dayStroke,
+                strokeWidth = stroke,
                 cap = if (night) StrokeCap.Butt else StrokeCap.Round,
                 pathEffect = dash
             )
@@ -724,12 +722,11 @@ object ChartBitmapRenderer {
         yOfTemp: (Double) -> Float,
         sunDays: List<SunTimes>
     ) {
-        val dayStroke = TEMP_STROKE_DP * BITMAP_PX_PER_DP
-        val nightStroke = NIGHT_STROKE_DP * BITMAP_PX_PER_DP
+        val stroke = TEMP_STROKE_DP * BITMAP_PX_PER_DP
         val glowInner = GLOW_INNER_DP * BITMAP_PX_PER_DP
         val glowOuter = GLOW_OUTER_DP * BITMAP_PX_PER_DP
         val paint = Paint().apply {
-            strokeWidth = dayStroke
+            strokeWidth = stroke
             isAntiAlias = true
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
@@ -774,7 +771,7 @@ object ChartBitmapRenderer {
                     canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
                 }
                 paint.color = coreTempArgb(night)
-                paint.strokeWidth = if (night) nightStroke else dayStroke
+                paint.strokeWidth = stroke
                 paint.strokeCap = if (night) Paint.Cap.BUTT else Paint.Cap.ROUND
                 paint.pathEffect = dash
                 canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
