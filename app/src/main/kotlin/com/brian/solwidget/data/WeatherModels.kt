@@ -11,6 +11,34 @@ data class WeatherPoint(
     val popPercent: Double?
 )
 
+data class SunTimes(
+    val date: LocalDate,
+    val sunrise: Instant,
+    val sunset: Instant
+)
+
+fun isNight(time: Instant, sunDays: List<SunTimes>): Boolean {
+    if (sunDays.isEmpty()) return false
+    val ordered = sunDays.sortedBy { it.sunrise }
+    if (time.isBefore(ordered.first().sunrise)) return true
+    for (i in ordered.indices) {
+        val day = ordered[i]
+        if (!time.isBefore(day.sunrise) && time.isBefore(day.sunset)) return false
+        val nextRise = ordered.getOrNull(i + 1)?.sunrise
+        if (!time.isBefore(day.sunset) && (nextRise == null || time.isBefore(nextRise))) return true
+    }
+    return true
+}
+
+fun sunEventFractions(from: Instant, to: Instant, sunDays: List<SunTimes>): List<Float> {
+    val span = (to.toEpochMilli() - from.toEpochMilli()).toDouble()
+    if (span <= 0.0 || sunDays.isEmpty()) return emptyList()
+    return sunDays.flatMap { listOf(it.sunrise, it.sunset) }.mapNotNull { event ->
+        val t = ((event.toEpochMilli() - from.toEpochMilli()) / span).toFloat()
+        t.takeIf { it > 0f && it < 1f }
+    }
+}
+
 data class DayTempRange(
     val date: LocalDate,
     val lowF: Int,
@@ -40,7 +68,8 @@ data class WeatherSnapshot(
     val place: GeoPlace?,
     val points: List<WeatherPoint>,
     val fetchedAt: Instant?,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val sunDays: List<SunTimes> = emptyList()
 ) {
     fun current(now: Instant = Instant.now()): WeatherPoint? {
         if (points.isEmpty()) return null

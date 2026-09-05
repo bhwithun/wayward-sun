@@ -40,6 +40,7 @@ import com.brian.solwidget.data.AppStorage
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.ForecastRepository
 import com.brian.solwidget.data.ForecastSnapshot
+import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.data.WeatherRepository
 import com.brian.solwidget.ui.components.ChartBitmapRenderer
@@ -68,6 +69,7 @@ class ForecastWidget : GlanceAppWidget() {
                 WidgetContent(
                     snapshot = snapshot,
                     weather = weatherPoints,
+                    sunDays = weather.sunDays,
                     layers = glanceLayers,
                     openApp = openApp
                 )
@@ -80,14 +82,16 @@ class ForecastWidget : GlanceAppWidget() {
 private fun WidgetContent(
     snapshot: ForecastSnapshot,
     weather: List<WeatherPoint>,
+    sunDays: List<SunTimes>,
     layers: ChartLayers,
     openApp: Action
 ) {
     val now = Instant.now()
     val zone = ZoneId.systemDefault()
     val size = LocalSize.current
-    val headerAndPadding = 46.dp
-    val chartHeightDp = (size.height - headerAndPadding).coerceAtLeast(72.dp)
+    val chrome = 28.dp
+    val demoReserve = if (snapshot.isDemo) 22.dp else 0.dp
+    val chartHeightDp = (size.height - chrome - demoReserve).coerceAtLeast(72.dp)
     val chartWidth = (size.width.value * 2.75f).toInt().coerceIn(240, 1000)
     val chartHeightPx = (chartHeightDp.value * 2.75f).toInt().coerceIn(140, 640)
     val (from, to) = ForecastSnapshot.range(now, zone)
@@ -101,6 +105,7 @@ private fun WidgetContent(
         rangeTo = to,
         weather = weather,
         layers = layers,
+        sunDays = sunDays,
         isDemo = snapshot.isDemo
     )
 
@@ -114,14 +119,9 @@ private fun WidgetContent(
             .clickable(openApp)
             .padding(14.dp)
     ) {
-        Text(
-            "Wayward Sun",
-            style = TextStyle(color = muted, fontSize = 12.sp)
-        )
-        Spacer(GlanceModifier.height(6.dp))
         Image(
             provider = ImageProvider(chart),
-            contentDescription = "Wayward Sun live and forecast power",
+            contentDescription = "Live and forecast power",
             contentScale = ContentScale.FillBounds,
             modifier = GlanceModifier.fillMaxWidth().height(chartHeightDp)
         )

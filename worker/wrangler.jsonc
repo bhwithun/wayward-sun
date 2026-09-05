@@ -12,6 +12,7 @@
     { "binding": "CACHE" }
   ],
   "triggers": {
-    "crons": ["0 0,5,10,15,20 * * *"]
+    // Empty array removes previously deployed cron triggers.
+    "crons": []
   }
 }

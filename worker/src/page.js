@@ -72,8 +72,8 @@ export function renderPage(snapshot, env, { local = false } = {}) {
     <h1>Shared Solcast cache</h1>
     <p>${where}</p>
     <div class="banner">
-      Automatic pulls are capped at 5 per UTC day (about every 5 hours) and 10 Solcast HTTP requests.
-      The dashboard Refresh button uses those same rules — it cannot bypass them, so a public URL cannot burn extra quota.
+      Solcast is pulled only when a phone (or this page) asks for the cache and the snapshot is older than 4 hours.
+      At most 5 pulls per UTC day (10 Solcast HTTP requests). There is no cron and no force-refresh.
     </div>
     <div class="grid">
       <div class="card">
@@ -107,7 +107,7 @@ export function renderPage(snapshot, env, { local = false } = {}) {
       <pre id="json">${escapeHtml(previewJson(snapshot))}</pre>
     </div>
     <p class="muted" style="margin-top:18px">
-      Public API: <code>GET /cache</code>, <code>POST /refresh</code> (auto rules only).
+      Public API: <code>GET /cache</code>, <code>POST /refresh</code> (pull only if the snapshot is older than 4 hours).
       No shared password. Solcast credentials stay on the Worker.
     </p>
   </main>

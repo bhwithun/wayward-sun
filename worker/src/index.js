@@ -1,9 +1,10 @@
 /**
  * Shared Solcast cache. This Worker is the only Solcast client.
  *
- * GET  /cache     → latest forecasts + estimated actuals (public, for phones)
- * POST /refresh   → try an automatic Solcast pull (~5h / 5 per UTC day)
- * Cron 00/05/10/15/20 UTC → same automatic pull
+ * GET  /cache     → phones download this; Solcast is pulled only if the snapshot
+ *                   is older than 4 hours (and under the daily auto/HTTP caps)
+ * POST /refresh   → same on-demand rules (dashboard button)
+ * No cron. Solcast is never called on a timer.
  *
  * SOLCAST_API_KEY is a Wrangler secret. Phones never see it and never call Solcast.
  */
@@ -43,26 +44,17 @@ export default {
       }
 
       if (url.pathname === "/cache" && request.method === "GET") {
-        let snapshot = await loadSnapshot(env);
-        if (!snapshot) {
-          snapshot = await refresh(env, { auto: true });
-        }
-        return json(publicCache(snapshot));
+        return json(publicCache(await serveCache(env)));
       }
 
       if (url.pathname === "/refresh" && request.method === "POST") {
-        const snapshot = await refresh(env, { auto: true });
-        return json(publicCache(snapshot));
+        return json(publicCache(await serveCache(env)));
       }
 
       return json({ error: "Not found" }, 404);
     } catch (error) {
       return json({ error: error.message || String(error) }, 500);
     }
-  },
-
-  async scheduled(_event, env) {
-    await refresh(env, { auto: true });
   },
 };
 
@@ -100,14 +92,37 @@ function publicCache(snapshot) {
   };
 }
 
-async function refresh(env, { auto }) {
+function snapshotAgeMs(snapshot, now) {
+  const fetchedAt = snapshot?.fetchedAt ? Date.parse(snapshot.fetchedAt) : 0;
+  return fetchedAt ? now.getTime() - fetchedAt : Number.POSITIVE_INFINITY;
+}
+
+function isFresh(snapshot, now) {
+  return Boolean(snapshot) && snapshotAgeMs(snapshot, now) < MIN_AUTO_AGE_MS;
+}
+
+async function serveCache(env) {
+  const existing = await loadSnapshot(env);
+  if (isFresh(existing, new Date())) {
+    return existing;
+  }
+  try {
+    return await refresh(env, { auto: true, existing });
+  } catch (error) {
+    if (existing) {
+      return { ...existing, message: error.message || String(error) };
+    }
+    throw error;
+  }
+}
+
+async function refresh(env, { auto, existing: loaded }) {
   const now = new Date();
   const day = utcDay(now);
-  const existing = await loadSnapshot(env);
+  const existing = loaded !== undefined ? loaded : await loadSnapshot(env);
   const used = existing && existing.requestsDay === day ? existing.requestsUsed : 0;
   const autoUsed = existing && existing.requestsDay === day ? existing.autoFetchesUsed : 0;
-  const fetchedAt = existing?.fetchedAt ? Date.parse(existing.fetchedAt) : 0;
-  const ageMs = fetchedAt ? now.getTime() - fetchedAt : Number.POSITIVE_INFINITY;
+  const ageMs = snapshotAgeMs(existing, now);
 
   if (existing && ageMs < MIN_AUTO_AGE_MS) {
     return {
@@ -161,7 +176,7 @@ async function refresh(env, { auto }) {
     requestsDay: day,
     requestsUsed: used + REQUESTS_PER_REFRESH,
     autoFetchesUsed: autoUsed + (auto ? 1 : 0),
-    message: "Automatic Solcast pull.",
+    message: "On-demand Solcast pull.",
   };
   await saveSnapshot(env, snapshot);
   return snapshot;

@@ -42,7 +42,7 @@ class CacheApi {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 20_000
-            readTimeout = 20_000
+            readTimeout = 45_000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "SolWidget/1.0 (Android)")
         }

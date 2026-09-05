@@ -43,13 +43,22 @@ class WeatherRepository private constructor(context: Context) {
         val place = GeoPlace(query, label, lat, lng)
         val last = storage.weatherFetchAt().takeIf { it > 0L }?.let { Instant.ofEpochMilli(it) }
         if (!force && last != null && Duration.between(last, Instant.now()) < MIN_AGE) {
-            return@withLock snapshotFromCache()
+            val cached = storage.cachedWeather()
+            if (cached != null && sunDays(cached).isNotEmpty()) {
+                return@withLock snapshotFromCache()
+            }
         }
         withContext(Dispatchers.IO) {
             try {
                 val (json, points) = api.fetchHourly(lat, lng)
                 storage.saveWeatherCache(json, Instant.now().toEpochMilli())
-                WeatherSnapshot(place, points, Instant.now(), errorMessage = null)
+                WeatherSnapshot(
+                    place,
+                    points,
+                    Instant.now(),
+                    errorMessage = null,
+                    sunDays = sunDays(json)
+                )
             } catch (error: Exception) {
                 snapshotFromCache().copy(
                     errorMessage = error.message ?: "Unable to load weather."
@@ -69,14 +78,24 @@ class WeatherRepository private constructor(context: Context) {
             null
         }
         val fetched = storage.weatherFetchAt().takeIf { it > 0L }?.let { Instant.ofEpochMilli(it) }
-        val points = storage.cachedWeather()?.let { api.parseHourly(it) }.orEmpty()
+        val json = storage.cachedWeather()
+        val points = json?.let { api.parseHourly(it) }.orEmpty()
         val missing = if (place == null) {
             "Set a city or ZIP in Settings to load local weather."
         } else {
             null
         }
-        return WeatherSnapshot(place, points, fetched, errorMessage = missing)
+        return WeatherSnapshot(
+            place,
+            points,
+            fetched,
+            errorMessage = missing,
+            sunDays = sunDays(json)
+        )
     }
+
+    private fun sunDays(json: String?): List<SunTimes> =
+        json?.let { api.parseDailySun(it) }.orEmpty()
 
     companion object {
         val MIN_AGE: Duration = Duration.ofHours(1)

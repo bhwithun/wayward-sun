@@ -29,8 +29,11 @@ import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.SolarDayLabels
+import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.data.dayTempRanges
+import com.brian.solwidget.data.isNight
+import com.brian.solwidget.data.sunEventFractions
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
 import java.time.Instant
@@ -39,6 +42,13 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
 private val DayLabel = DateTimeFormatter.ofPattern("EEE d")
+
+private const val TEMP_STROKE_DP = 1.6f
+private const val NIGHT_STROKE_DP = 0.9f
+private const val NIGHT_ALPHA = 0.7f
+private const val NIGHT_DASH_ON_DP = 9f
+private const val NIGHT_DASH_OFF_DP = 7f
+private const val BITMAP_PX_PER_DP = 2.75f
 
 private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP }
 
@@ -61,6 +71,7 @@ fun PowerChart(
     rangeFrom: Instant? = null,
     rangeTo: Instant? = null,
     layers: ChartLayers = ChartLayers(),
+    sunDays: List<SunTimes> = emptyList(),
     isDemo: Boolean = false
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
@@ -174,7 +185,7 @@ fun PowerChart(
         }
 
         if (layers.temperature && weather.size >= 2) {
-            drawTempLine(weather, ::xOf, ::yOfTemp)
+            drawTempLine(weather, ::xOf, ::yOfTemp, sunDays)
         }
 
         val nowX = xOf(now).coerceIn(left, right)
@@ -346,16 +357,24 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
 private const val FREEZE_F = 32.0
 private const val HOT_F = 90.0
 
-private fun tempBandColor(tempF: Double): Color = when {
-    tempF < FREEZE_F -> SolColors.TempFreeze
-    tempF > HOT_F -> SolColors.TempHot
-    else -> SolColors.Temp
+private fun tempBandColor(tempF: Double, night: Boolean = false): Color {
+    val color = when {
+        tempF < FREEZE_F -> SolColors.TempFreeze
+        tempF > HOT_F -> SolColors.TempHot
+        else -> SolColors.Temp
+    }
+    return if (night) color.copy(alpha = NIGHT_ALPHA) else color
 }
 
-private fun tempBandArgb(tempF: Double): Int = when {
-    tempF < FREEZE_F -> 0xFF64B5F6.toInt()
-    tempF > HOT_F -> 0xFFFF8A4C.toInt()
-    else -> 0xFFFFFFFF.toInt()
+private fun tempBandArgb(tempF: Double, night: Boolean = false): Int {
+    val color = when {
+        tempF < FREEZE_F -> 0xFF64B5F6.toInt()
+        tempF > HOT_F -> 0xFFFF8A4C.toInt()
+        else -> 0xFFFFFFFF.toInt()
+    }
+    if (!night) return color
+    val alpha = (0xFF * NIGHT_ALPHA).toInt().coerceIn(0, 0xFF)
+    return (color and 0x00FFFFFF) or (alpha shl 24)
 }
 
 private fun tempSplitTs(t0: Double, t1: Double): List<Float> {
@@ -373,9 +392,15 @@ private fun tempSplitTs(t0: Double, t1: Double): List<Float> {
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     weather: List<WeatherPoint>,
     xOf: (Instant) -> Float,
-    yOfTemp: (Double) -> Float
+    yOfTemp: (Double) -> Float,
+    sunDays: List<SunTimes>
 ) {
-    val strokeW = 0.7.dp.toPx()
+    val dayStroke = TEMP_STROKE_DP.dp.toPx()
+    val nightStroke = NIGHT_STROKE_DP.dp.toPx()
+    val nightDash = PathEffect.dashPathEffect(
+        floatArrayOf(NIGHT_DASH_ON_DP.dp.toPx(), NIGHT_DASH_OFF_DP.dp.toPx()),
+        0f
+    )
     for (i in 0 until weather.lastIndex) {
         val a = weather[i]
         val b = weather[i + 1]
@@ -383,18 +408,24 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
         val y1 = yOfTemp(a.tempF)
         val x2 = xOf(b.time)
         val y2 = yOfTemp(b.tempF)
-        val splits = tempSplitTs(a.tempF, b.tempF)
+        val splits = (tempSplitTs(a.tempF, b.tempF) + sunEventFractions(a.time, b.time, sunDays))
+            .distinct()
+            .sorted()
         for (s in 0 until splits.lastIndex) {
             val t0 = splits[s]
             val t1 = splits[s + 1]
             val midT = (t0 + t1) / 2f
             val midTemp = a.tempF + (b.tempF - a.tempF) * midT
+            val midMillis = a.time.toEpochMilli() +
+                ((b.time.toEpochMilli() - a.time.toEpochMilli()) * midT).toLong()
+            val night = isNight(Instant.ofEpochMilli(midMillis), sunDays)
             drawLine(
-                color = tempBandColor(midTemp),
+                color = tempBandColor(midTemp, night),
                 start = Offset(x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0),
                 end = Offset(x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1),
-                strokeWidth = strokeW,
-                cap = StrokeCap.Round
+                strokeWidth = if (night) nightStroke else dayStroke,
+                cap = if (night) StrokeCap.Butt else StrokeCap.Round,
+                pathEffect = if (night) nightDash else null
             )
         }
     }
@@ -411,6 +442,7 @@ object ChartBitmapRenderer {
         rangeTo: Instant? = null,
         weather: List<WeatherPoint> = emptyList(),
         layers: ChartLayers = ChartLayers(),
+        sunDays: List<SunTimes> = emptyList(),
         isDemo: Boolean = false
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(width.coerceAtLeast(8), height.coerceAtLeast(8), Bitmap.Config.ARGB_8888)
@@ -572,7 +604,7 @@ object ChartBitmapRenderer {
         }
 
         if (layers.temperature && weather.size >= 2) {
-            drawAndroidTempLine(canvas, weather, ::xOf, ::yOfTemp)
+            drawAndroidTempLine(canvas, weather, ::xOf, ::yOfTemp, sunDays)
         }
 
         val nowPaint = Paint().apply {
@@ -646,13 +678,20 @@ object ChartBitmapRenderer {
         canvas: AndroidCanvas,
         weather: List<WeatherPoint>,
         xOf: (Instant) -> Float,
-        yOfTemp: (Double) -> Float
+        yOfTemp: (Double) -> Float,
+        sunDays: List<SunTimes>
     ) {
+        val dayStroke = TEMP_STROKE_DP * BITMAP_PX_PER_DP
+        val nightStroke = NIGHT_STROKE_DP * BITMAP_PX_PER_DP
         val paint = Paint().apply {
-            strokeWidth = 2f
+            strokeWidth = dayStroke
             isAntiAlias = true
             strokeCap = Paint.Cap.ROUND
         }
+        val nightDash = DashPathEffect(
+            floatArrayOf(NIGHT_DASH_ON_DP * BITMAP_PX_PER_DP, NIGHT_DASH_OFF_DP * BITMAP_PX_PER_DP),
+            0f
+        )
         for (i in 0 until weather.lastIndex) {
             val a = weather[i]
             val b = weather[i + 1]
@@ -660,12 +699,21 @@ object ChartBitmapRenderer {
             val y1 = yOfTemp(a.tempF)
             val x2 = xOf(b.time)
             val y2 = yOfTemp(b.tempF)
-            val splits = tempSplitTs(a.tempF, b.tempF)
+            val splits = (tempSplitTs(a.tempF, b.tempF) + sunEventFractions(a.time, b.time, sunDays))
+                .distinct()
+                .sorted()
             for (s in 0 until splits.lastIndex) {
                 val t0 = splits[s]
                 val t1 = splits[s + 1]
-                val midTemp = a.tempF + (b.tempF - a.tempF) * ((t0 + t1) / 2f)
-                paint.color = tempBandArgb(midTemp)
+                val midT = (t0 + t1) / 2f
+                val midTemp = a.tempF + (b.tempF - a.tempF) * midT
+                val midMillis = a.time.toEpochMilli() +
+                    ((b.time.toEpochMilli() - a.time.toEpochMilli()) * midT).toLong()
+                val night = isNight(Instant.ofEpochMilli(midMillis), sunDays)
+                paint.color = tempBandArgb(midTemp, night)
+                paint.strokeWidth = if (night) nightStroke else dayStroke
+                paint.strokeCap = if (night) Paint.Cap.BUTT else Paint.Cap.ROUND
+                paint.pathEffect = if (night) nightDash else null
                 canvas.drawLine(
                     x1 + (x2 - x1) * t0,
                     y1 + (y2 - y1) * t0,

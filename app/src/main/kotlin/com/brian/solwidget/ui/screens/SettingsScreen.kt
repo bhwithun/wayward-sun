@@ -103,8 +103,8 @@ fun SettingsScreen(
             }
             Text(
                 "Hobbyist Solcast accounts allow 10 requests per UTC day. " +
-                    "The Worker pulls at most 5 times per day (about every 5 hours). " +
-                    "Refresh in this app only re-downloads the shared cache.",
+                    "The Worker calls Solcast when this app downloads the cache and that snapshot is older than 4 hours, at most 5 times per UTC day. " +
+                    "The app never talks to Solcast directly.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SolColors.Muted
             )

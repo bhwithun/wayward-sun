@@ -152,6 +152,7 @@ fun HomeScreen(
                             rangeFrom = rangeFrom,
                             rangeTo = rangeTo,
                             layers = state.layers,
+                            sunDays = state.weather?.sunDays.orEmpty(),
                             isDemo = snapshot.isDemo
                         )
                     }

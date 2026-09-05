@@ -4,6 +4,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import org.json.JSONArray
@@ -36,6 +37,7 @@ class OpenMeteoApi {
     fun fetchHourly(lat: Double, lng: Double, zone: ZoneId = DteTou.ZONE): Pair<String, List<WeatherPoint>> {
         val url = "$FORECAST?latitude=$lat&longitude=$lng" +
             "&hourly=temperature_2m,precipitation_probability" +
+            "&daily=sunrise,sunset" +
             "&temperature_unit=fahrenheit" +
             "&past_days=2&forecast_days=3" +
             "&timezone=${URLEncoder.encode(zone.id, Charsets.UTF_8.name())}"
@@ -56,6 +58,23 @@ class OpenMeteoApi {
             points += WeatherPoint(time, temp, pop)
         }
         return points
+    }
+
+    fun parseDailySun(json: String, zone: ZoneId = DteTou.ZONE): List<SunTimes> {
+        val daily = JSONObject(json).optJSONObject("daily") ?: return emptyList()
+        val times = daily.optJSONArray("time") ?: return emptyList()
+        val rise = daily.optJSONArray("sunrise") ?: return emptyList()
+        val set = daily.optJSONArray("sunset") ?: return emptyList()
+        val out = ArrayList<SunTimes>(times.length())
+        for (i in 0 until times.length()) {
+            val date = runCatching {
+                LocalDate.parse(times.optString(i).take(10))
+            }.getOrNull() ?: continue
+            val sunrise = parseLocalHour(rise.optString(i), zone) ?: continue
+            val sunset = parseLocalHour(set.optString(i), zone) ?: continue
+            out += SunTimes(date, sunrise, sunset)
+        }
+        return out
     }
 
     private fun pickUsFirst(results: JSONArray): JSONObject {
