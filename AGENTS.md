@@ -7,7 +7,7 @@ Pure Android app (Kotlin, Compose, Material 3, Glance widget) bootstrapped from 
 - Package: `com.brian.solwidget`
 - Solcast hobbyist rooftop endpoints only (not the commercial lat/lng PV power API)
 - Default resource ID: `84d7-8b52-33f3-bd7b`
-- Default cache URL: `https://sol-cache.brian-952.workers.dev` (`AppStorage.DEFAULT_CACHE_URL`)
+- Default cache URL: `https://solcast-cache-worker.brian-952.workers.dev` (`AppStorage.DEFAULT_CACHE_URL`)
 - Never hardcode a Solcast API key. Never put it in the APK, git, `wrangler.jsonc`, or `.dev.vars` committed to source. Store it only as the Wrangler secret `SOLCAST_API_KEY`.
 - The Worker (`worker/`) is the **only** Solcast HTTP client. The Android app and widget only `GET /cache` (`CacheApi`). They must not call `api.solcast.com.au`.
 - No `CACHE_SECRET`. No device `PUT /cache`. Cache JSON is public at the Worker URL.
@@ -24,7 +24,7 @@ com.brian.solwidget/
 ├── work/          # 5-hour WorkManager cache download; hourly weather
 └── util/
 
-worker/            # Cloudflare Worker sol-cache (Wrangler)
+worker/            # Cloudflare Worker solcast-cache-worker (Wrangler)
 ├── src/index.js   # fetch; on-demand Solcast + KV
 ├── src/page.js    # public dashboard
 └── wrangler.jsonc # KV binding CACHE; no cron
@@ -32,7 +32,7 @@ worker/            # Cloudflare Worker sol-cache (Wrangler)
 
 ## Cloudflare
 
-- Worker name: `sol-cache`. KV binding: `CACHE` (one key, `snapshot`). No cron; Solcast is on-demand from `GET /cache`.
+- Worker name: `solcast-cache-worker`. KV binding: `CACHE` (one key, `snapshot`). No cron; Solcast is on-demand from `GET /cache`.
 - Public routes: `GET /`, `GET /health`, `GET /cache`, `POST /refresh` (pull only if snapshot older than 4 hours).
 - Deploy from `worker/`: `npx wrangler deploy`. Do not recreate the app from a dashboard Hello World template.
 - Do not add `CACHE_SECRET` back. Do not share this KV with other Cloudflare apps.

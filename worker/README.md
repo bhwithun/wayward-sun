@@ -22,7 +22,7 @@ npx wrangler deploy
 npx wrangler secret put SOLCAST_API_KEY
 ```
 
-Live URL: [https://sol-cache.brian-952.workers.dev](https://sol-cache.brian-952.workers.dev)
+Live URL: [https://solcast-cache-worker.brian-952.workers.dev](https://solcast-cache-worker.brian-952.workers.dev)
 
 ## API
 

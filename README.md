@@ -16,7 +16,7 @@ Default rooftop resource ID: `84d7-8b52-33f3-bd7b`.
 
 ## How Cloudflare is used
 
-Cloudflare hosts one Worker named **`sol-cache`**. Think of it as a tiny program behind an HTTPS URL, plus a key/value store.
+Cloudflare hosts one Worker named **`solcast-cache-worker`**. Think of it as a tiny program behind an HTTPS URL, plus a key/value store.
 
 | Piece | Role |
 |---|---|
@@ -25,7 +25,7 @@ Cloudflare hosts one Worker named **`sol-cache`**. Think of it as a tiny program
 | **Wrangler** | CLI to run the Worker locally (`npm run dev`) and deploy it (`npx wrangler deploy`). |
 | **Secret** | `SOLCAST_API_KEY` lives on Cloudflare only (`npx wrangler secret put SOLCAST_API_KEY`). Never in git, never on the phones. |
 
-Live URL: [https://sol-cache.brian-952.workers.dev](https://sol-cache.brian-952.workers.dev)
+Live URL: [https://solcast-cache-worker.brian-952.workers.dev](https://solcast-cache-worker.brian-952.workers.dev)
 
 ```
 Solcast API  ←  Worker (secret + KV, on-demand)  ←  GET /cache  ←  Android app / widget
@@ -35,7 +35,7 @@ Solcast API  ←  Worker (secret + KV, on-demand)  ←  GET /cache  ←  Android
 - There is no `CACHE_SECRET` and no device `PUT`. The cache URL is readable by anyone who has it.
 - Weather (Open-Meteo) does **not** go through Cloudflare or Solcast.
 
-Account layout: one Worker, one KV namespace, named `sol-cache`. Keep other Cloudflare apps as separate Workers.
+Account layout: one Worker named `solcast-cache-worker`, one KV namespace (`sol-cache-cache`). Keep other Cloudflare apps as separate Workers.
 
 ### Worker commands
 
@@ -64,7 +64,7 @@ Refresh in the Android app re-downloads `/cache`. The phone never calls Solcast;
 ## Setup
 
 1. Confirm the Worker is deployed and has `SOLCAST_API_KEY`.
-2. Install the app. Settings default to `https://sol-cache.brian-952.workers.dev`. Confirm weather place, then **Save and fetch**.
+2. Install the app. Settings default to `https://solcast-cache-worker.brian-952.workers.dev`. Confirm weather place, then **Save and fetch**.
 3. Long-press the Android home screen → **Widgets** → **PV Live & Forecast**.
 
 ## Build

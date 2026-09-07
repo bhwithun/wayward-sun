@@ -42,7 +42,8 @@ class AppStorage(private val context: Context) {
 
     companion object {
         const val DEFAULT_RESOURCE_ID = "84d7-8b52-33f3-bd7b"
-        const val DEFAULT_CACHE_URL = "https://sol-cache.brian-952.workers.dev"
+        const val DEFAULT_CACHE_URL = "https://solcast-cache-worker.brian-952.workers.dev"
+        private const val LEGACY_CACHE_URL = "https://sol-cache.brian-952.workers.dev"
     }
 
     fun getStringFlow(key: Preferences.Key<String>, default: String? = null): Flow<String?> =
@@ -72,19 +73,31 @@ class AppStorage(private val context: Context) {
     val resourceId: Flow<String> = getStringFlow(Keys.RESOURCE_ID, DEFAULT_RESOURCE_ID)
         .map { it?.ifBlank { DEFAULT_RESOURCE_ID } ?: DEFAULT_RESOURCE_ID }
 
-    suspend fun cacheUrlOnce(): String =
-        getStringOnce(Keys.CACHE_URL, DEFAULT_CACHE_URL)
-            ?.ifBlank { DEFAULT_CACHE_URL }
-            ?.trimEnd('/')
-            ?: DEFAULT_CACHE_URL
+    suspend fun cacheUrlOnce(): String {
+        val stored = getStringOnce(Keys.CACHE_URL)?.trim()?.trimEnd('/')
+        val url = when {
+            stored.isNullOrBlank() || stored.equals(LEGACY_CACHE_URL, ignoreCase = true) ->
+                DEFAULT_CACHE_URL
+            else -> stored
+        }
+        if (stored != url) setCacheUrl(url)
+        return url
+    }
 
     suspend fun resourceIdOnce(): String =
         getStringOnce(Keys.RESOURCE_ID, DEFAULT_RESOURCE_ID)
             ?.ifBlank { DEFAULT_RESOURCE_ID }
             ?: DEFAULT_RESOURCE_ID
 
-    suspend fun setCacheUrl(value: String) =
-        setString(Keys.CACHE_URL, value.trim().trimEnd('/').ifBlank { DEFAULT_CACHE_URL })
+    suspend fun setCacheUrl(value: String) {
+        val trimmed = value.trim().trimEnd('/')
+        val url = when {
+            trimmed.isBlank() || trimmed.equals(LEGACY_CACHE_URL, ignoreCase = true) ->
+                DEFAULT_CACHE_URL
+            else -> trimmed
+        }
+        setString(Keys.CACHE_URL, url)
+    }
     suspend fun setResourceId(value: String) = setString(Keys.RESOURCE_ID, value.trim())
 
     suspend fun cachedForecasts(): String? = getStringOnce(Keys.CACHED_FORECASTS)

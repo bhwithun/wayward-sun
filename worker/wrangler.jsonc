@@ -1,15 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "sol-cache",
+  "name": "solcast-cache-worker",
   "main": "src/index.js",
   "compatibility_date": "2025-09-01",
   "workers_dev": true,
   "vars": {
     "RESOURCE_ID": "84d7-8b52-33f3-bd7b"
   },
-  // No id: Wrangler creates a local KV in `wrangler dev` and a real namespace on deploy.
+  // Production KV. `wrangler dev` still uses a local simulation unless remote: true.
   "kv_namespaces": [
-    { "binding": "CACHE" }
+    { "binding": "CACHE", "id": "49b8cc376df140f78d811b2e70c29499" }
   ],
   "triggers": {
     // Empty array removes previously deployed cron triggers.

@@ -1,5 +1,5 @@
 {
-  "name": "sol-cache-worker",
+  "name": "solcast-cache-worker",
   "private": true,
   "description": "Cloudflare Worker that shares one Solcast cache across devices.",
   "scripts": {
