@@ -66,7 +66,8 @@ export function Dashboard() {
     solar: true,
     temp: true,
     precip: true,
-    rates: true,
+    buy: true,
+    sell: true,
   });
   const [mode, setMode] = useState<RangeMode>("window");
   const [customFrom, setCustomFrom] = useState("");
@@ -168,7 +169,8 @@ export function Dashboard() {
         <Chip label="Solar" on={layers.solar} onClick={() => setLayers({ ...layers, solar: !layers.solar })} />
         <Chip label="Temp" on={layers.temp} onClick={() => setLayers({ ...layers, temp: !layers.temp })} />
         <Chip label="Precip" on={layers.precip} onClick={() => setLayers({ ...layers, precip: !layers.precip })} />
-        <Chip label="Rates" on={layers.rates} onClick={() => setLayers({ ...layers, rates: !layers.rates })} />
+        <Chip label="Buy" on={layers.buy} onClick={() => setLayers({ ...layers, buy: !layers.buy })} />
+        <Chip label="Sell" on={layers.sell} onClick={() => setLayers({ ...layers, sell: !layers.sell })} />
       </div>
 
       {status && <p className="banner">{status}</p>}
@@ -178,8 +180,8 @@ export function Dashboard() {
           <span style={{ color: "#2EE6A6" }}>● Live</span>
           <span style={{ color: "#F5C542" }}>● Forecast</span>
           <span style={{ color: "#FF8A4C" }}>● Now</span>
-          {layers.rates && <span style={{ color: "#E07070" }}>– Buy</span>}
-          {layers.rates && <span style={{ color: "#7EB6FF" }}>– Sell</span>}
+          {layers.buy && <span style={{ color: "#E07070" }}>– Buy</span>}
+          {layers.sell && <span style={{ color: "#7EB6FF" }}>– Sell</span>}
         </div>
         <PowerChart
           points={points}

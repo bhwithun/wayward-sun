@@ -61,7 +61,7 @@ private fun axisUnits(layers: ChartLayers, labelRates: Boolean): AxisUnits {
         if (layers.solcast) add(AxisUnits.SOLAR)
         if (layers.temperature) add(AxisUnits.TEMP)
         if (layers.precipitation) add(AxisUnits.PRECIP)
-        if (labelRates && layers.dteRates) add(AxisUnits.RATES)
+        if (labelRates && layers.rates) add(AxisUnits.RATES)
     }
     return labeled.singleOrNull() ?: AxisUnits.NONE
 }
@@ -80,7 +80,7 @@ fun PowerChart(
     isDemo: Boolean = false
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        if (points.size < 2 && weather.size < 2 && !layers.dteRates) return@Canvas
+        if (points.size < 2 && weather.size < 2 && !layers.rates) return@Canvas
 
         val units = axisUnits(layers, labelRates = true)
         val left = if (units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
@@ -188,9 +188,12 @@ fun PowerChart(
             drawTempLine(weather, ::xOf, ::yOfTemp, sunDays)
         }
 
-        if (layers.dteRates) {
-            drawRateStep(DteTou.bands(from, to), ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
-            drawRateStep(DteTou.bands(from, to), ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
+        val bands = if (layers.rates) DteTou.bands(from, to) else emptyList()
+        if (layers.buy) {
+            drawRateStep(bands, ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
+        }
+        if (layers.sell) {
+            drawRateStep(bands, ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
         }
 
         val nowX = xOf(now).coerceIn(left, right)
@@ -512,7 +515,7 @@ object ChartBitmapRenderer {
         isDemo: Boolean = false
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(width.coerceAtLeast(8), height.coerceAtLeast(8), Bitmap.Config.ARGB_8888)
-        if (points.size < 2 && weather.size < 2 && !layers.dteRates) return bitmap
+        if (points.size < 2 && weather.size < 2 && !layers.rates) return bitmap
         val canvas = AndroidCanvas(bitmap)
         canvas.drawColor(0x00152136)
 
@@ -666,9 +669,14 @@ object ChartBitmapRenderer {
             drawAndroidTempLine(canvas, weather, ::xOf, ::yOfTemp, sunDays)
         }
 
-        if (layers.dteRates) {
-            drawAndroidRateStep(canvas, DteTou.bands(from, to), ::xOf, ::yOfRate, 0xFFE07070.toInt()) { it.cents }
-            drawAndroidRateStep(canvas, DteTou.bands(from, to), ::xOf, ::yOfRate, 0xFF7EB6FF.toInt()) { it.sellCents }
+        if (layers.rates) {
+            val bands = DteTou.bands(from, to)
+            if (layers.buy) {
+                drawAndroidRateStep(canvas, bands, ::xOf, ::yOfRate, 0xFFE07070.toInt()) { it.cents }
+            }
+            if (layers.sell) {
+                drawAndroidRateStep(canvas, bands, ::xOf, ::yOfRate, 0xFF7EB6FF.toInt()) { it.sellCents }
+            }
         }
 
         val nowPaint = Paint().apply {

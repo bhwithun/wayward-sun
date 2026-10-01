@@ -18,6 +18,8 @@ object WidgetUpdater {
     val SHOW_TEMP = booleanPreferencesKey("widget_show_temperature")
     val SHOW_PRECIP = booleanPreferencesKey("widget_show_precipitation")
     val SHOW_RATES = booleanPreferencesKey("widget_show_dte_rates")
+    val SHOW_BUY = booleanPreferencesKey("widget_show_buy_rate")
+    val SHOW_SELL = booleanPreferencesKey("widget_show_sell_rate")
 
     suspend fun updateAll(context: Context) {
         val appContext = context.applicationContext
@@ -47,7 +49,8 @@ object WidgetUpdater {
             solcast = prefs[SHOW_SOLAR] ?: fallback.solcast,
             temperature = prefs[SHOW_TEMP] ?: fallback.temperature,
             precipitation = prefs[SHOW_PRECIP] ?: fallback.precipitation,
-            dteRates = prefs[SHOW_RATES] ?: fallback.dteRates
+            buy = prefs[SHOW_BUY] ?: prefs[SHOW_RATES] ?: fallback.buy,
+            sell = prefs[SHOW_SELL] ?: prefs[SHOW_RATES] ?: fallback.sell
         )
     }
 
@@ -58,7 +61,8 @@ object WidgetUpdater {
         prefs[SHOW_SOLAR] = layers.solcast
         prefs[SHOW_TEMP] = layers.temperature
         prefs[SHOW_PRECIP] = layers.precipitation
-        prefs[SHOW_RATES] = layers.dteRates
+        prefs[SHOW_BUY] = layers.buy
+        prefs[SHOW_SELL] = layers.sell
     }
 
     private fun requestProviderUpdate(context: Context) {

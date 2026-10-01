@@ -235,7 +235,8 @@ private fun LayerToggles(
         LayerChip("Solar", layers.solcast, Modifier.weight(1f)) { onToggle(ChartLayer.SOLCAST, it) }
         LayerChip("Temp", layers.temperature, Modifier.weight(1f)) { onToggle(ChartLayer.TEMPERATURE, it) }
         LayerChip("Precip", layers.precipitation, Modifier.weight(1f)) { onToggle(ChartLayer.PRECIPITATION, it) }
-        LayerChip("Rates", layers.dteRates, Modifier.weight(1f)) { onToggle(ChartLayer.DTE_RATES, it) }
+        LayerChip("Buy", layers.buy, Modifier.weight(1f)) { onToggle(ChartLayer.BUY, it) }
+        LayerChip("Sell", layers.sell, Modifier.weight(1f)) { onToggle(ChartLayer.SELL, it) }
     }
 }
 
@@ -322,7 +323,7 @@ private fun LayerMetaPanel(
                 LegendKeys(type, "▮ Precip %" to SolColors.Precip.copy(alpha = 1f))
             }
         }
-        if (layers.dteRates && (showOnly == null || showOnly == MetaPanel.RATES)) {
+        if (layers.rates && (showOnly == null || showOnly == MetaPanel.RATES)) {
             MetaCard(
                 title = "Rates",
                 expanded = expanded,
@@ -333,7 +334,11 @@ private fun LayerMetaPanel(
                     color = SolColors.Ink,
                     style = type.body
                 )
-                LegendKeys(type, "– Buy" to SolColors.Buy, "– Sell" to SolColors.Sell)
+                val rateKeys = buildList {
+                    if (layers.buy) add("– Buy" to SolColors.Buy)
+                    if (layers.sell) add("– Sell" to SolColors.Sell)
+                }
+                if (rateKeys.isNotEmpty()) LegendKeys(type, *rateKeys.toTypedArray())
                 RateTable(type, expanded)
                 Text(Formatters.asOf(DteTou.RATES_AS_OF, now, DteTou.ZONE), color = SolColors.Muted, style = type.caption)
                 Text(

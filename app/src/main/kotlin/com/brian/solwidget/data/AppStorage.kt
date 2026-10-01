@@ -36,6 +36,8 @@ class AppStorage(private val context: Context) {
         val WEATHER_FETCH_AT = longPreferencesKey("weather_fetch_at")
         val SHOW_TEMPERATURE = booleanPreferencesKey("show_temperature")
         val SHOW_DTE_RATES = booleanPreferencesKey("show_dte_rates")
+        val SHOW_BUY = booleanPreferencesKey("show_buy_rate")
+        val SHOW_SELL = booleanPreferencesKey("show_sell_rate")
         val SHOW_PRECIPITATION = booleanPreferencesKey("show_precipitation")
         val SHOW_SOLCAST = booleanPreferencesKey("show_solcast")
     }
@@ -190,17 +192,23 @@ class AppStorage(private val context: Context) {
         context.dataStore.edit { it[key] = value }
     }
 
-    suspend fun chartLayersOnce(): ChartLayers = ChartLayers(
-        temperature = getBooleanOnce(Keys.SHOW_TEMPERATURE, true),
-        dteRates = getBooleanOnce(Keys.SHOW_DTE_RATES, true),
-        precipitation = getBooleanOnce(Keys.SHOW_PRECIPITATION, true),
-        solcast = getBooleanOnce(Keys.SHOW_SOLCAST, true)
-    )
+    suspend fun chartLayersOnce(): ChartLayers {
+        val prefs = context.dataStore.data.first()
+        val legacyRates = prefs[Keys.SHOW_DTE_RATES]
+        return ChartLayers(
+            temperature = prefs[Keys.SHOW_TEMPERATURE] ?: true,
+            buy = prefs[Keys.SHOW_BUY] ?: legacyRates ?: true,
+            sell = prefs[Keys.SHOW_SELL] ?: legacyRates ?: true,
+            precipitation = prefs[Keys.SHOW_PRECIPITATION] ?: true,
+            solcast = prefs[Keys.SHOW_SOLCAST] ?: true
+        )
+    }
 
     suspend fun setChartLayer(layer: ChartLayer, visible: Boolean) {
         val key = when (layer) {
             ChartLayer.TEMPERATURE -> Keys.SHOW_TEMPERATURE
-            ChartLayer.DTE_RATES -> Keys.SHOW_DTE_RATES
+            ChartLayer.BUY -> Keys.SHOW_BUY
+            ChartLayer.SELL -> Keys.SHOW_SELL
             ChartLayer.PRECIPITATION -> Keys.SHOW_PRECIPITATION
             ChartLayer.SOLCAST -> Keys.SHOW_SOLCAST
         }

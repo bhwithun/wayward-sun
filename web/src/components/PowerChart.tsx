@@ -27,7 +27,8 @@ export type ChartLayers = {
   solar: boolean;
   temp: boolean;
   precip: boolean;
-  rates: boolean;
+  buy: boolean;
+  sell: boolean;
 };
 
 export type WeatherMark = { t: number; tempF: number; precipPct: number | null };
@@ -137,10 +138,10 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     strokeTemp(ctx, props.weather, xOf, yTemp, props.sun);
   }
 
-  if (props.layers.rates) {
+  if (props.layers.buy || props.layers.sell) {
     const steps = rateSteps(new Date(props.from), new Date(props.to), props.rates);
-    strokeSteps(ctx, steps.buy, xOf, yRate, BUY);
-    strokeSteps(ctx, steps.sell, xOf, yRate, SELL);
+    if (props.layers.buy) strokeSteps(ctx, steps.buy, xOf, yRate, BUY);
+    if (props.layers.sell) strokeSteps(ctx, steps.sell, xOf, yRate, SELL);
   }
 
   const nowX = clamp(xOf(props.now), left, right);
@@ -267,7 +268,7 @@ function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | 
   if (layers.solar) labeled.push("solar");
   if (layers.temp) labeled.push("temp");
   if (layers.precip) labeled.push("precip");
-  if (layers.rates) labeled.push("rates");
+  if (layers.buy || layers.sell) labeled.push("rates");
   return labeled.length === 1 ? labeled[0] : "none";
 }
 
