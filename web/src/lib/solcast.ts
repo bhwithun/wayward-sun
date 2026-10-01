@@ -19,8 +19,19 @@ export function snapshotAgeMs(snapshot: SnapshotBody | null, now: Date): number 
   return fetchedAt ? now.getTime() - fetchedAt : Number.POSITIVE_INFINITY;
 }
 
+/** A demo snapshot is not a successful pull. Replace it once the key exists. */
+export function needsSolcastPull(
+  snapshot: SnapshotBody | null,
+  now: Date,
+  apiKey: string | undefined = process.env.SOLCAST_API_KEY
+): boolean {
+  if (!snapshot?.fetchedAt) return true;
+  if (snapshot.source !== "solcast" && apiKey) return true;
+  return snapshotAgeMs(snapshot, now) >= MIN_AUTO_AGE_MS;
+}
+
 export function isFresh(snapshot: SnapshotBody | null, now: Date): boolean {
-  return Boolean(snapshot?.fetchedAt) && snapshotAgeMs(snapshot, now) < MIN_AUTO_AGE_MS;
+  return !needsSolcastPull(snapshot, now);
 }
 
 function weatherDue(snapshot: SnapshotBody | null, now: Date): boolean {
@@ -69,7 +80,7 @@ async function refreshSolcast(existing: SnapshotBody | null, now: Date): Promise
   const autoUsed = existing && existing.requestsDay === day ? existing.autoFetchesUsed : 0;
   const weatherFetchedAt = existing?.weatherFetchedAt ?? null;
 
-  if (existing && snapshotAgeMs(existing, now) < MIN_AUTO_AGE_MS) {
+  if (existing && !needsSolcastPull(existing, now)) {
     return {
       ...existing,
       message: "Cache younger than 4 hours; skipped Solcast.",
