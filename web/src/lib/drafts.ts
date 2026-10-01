@@ -1,7 +1,7 @@
 import { stampAt } from "./dte";
 import type { SolcastRow } from "./demo";
 import { periodHours, type IntervalDraft } from "./merge";
-import { weatherHourKey } from "./time";
+import { addDays, parseYmd, zonedTimeToUtc } from "./time";
 
 export type WeatherHour = {
   /** America/Detroit hour start, `YYYY-MM-DDTHH`. */
@@ -16,7 +16,6 @@ export function draftsFromSnapshot(
   weather: WeatherHour[] | null
 ): IntervalDraft[] {
   const byEnd = new Map<string, IntervalDraft>();
-  const weatherByHour = new Map((weather ?? []).map((hour) => [hour.key, hour]));
 
   for (const row of actuals ?? []) {
     const draft = baseDraft(row);
@@ -45,14 +44,44 @@ export function draftsFromSnapshot(
     }
   }
 
-  for (const draft of byEnd.values()) {
-    const hour = weatherByHour.get(weatherHourKey(new Date(draft.periodEnd)));
-    if (!hour) continue;
-    draft.tempF = hour.tempF;
-    draft.precipPct = hour.precipPct;
+  for (const hour of weather ?? []) {
+    for (const periodEnd of halfHoursEndingIn(hour.key)) {
+      const current = byEnd.get(periodEnd);
+      if (current) {
+        current.tempF = hour.tempF;
+        current.precipPct = hour.precipPct;
+        continue;
+      }
+      const stamp = stampAt(new Date(periodEnd));
+      byEnd.set(periodEnd, {
+        periodEnd,
+        actualKw: null,
+        forecastKw: null,
+        periodHours: 0.5,
+        tempF: hour.tempF,
+        precipPct: hour.precipPct,
+        rateBand: stamp.rateBand,
+        importCents: stamp.importCents,
+        outflowCents: stamp.outflowCents,
+      });
+    }
   }
 
   return [...byEnd.values()].sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
+}
+
+/** Both Solcast period ends inside an Open-Meteo hour key `YYYY-MM-DDTHH`. */
+export function halfHoursEndingIn(hourKey: string): string[] {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2})$/.exec(hourKey);
+  if (!match) return [];
+  const ymd = parseYmd(match[1]);
+  const hour = Number(match[2]);
+  if (!ymd || hour < 0 || hour > 23) return [];
+  const half = zonedTimeToUtc(ymd.year, ymd.month, ymd.day, hour, 30).toISOString();
+  const nextHour = hour === 23 ? 0 : hour + 1;
+  const nextDay = hour === 23 ? addDays(ymd, 1) : ymd;
+  const end = zonedTimeToUtc(nextDay.year, nextDay.month, nextDay.day, nextHour, 0).toISOString();
+  return [half, end];
 }
 
 function baseDraft(row: SolcastRow): IntervalDraft | null {

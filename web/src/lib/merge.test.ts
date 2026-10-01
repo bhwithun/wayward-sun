@@ -66,4 +66,17 @@ describe("drafts", () => {
     const future = drafts.find((d) => d.forecastKw === 3);
     expect(future?.actualKw).toBeNull();
   });
+
+  it("keeps precipitation for an hour that has no solar period", () => {
+    const drafts = draftsFromSnapshot([], [], [
+      { key: "2026-06-21T14", tempF: 72, precipPct: 40 },
+    ]);
+    expect(drafts).toHaveLength(2);
+    expect(drafts.every((d) => d.actualKw === null && d.forecastKw === null)).toBe(true);
+    expect(drafts.every((d) => d.precipPct === 40 && d.tempF === 72)).toBe(true);
+    expect(drafts.map((d) => d.periodEnd)).toEqual([
+      "2026-06-21T18:30:00.000Z",
+      "2026-06-21T19:00:00.000Z",
+    ]);
+  });
 });
