@@ -66,6 +66,87 @@ export function stampAt(instant: Date): RateStamp {
   };
 }
 
+export type RateSample = {
+  periodEnd: string;
+  periodHours: number | null;
+  importCents: number | null;
+  outflowCents: number | null;
+};
+
+export type RateVertex = { t: number; cents: number };
+
+/**
+ * Buy and sell as step polylines across [from, to].
+ * A stored half-hour overrides the schedule for the cents it has.
+ * Each segment is two vertices at the same cents, so a stroke stays horizontal
+ * and the next segment's first vertex makes the vertical join.
+ */
+export function rateSteps(
+  from: Date,
+  to: Date,
+  samples: RateSample[]
+): { buy: RateVertex[]; sell: RateVertex[] } {
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
+  if (fromMs >= toMs) return { buy: [], sell: [] };
+
+  const cuts = new Set<number>([fromMs, toMs]);
+  for (const band of bands(from, to)) {
+    cuts.add(band.start.getTime());
+    cuts.add(band.end.getTime());
+  }
+  for (const sample of samples) {
+    const end = Date.parse(sample.periodEnd);
+    if (!Number.isFinite(end)) continue;
+    const start = end - (sample.periodHours ?? 0.5) * 3_600_000;
+    if (end <= fromMs || start >= toMs) continue;
+    cuts.add(Math.max(start, fromMs));
+    cuts.add(Math.min(end, toMs));
+  }
+
+  const times = [...cuts].filter((t) => t >= fromMs && t <= toMs).sort((a, b) => a - b);
+  const slices: Array<{ start: number; end: number; buy: number; sell: number }> = [];
+  for (let i = 0; i < times.length - 1; i++) {
+    const start = times[i];
+    const end = times[i + 1];
+    if (end <= start) continue;
+    const mid = (start + end) / 2;
+    const sample = sampleAt(samples, mid);
+    const stamp = stampAt(new Date(mid));
+    const buy = sample?.importCents ?? stamp.importCents;
+    const sell = sample?.outflowCents ?? stamp.outflowCents;
+    const last = slices[slices.length - 1];
+    if (last && last.end === start && last.buy === buy && last.sell === sell) last.end = end;
+    else slices.push({ start, end, buy, sell });
+  }
+
+  return {
+    buy: slices.flatMap((slice) => [
+      { t: slice.start, cents: slice.buy },
+      { t: slice.end, cents: slice.buy },
+    ]),
+    sell: slices.flatMap((slice) => [
+      { t: slice.start, cents: slice.sell },
+      { t: slice.end, cents: slice.sell },
+    ]),
+  };
+}
+
+function sampleAt(samples: RateSample[], mid: number): RateSample | undefined {
+  let best: RateSample | undefined;
+  let bestEnd = -Infinity;
+  for (const sample of samples) {
+    if (sample.importCents == null && sample.outflowCents == null) continue;
+    const end = Date.parse(sample.periodEnd);
+    if (!Number.isFinite(end)) continue;
+    const start = end - (sample.periodHours ?? 0.5) * 3_600_000;
+    if (mid < start || mid >= end || end < bestEnd) continue;
+    best = sample;
+    bestEnd = end;
+  }
+  return best;
+}
+
 export type Band = { start: Date; end: Date; period: RateBand };
 
 export function bands(from: Date, to: Date): Band[] {

@@ -106,6 +106,8 @@ data class ForecastSnapshot(
         const val TEMP_MAX_F = 100.0
         const val PRECIP_MIN = 0.0
         const val PRECIP_MAX = 100.0
+        const val RATE_MIN_CENTS = 0.0
+        const val RATE_MAX_CENTS = 40.0
 
         fun range(
             now: Instant = Instant.now(),

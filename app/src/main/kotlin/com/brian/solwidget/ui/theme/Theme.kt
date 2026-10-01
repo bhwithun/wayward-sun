@@ -25,6 +25,8 @@ object SolColors {
     val TempLow = Color(0xFF4EE6E6)
     val TempHot = Color(0xFFFF8A4C)
     val Precip = Color(0x665CA8FF)
+    val Buy = Color(0xFFE07070)
+    val Sell = Color(0xFF7EB6FF)
 }
 
 private val DarkColorScheme = darkColorScheme(

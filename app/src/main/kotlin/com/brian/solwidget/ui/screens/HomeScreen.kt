@@ -333,6 +333,7 @@ private fun LayerMetaPanel(
                     color = SolColors.Ink,
                     style = type.body
                 )
+                LegendKeys(type, "– Buy" to SolColors.Buy, "– Sell" to SolColors.Sell)
                 RateTable(type, expanded)
                 Text(Formatters.asOf(DteTou.RATES_AS_OF, now, DteTou.ZONE), color = SolColors.Muted, style = type.caption)
                 Text(

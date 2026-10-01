@@ -40,6 +40,8 @@ type HistoryBody = {
     periodHours: number | null;
     tempF: number | null;
     precipPct: number | null;
+    importCents: number | null;
+    outflowCents: number | null;
   }>;
   sun?: Array<{ date: string; sunrise: string; sunset: string }>;
   error?: string;
@@ -176,6 +178,8 @@ export function Dashboard() {
           <span style={{ color: "#2EE6A6" }}>● Live</span>
           <span style={{ color: "#F5C542" }}>● Forecast</span>
           <span style={{ color: "#FF8A4C" }}>● Now</span>
+          {layers.rates && <span style={{ color: "#E07070" }}>– Buy</span>}
+          {layers.rates && <span style={{ color: "#7EB6FF" }}>– Sell</span>}
         </div>
         <PowerChart
           points={points}
@@ -185,6 +189,7 @@ export function Dashboard() {
           now={clock}
           layers={layers}
           sun={sun}
+          rates={history?.points ?? []}
           demo={cache?.source === "demo"}
         />
         {history?.points?.length === 0 && !history.error && (

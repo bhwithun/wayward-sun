@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { bands } from "@/lib/dte";
+import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
 import { isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 
 const LIVE = "#2EE6A6";
@@ -10,8 +10,8 @@ const NOW = "#FF8A4C";
 const GRID = "rgba(74, 98, 136, 0.45)";
 const INK = "#E8EEF7";
 const PRECIP = "rgba(92, 168, 255, 0.40)";
-const TOU_MID = "rgba(201, 162, 39, 0.20)";
-const TOU_PEAK = "rgba(224, 112, 112, 0.30)";
+const BUY = "#E07070";
+const SELL = "#7EB6FF";
 const TEMP = "#FFFFFF";
 const FREEZE = "#64B5F6";
 const HOT = "#FF8A4C";
@@ -20,6 +20,8 @@ const SOLAR_MAX = 8;
 const TEMP_MIN = -20;
 const TEMP_MAX = 100;
 const PRECIP_MAX = 100;
+const RATE_MIN = 0;
+const RATE_MAX = 40;
 
 export type ChartLayers = {
   solar: boolean;
@@ -38,6 +40,7 @@ type Props = {
   now: number;
   layers: ChartLayers;
   sun: SunSpan[];
+  rates: RateSample[];
   demo: boolean;
 };
 
@@ -54,7 +57,7 @@ export function PowerChart(props: Props) {
     return () => observer.disconnect();
   }, [props]);
 
-  return <canvas ref={ref} className="chart" aria-label="Solar, weather, and rate chart" />;
+  return <canvas ref={ref} className="chart" aria-label="Solar, weather, and buy and sell rate chart" />;
 }
 
 function paint(canvas: HTMLCanvasElement, props: Props) {
@@ -85,17 +88,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const yTemp = (temp: number) =>
     bottom - (clamp((temp - TEMP_MIN) / (TEMP_MAX - TEMP_MIN), 0, 1) * plotH);
   const yPop = (pop: number) => bottom - (clamp(pop / PRECIP_MAX, 0, 1) * plotH);
-
-  if (props.layers.rates) {
-    for (const band of bands(new Date(props.from), new Date(props.to))) {
-      if (band.period === "OFF_PEAK") continue;
-      const x1 = clamp(xOf(band.start.getTime()), left, right);
-      const x2 = clamp(xOf(band.end.getTime()), left, right);
-      if (x2 <= x1) continue;
-      ctx.fillStyle = band.period === "PEAK" ? TOU_PEAK : TOU_MID;
-      ctx.fillRect(x1, top, x2 - x1, plotH);
-    }
-  }
+  const yRate = (cents: number) =>
+    bottom - (clamp((cents - RATE_MIN) / (RATE_MAX - RATE_MIN), 0, 1) * plotH);
 
   if (props.layers.precip && props.weather.length >= 2) {
     const bar = (plotW / props.weather.length) * 0.65;
@@ -129,6 +123,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   } else if (units === "precip") {
     ctx.fillText("100%", 6, top + 12);
     ctx.fillText("0%", 6, bottom);
+  } else if (units === "rates") {
+    ctx.fillText("40¢", 6, top + 12);
+    ctx.fillText("0¢", 6, bottom);
   }
 
   if (props.layers.solar) {
@@ -138,6 +135,12 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
 
   if (props.layers.temp && props.weather.length >= 2) {
     strokeTemp(ctx, props.weather, xOf, yTemp, props.sun);
+  }
+
+  if (props.layers.rates) {
+    const steps = rateSteps(new Date(props.from), new Date(props.to), props.rates);
+    strokeSteps(ctx, steps.buy, xOf, yRate, BUY);
+    strokeSteps(ctx, steps.sell, xOf, yRate, SELL);
   }
 
   const nowX = clamp(xOf(props.now), left, right);
@@ -169,6 +172,31 @@ function strokeSeries(
   points.forEach((point, index) => {
     const x = xOf(point.t);
     const y = yOf(point.kw);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+function strokeSteps(
+  ctx: CanvasRenderingContext2D,
+  vertices: RateVertex[],
+  xOf: (t: number) => number,
+  yOf: (cents: number) => number,
+  color: string
+) {
+  if (vertices.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  vertices.forEach((vertex, index) => {
+    const x = xOf(vertex.t);
+    const y = yOf(vertex.cents);
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
@@ -234,11 +262,12 @@ function trace(
   ctx.stroke();
 }
 
-function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" {
-  const labeled: Array<"solar" | "temp" | "precip"> = [];
+function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | "rates" {
+  const labeled: Array<"solar" | "temp" | "precip" | "rates"> = [];
   if (layers.solar) labeled.push("solar");
   if (layers.temp) labeled.push("temp");
   if (layers.precip) labeled.push("precip");
+  if (layers.rates) labeled.push("rates");
   return labeled.length === 1 ? labeled[0] : "none";
 }
 

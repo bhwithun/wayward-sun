@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -53,13 +54,14 @@ private const val GLOW_INNER_ALPHA = 0.5f
 private const val GLOW_OUTER_ALPHA = 0.2f
 private const val BITMAP_PX_PER_DP = 2.75f
 
-private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP }
+private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP, RATES }
 
-private fun axisUnits(layers: ChartLayers): AxisUnits {
+private fun axisUnits(layers: ChartLayers, labelRates: Boolean): AxisUnits {
     val labeled = buildList {
         if (layers.solcast) add(AxisUnits.SOLAR)
         if (layers.temperature) add(AxisUnits.TEMP)
         if (layers.precipitation) add(AxisUnits.PRECIP)
+        if (labelRates && layers.dteRates) add(AxisUnits.RATES)
     }
     return labeled.singleOrNull() ?: AxisUnits.NONE
 }
@@ -78,9 +80,9 @@ fun PowerChart(
     isDemo: Boolean = false
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        if (points.size < 2 && weather.size < 2) return@Canvas
+        if (points.size < 2 && weather.size < 2 && !layers.dteRates) return@Canvas
 
-        val units = axisUnits(layers)
+        val units = axisUnits(layers, labelRates = true)
         val left = if (units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
         val right = size.width - 12.dp.toPx()
         val top = if (layers.temperature) 32.dp.toPx() else 16.dp.toPx()
@@ -88,10 +90,11 @@ fun PowerChart(
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
-        val minTime = (rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.first().time)
-            .toEpochMilli().toFloat()
-        val maxTime = (rangeTo ?: points.lastOrNull()?.periodEnd ?: weather.last().time)
-            .toEpochMilli().toFloat()
+        val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.firstOrNull()?.time
+        val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd ?: weather.lastOrNull()?.time
+        if (startInstant == null || endInstant == null) return@Canvas
+        val minTime = startInstant.toEpochMilli().toFloat()
+        val maxTime = endInstant.toEpochMilli().toFloat()
         val span = max(1f, maxTime - minTime)
         val solarMax = ForecastSnapshot.SOLAR_MAX_KW
         val tempMin = ForecastSnapshot.TEMP_MIN_F
@@ -124,24 +127,14 @@ fun PowerChart(
         val native = drawContext.canvas.nativeCanvas
         val from = Instant.ofEpochMilli(minTime.toLong())
         val to = Instant.ofEpochMilli(maxTime.toLong())
-        if (layers.dteRates) {
-            for (band in DteTou.bands(from, to)) {
-                if (band.period == DteTou.Period.OFF_PEAK) continue
-                val x1 = xOf(band.start).coerceIn(left, right)
-                val x2 = xOf(band.end).coerceIn(left, right)
-                if (x2 > x1) {
-                    drawRect(
-                        color = touColor(band.period),
-                        topLeft = Offset(x1, top),
-                        size = Size(x2 - x1, height)
-                    )
-                }
-            }
-        }
         fun yOfTemp(temp: Double): Float =
             bottom - (((temp - tempMin) / (tempMax - tempMin)).toFloat().coerceIn(0f, 1f) * height)
         fun yOfPop(pop: Double): Float =
             bottom - ((pop / ForecastSnapshot.PRECIP_MAX).toFloat().coerceIn(0f, 1f) * height)
+        fun yOfRate(cents: Double): Float =
+            bottom - (((cents - ForecastSnapshot.RATE_MIN_CENTS) /
+                (ForecastSnapshot.RATE_MAX_CENTS - ForecastSnapshot.RATE_MIN_CENTS))
+                .toFloat().coerceIn(0f, 1f) * height)
 
         if (layers.precipitation && weather.size >= 2) {
             val barWidth = (width / weather.size.toFloat()) * 0.65f
@@ -177,6 +170,10 @@ fun PowerChart(
                 native.drawText("100%", 8f, top + 16f, unitPaint)
                 native.drawText("0%", 8f, bottom + 6f, unitPaint)
             }
+            AxisUnits.RATES -> {
+                native.drawText("40¢", 8f, top + 16f, unitPaint)
+                native.drawText("0¢", 8f, bottom + 6f, unitPaint)
+            }
             AxisUnits.NONE -> Unit
         }
 
@@ -189,6 +186,11 @@ fun PowerChart(
 
         if (layers.temperature && weather.size >= 2) {
             drawTempLine(weather, ::xOf, ::yOfTemp, sunDays)
+        }
+
+        if (layers.dteRates) {
+            drawRateStep(DteTou.bands(from, to), ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
+            drawRateStep(DteTou.bands(from, to), ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
         }
 
         val nowX = xOf(now).coerceIn(left, right)
@@ -472,6 +474,29 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     }
 }
 
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateStep(
+    bands: List<DteTou.Band>,
+    xOf: (Instant) -> Float,
+    yOf: (Double) -> Float,
+    color: Color,
+    centsOf: (DteTou.Period) -> Double
+) {
+    if (bands.isEmpty()) return
+    val path = ComposePath()
+    bands.forEachIndexed { index, band ->
+        val y = yOf(centsOf(band.period))
+        val x1 = xOf(band.start)
+        val x2 = xOf(band.end)
+        if (index == 0) path.moveTo(x1, y) else path.lineTo(x1, y)
+        path.lineTo(x2, y)
+    }
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+}
+
 object ChartBitmapRenderer {
     fun render(
         points: List<PowerPoint>,
@@ -487,21 +512,22 @@ object ChartBitmapRenderer {
         isDemo: Boolean = false
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(width.coerceAtLeast(8), height.coerceAtLeast(8), Bitmap.Config.ARGB_8888)
-        if (points.size < 2 && weather.size < 2) return bitmap
+        if (points.size < 2 && weather.size < 2 && !layers.dteRates) return bitmap
         val canvas = AndroidCanvas(bitmap)
         canvas.drawColor(0x00152136)
 
-        val units = axisUnits(layers)
+        val units = axisUnits(layers, labelRates = false)
         val left = if (units != AxisUnits.NONE) 52f else 8f
         val right = width - 8f
         val top = if (layers.temperature) 52f else 6f
         val bottom = height - if (layers.solcast) 80f else 22f
         val chartW = (right - left).coerceAtLeast(1f)
         val chartH = (bottom - top).coerceAtLeast(1f)
-        val minTime = (rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.first().time)
-            .toEpochMilli().toFloat()
-        val maxTime = (rangeTo ?: points.lastOrNull()?.periodEnd ?: weather.last().time)
-            .toEpochMilli().toFloat()
+        val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.firstOrNull()?.time
+        val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd ?: weather.lastOrNull()?.time
+        if (startInstant == null || endInstant == null) return bitmap
+        val minTime = startInstant.toEpochMilli().toFloat()
+        val maxTime = endInstant.toEpochMilli().toFloat()
         val span = max(1f, maxTime - minTime)
         val solarMax = ForecastSnapshot.SOLAR_MAX_KW
         val tempMin = ForecastSnapshot.TEMP_MIN_F
@@ -512,23 +538,15 @@ object ChartBitmapRenderer {
 
         val from = Instant.ofEpochMilli(minTime.toLong())
         val to = Instant.ofEpochMilli(maxTime.toLong())
-        if (layers.dteRates) {
-            val bandPaint = Paint().apply { isAntiAlias = false }
-            for (band in DteTou.bands(from, to)) {
-                if (band.period == DteTou.Period.OFF_PEAK) continue
-                val x1 = xOf(band.start).coerceIn(left, right)
-                val x2 = xOf(band.end).coerceIn(left, right)
-                if (x2 > x1) {
-                    bandPaint.color = touArgb(band.period)
-                    canvas.drawRect(x1, top, x2, bottom, bandPaint)
-                }
-            }
-        }
 
         fun yOfTemp(temp: Double) =
             bottom - (((temp - tempMin) / (tempMax - tempMin)).toFloat().coerceIn(0f, 1f) * chartH)
         fun yOfPop(pop: Double) =
             bottom - ((pop / ForecastSnapshot.PRECIP_MAX).toFloat().coerceIn(0f, 1f) * chartH)
+        fun yOfRate(cents: Double) =
+            bottom - (((cents - ForecastSnapshot.RATE_MIN_CENTS) /
+                (ForecastSnapshot.RATE_MAX_CENTS - ForecastSnapshot.RATE_MIN_CENTS))
+                .toFloat().coerceIn(0f, 1f) * chartH)
 
         if (layers.precipitation && weather.size >= 2) {
             val barWidth = (chartW / weather.size.toFloat()) * 0.65f
@@ -574,7 +592,7 @@ object ChartBitmapRenderer {
                 canvas.drawText("100%", 2f, top + 16f, unitPaint)
                 canvas.drawText("0%", 2f, bottom, unitPaint)
             }
-            AxisUnits.NONE -> Unit
+            AxisUnits.RATES, AxisUnits.NONE -> Unit
         }
 
         val zone = ZoneId.systemDefault()
@@ -648,6 +666,11 @@ object ChartBitmapRenderer {
             drawAndroidTempLine(canvas, weather, ::xOf, ::yOfTemp, sunDays)
         }
 
+        if (layers.dteRates) {
+            drawAndroidRateStep(canvas, DteTou.bands(from, to), ::xOf, ::yOfRate, 0xFFE07070.toInt()) { it.cents }
+            drawAndroidRateStep(canvas, DteTou.bands(from, to), ::xOf, ::yOfRate, 0xFF7EB6FF.toInt()) { it.sellCents }
+        }
+
         val nowPaint = Paint().apply {
             color = 0xFFFF8A4C.toInt()
             strokeWidth = 3f
@@ -715,6 +738,34 @@ object ChartBitmapRenderer {
         canvas.drawPath(linePath, linePaint)
     }
 
+    private fun drawAndroidRateStep(
+        canvas: AndroidCanvas,
+        bands: List<DteTou.Band>,
+        xOf: (Instant) -> Float,
+        yOf: (Double) -> Float,
+        color: Int,
+        centsOf: (DteTou.Period) -> Double
+    ) {
+        if (bands.isEmpty()) return
+        val path = Path()
+        bands.forEachIndexed { index, band ->
+            val y = yOf(centsOf(band.period))
+            val x1 = xOf(band.start)
+            val x2 = xOf(band.end)
+            if (index == 0) path.moveTo(x1, y) else path.lineTo(x1, y)
+            path.lineTo(x2, y)
+        }
+        val paint = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = 3.5f
+            this.color = color
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        canvas.drawPath(path, paint)
+    }
+
     private fun drawAndroidTempLine(
         canvas: AndroidCanvas,
         weather: List<WeatherPoint>,
@@ -778,16 +829,4 @@ object ChartBitmapRenderer {
             }
         }
     }
-}
-
-private fun touColor(period: DteTou.Period): Color = when (period) {
-    DteTou.Period.OFF_PEAK -> Color.Transparent
-    DteTou.Period.MID_PEAK -> SolColors.TouMid
-    DteTou.Period.PEAK -> SolColors.TouPeak
-}
-
-private fun touArgb(period: DteTou.Period): Int = when (period) {
-    DteTou.Period.OFF_PEAK -> android.graphics.Color.TRANSPARENT
-    DteTou.Period.MID_PEAK -> 0x33C9A227
-    DteTou.Period.PEAK -> 0x4DE07070
 }

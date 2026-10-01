@@ -49,10 +49,10 @@ object DteTou {
     const val OUTFLOW_MID_PEAK_WITH_PSCR_CENTS = OUTFLOW_MID_PEAK_CENTS + PSCR_CENTS
     const val OUTFLOW_PEAK_WITH_PSCR_CENTS = OUTFLOW_PEAK_CENTS + PSCR_CENTS
 
-    enum class Period(val cents: Double, val label: String) {
-        OFF_PEAK(OFF_PEAK_CENTS, "Off-peak"),
-        MID_PEAK(MID_PEAK_CENTS, "Mid-peak"),
-        PEAK(PEAK_CENTS, "Peak")
+    enum class Period(val cents: Double, val sellCents: Double, val label: String) {
+        OFF_PEAK(OFF_PEAK_CENTS, OUTFLOW_OFF_PEAK_WITH_PSCR_CENTS, "Off-peak"),
+        MID_PEAK(MID_PEAK_CENTS, OUTFLOW_MID_PEAK_WITH_PSCR_CENTS, "Mid-peak"),
+        PEAK(PEAK_CENTS, OUTFLOW_PEAK_WITH_PSCR_CENTS, "Peak")
     }
 
     data class Band(

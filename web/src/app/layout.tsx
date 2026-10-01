@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Wayward Sun",
-  description: "Household solar dashboard. Live production, forecast, weather, and DTE rate bands.",
+  description: "Household solar dashboard. Live production, forecast, weather, and DTE buy and sell rates.",
 };
 
 export const viewport: Viewport = {
