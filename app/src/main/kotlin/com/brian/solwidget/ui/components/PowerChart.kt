@@ -176,8 +176,14 @@ fun PowerChart(
                 native.drawText("0%", 8f, bottom + 6f, unitPaint)
             }
             AxisUnits.RATES -> {
-                native.drawText("40¢", 8f, top + 16f, unitPaint)
-                native.drawText("0¢", 8f, bottom + 6f, unitPaint)
+                for (cents in 0..40 step 10) {
+                    val y = when (cents) {
+                        40 -> top + 16f
+                        0 -> bottom + 6f
+                        else -> yOfRate(cents.toDouble())
+                    }
+                    native.drawText("$cents¢", 8f, y, unitPaint)
+                }
             }
             AxisUnits.NONE -> Unit
         }

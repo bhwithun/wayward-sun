@@ -133,8 +133,10 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     ctx.fillText("100%", 6, top + 12);
     ctx.fillText("0%", 6, bottom);
   } else if (units === "rates") {
-    ctx.fillText("40¢", 6, top + 12);
-    ctx.fillText("0¢", 6, bottom);
+    for (let cents = 0; cents <= RATE_MAX; cents += 10) {
+      const y = cents === RATE_MAX ? top + 12 : cents === RATE_MIN ? bottom : yRate(cents);
+      ctx.fillText(`${cents}¢`, 6, y);
+    }
   }
 
   if (props.layers.solar) {
