@@ -137,7 +137,7 @@ async function solcastGet(url: string, apiKey: string): Promise<unknown> {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
-      "User-Agent": "SolWidget-Web/1.0",
+      "User-Agent": "WaywardSun/2.0",
     },
   });
   const body = await response.text();

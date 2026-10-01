@@ -33,7 +33,7 @@ export async function fetchSiteWeather(): Promise<WeatherFetch | null> {
     "&past_days=2&forecast_days=3" +
     "&timezone=America%2FDetroit";
   const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "SolWidget-Web/1.0" },
+    headers: { Accept: "application/json", "User-Agent": "WaywardSun/2.0" },
   });
   const body = await response.text();
   if (!response.ok) {

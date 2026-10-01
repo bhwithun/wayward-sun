@@ -44,7 +44,7 @@ class CacheApi {
             connectTimeout = 20_000
             readTimeout = 45_000
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "SolWidget/1.0 (Android)")
+            setRequestProperty("User-Agent", "WaywardSun/2.0 (Android)")
         }
         return try {
             val code = connection.responseCode

@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "sol-widget"
+rootProject.name = "wayward-sun"
 include(":app")

@@ -1,4 +1,4 @@
-const DEFAULT_CACHE_URL = "https://sol-widget-brianandkathi.vercel.app";
+const DEFAULT_CACHE_URL = "https://wayward-sun-brianandkathi.vercel.app";
 
 /**
  * Neon schedule trigger. Calls the Vercel /cron route, which is the only Solcast client.
