@@ -335,8 +335,8 @@ private fun LayerMetaPanel(
                     style = type.body
                 )
                 val rateKeys = buildList {
-                    if (layers.buy) add("– Buy" to SolColors.Buy)
-                    if (layers.sell) add("– Sell" to SolColors.Sell)
+                    if (layers.buy) add("▮ Buy" to SolColors.Buy)
+                    if (layers.sell) add("▮ Sell" to SolColors.Sell)
                 }
                 if (rateKeys.isNotEmpty()) LegendKeys(type, *rateKeys.toTypedArray())
                 RateTable(type, expanded)

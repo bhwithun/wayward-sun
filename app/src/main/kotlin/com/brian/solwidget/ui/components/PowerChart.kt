@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -136,6 +135,12 @@ fun PowerChart(
                 (ForecastSnapshot.RATE_MAX_CENTS - ForecastSnapshot.RATE_MIN_CENTS))
                 .toFloat().coerceIn(0f, 1f) * height)
 
+        if (layers.rates) {
+            val bands = DteTou.bands(from, to)
+            if (layers.buy) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Buy.copy(alpha = 0.40f)) { it.cents }
+            if (layers.sell) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Sell.copy(alpha = 0.55f)) { it.sellCents }
+        }
+
         if (layers.precipitation && weather.size >= 2) {
             val barWidth = (width / weather.size.toFloat()) * 0.65f
             weather.forEach { point ->
@@ -186,14 +191,6 @@ fun PowerChart(
 
         if (layers.temperature && weather.size >= 2) {
             drawTempLine(weather, ::xOf, ::yOfTemp, sunDays)
-        }
-
-        val bands = if (layers.rates) DteTou.bands(from, to) else emptyList()
-        if (layers.buy) {
-            drawRateStep(bands, ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
-        }
-        if (layers.sell) {
-            drawRateStep(bands, ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
         }
 
         val nowX = xOf(now).coerceIn(left, right)
@@ -477,7 +474,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateStep(
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateArea(
     bands: List<DteTou.Band>,
     xOf: (Instant) -> Float,
     yOf: (Double) -> Float,
@@ -485,19 +482,17 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateStep(
     centsOf: (DteTou.Period) -> Double
 ) {
     if (bands.isEmpty()) return
+    val baseline = yOf(ForecastSnapshot.RATE_MIN_CENTS)
     val path = ComposePath()
-    bands.forEachIndexed { index, band ->
+    path.moveTo(xOf(bands.first().start), baseline)
+    bands.forEach { band ->
         val y = yOf(centsOf(band.period))
-        val x1 = xOf(band.start)
-        val x2 = xOf(band.end)
-        if (index == 0) path.moveTo(x1, y) else path.lineTo(x1, y)
-        path.lineTo(x2, y)
+        path.lineTo(xOf(band.start), y)
+        path.lineTo(xOf(band.end), y)
     }
-    drawPath(
-        path = path,
-        color = color,
-        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
+    path.lineTo(xOf(bands.last().end), baseline)
+    path.close()
+    drawPath(path, color)
 }
 
 object ChartBitmapRenderer {
@@ -550,6 +545,12 @@ object ChartBitmapRenderer {
             bottom - (((cents - ForecastSnapshot.RATE_MIN_CENTS) /
                 (ForecastSnapshot.RATE_MAX_CENTS - ForecastSnapshot.RATE_MIN_CENTS))
                 .toFloat().coerceIn(0f, 1f) * chartH)
+
+        if (layers.rates) {
+            val bands = DteTou.bands(from, to)
+            if (layers.buy) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0x66E07070) { it.cents }
+            if (layers.sell) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0x997EB6FF.toInt()) { it.sellCents }
+        }
 
         if (layers.precipitation && weather.size >= 2) {
             val barWidth = (chartW / weather.size.toFloat()) * 0.65f
@@ -669,16 +670,6 @@ object ChartBitmapRenderer {
             drawAndroidTempLine(canvas, weather, ::xOf, ::yOfTemp, sunDays)
         }
 
-        if (layers.rates) {
-            val bands = DteTou.bands(from, to)
-            if (layers.buy) {
-                drawAndroidRateStep(canvas, bands, ::xOf, ::yOfRate, 0xFFE07070.toInt()) { it.cents }
-            }
-            if (layers.sell) {
-                drawAndroidRateStep(canvas, bands, ::xOf, ::yOfRate, 0xFF7EB6FF.toInt()) { it.sellCents }
-            }
-        }
-
         val nowPaint = Paint().apply {
             color = 0xFFFF8A4C.toInt()
             strokeWidth = 3f
@@ -746,7 +737,7 @@ object ChartBitmapRenderer {
         canvas.drawPath(linePath, linePaint)
     }
 
-    private fun drawAndroidRateStep(
+    private fun drawAndroidRateArea(
         canvas: AndroidCanvas,
         bands: List<DteTou.Band>,
         xOf: (Instant) -> Float,
@@ -755,21 +746,20 @@ object ChartBitmapRenderer {
         centsOf: (DteTou.Period) -> Double
     ) {
         if (bands.isEmpty()) return
+        val baseline = yOf(ForecastSnapshot.RATE_MIN_CENTS)
         val path = Path()
-        bands.forEachIndexed { index, band ->
+        path.moveTo(xOf(bands.first().start), baseline)
+        bands.forEach { band ->
             val y = yOf(centsOf(band.period))
-            val x1 = xOf(band.start)
-            val x2 = xOf(band.end)
-            if (index == 0) path.moveTo(x1, y) else path.lineTo(x1, y)
-            path.lineTo(x2, y)
+            path.lineTo(xOf(band.start), y)
+            path.lineTo(xOf(band.end), y)
         }
+        path.lineTo(xOf(bands.last().end), baseline)
+        path.close()
         val paint = Paint().apply {
             isAntiAlias = true
-            style = Paint.Style.STROKE
-            strokeWidth = 3.5f
+            style = Paint.Style.FILL
             this.color = color
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
         }
         canvas.drawPath(path, paint)
     }

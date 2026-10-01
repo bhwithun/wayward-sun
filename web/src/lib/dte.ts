@@ -76,9 +76,9 @@ export type RateSample = {
 export type RateVertex = { t: number; cents: number };
 
 /**
- * Buy and sell as step polylines across [from, to].
+ * Buy and sell step outlines across [from, to]. The chart fills each down to 0¢.
  * A stored half-hour overrides the schedule for the cents it has.
- * Each segment is two vertices at the same cents, so a stroke stays horizontal
+ * Each segment is two vertices at the same cents, so the top edge stays horizontal
  * and the next segment's first vertex makes the vertical join.
  */
 export function rateSteps(

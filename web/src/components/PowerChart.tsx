@@ -10,8 +10,8 @@ const NOW = "#FF8A4C";
 const GRID = "rgba(74, 98, 136, 0.45)";
 const INK = "#E8EEF7";
 const PRECIP = "rgba(92, 168, 255, 0.40)";
-const BUY = "#E07070";
-const SELL = "#7EB6FF";
+const BUY = "rgba(224, 112, 112, 0.40)";
+const SELL = "rgba(126, 182, 255, 0.55)";
 const TEMP = "#FFFFFF";
 const FREEZE = "#64B5F6";
 const HOT = "#FF8A4C";
@@ -92,6 +92,13 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const yRate = (cents: number) =>
     bottom - (clamp((cents - RATE_MIN) / (RATE_MAX - RATE_MIN), 0, 1) * plotH);
 
+  if (props.layers.buy || props.layers.sell) {
+    const steps = rateSteps(new Date(props.from), new Date(props.to), props.rates);
+    const baseline = yRate(RATE_MIN);
+    if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, BUY);
+    if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, SELL);
+  }
+
   if (props.layers.precip && props.weather.length >= 2) {
     const bar = (plotW / props.weather.length) * 0.65;
     ctx.fillStyle = PRECIP;
@@ -138,12 +145,6 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     strokeTemp(ctx, props.weather, xOf, yTemp, props.sun);
   }
 
-  if (props.layers.buy || props.layers.sell) {
-    const steps = rateSteps(new Date(props.from), new Date(props.to), props.rates);
-    if (props.layers.buy) strokeSteps(ctx, steps.buy, xOf, yRate, BUY);
-    if (props.layers.sell) strokeSteps(ctx, steps.sell, xOf, yRate, SELL);
-  }
-
   const nowX = clamp(xOf(props.now), left, right);
   ctx.strokeStyle = NOW;
   ctx.lineWidth = 2;
@@ -180,28 +181,23 @@ function strokeSeries(
   ctx.restore();
 }
 
-function strokeSteps(
+function fillSteps(
   ctx: CanvasRenderingContext2D,
   vertices: RateVertex[],
   xOf: (t: number) => number,
   yOf: (cents: number) => number,
+  baseline: number,
   color: string
 ) {
   if (vertices.length < 2) return;
   ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.setLineDash([]);
+  ctx.fillStyle = color;
   ctx.beginPath();
-  vertices.forEach((vertex, index) => {
-    const x = xOf(vertex.t);
-    const y = yOf(vertex.cents);
-    if (index === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
+  ctx.moveTo(xOf(vertices[0].t), baseline);
+  vertices.forEach((vertex) => ctx.lineTo(xOf(vertex.t), yOf(vertex.cents)));
+  ctx.lineTo(xOf(vertices[vertices.length - 1].t), baseline);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 }
 
