@@ -12,7 +12,7 @@ Pure Android app (Kotlin, Compose, Material 3, Glance widget) bootstrapped from 
 - The web app (`web/`) is the **only** Solcast HTTP client. The Android app and widget only `GET /cache` (`CacheApi`). They must not call `api.solcast.com.au`.
 - No `CACHE_SECRET`. No device `PUT /cache`. Cache JSON is public at the site URL.
 - Daily hobbyist limit is 10 HTTP requests. A full pull is 2 HTTP calls. Solcast runs only on `GET /cache`, `POST /refresh`, or `GET /cron` when the snapshot is older than `MIN_AUTO_AGE` (4 hours), capped at 5 cycles per UTC day (`DAILY_AUTO_LIMIT`). There is no public force refresh.
-- Vercel Cron calls `GET /cron` once a day at 12:00 UTC (`0 12 * * *`). Hobby accounts reject a more frequent schedule at deploy time. The cron uses the same 4-hour gate, so it cannot spend more than the daily cap. Phone downloads still refresh between cron runs. Set `CRON_SECRET` on Vercel so the route requires `Authorization: Bearer`.
+- Neon function `solpull` (`web/functions/solpull.ts`) on project `sol-widget` calls `GET /cron` at 8:00am, 12:00pm, 4:00pm, 8:00pm, 12:00am, and 4:00am America/Detroit during daylight time (`0 12,16,20,0,4,8 * * *` UTC). In standard time those instants are one hour earlier. The function only forwards the request; it does not call Solcast. Vercel Hobby cron still calls `GET /cron` once a day at 12:00 UTC. Both use the same 4-hour gate. Set `CRON_SECRET` on Vercel and on the Neon function so the route requires `Authorization: Bearer`.
 - Open-Meteo for stored history is fetched by the web app when `SITE_LAT` and `SITE_LNG` are set and the last weather write is older than 1 hour. The phone still fetches its own Open-Meteo for the widget.
 
 ## Layout

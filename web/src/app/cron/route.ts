@@ -5,7 +5,7 @@ import { publicCache } from "@/lib/store";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Vercel Cron hits this every 4 hours. Same Solcast gate as GET /cache. */
+/** Vercel Hobby cron and the Neon solpull function. Same Solcast gate as GET /cache. */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (secret) {

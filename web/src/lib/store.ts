@@ -19,6 +19,19 @@ type StateRow = {
   weather_fetched_at: string | null;
 };
 
+/** Postgres `date` values may arrive as a Date. `String(date).slice(0, 10)` is "Thu Oct 01". */
+export function isoDate(value: unknown): string {
+  if (value == null || value === "") return "";
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 10);
+  }
+  const text = String(value);
+  const prefix = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+  if (prefix) return prefix[1];
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
 export async function loadState(): Promise<SnapshotBody | null> {
   const rows = await sql()`
     SELECT resource_id, fetched_at, source, requests_day, requests_used,
@@ -34,7 +47,7 @@ export async function loadState(): Promise<SnapshotBody | null> {
     source: row.source || "empty",
     forecasts: asJson<SnapshotBody["forecasts"]>(row.forecasts) ?? { forecasts: [] },
     actuals: asJson<SnapshotBody["actuals"]>(row.actuals) ?? { estimated_actuals: [] },
-    requestsDay: row.requests_day ? String(row.requests_day).slice(0, 10) : "",
+    requestsDay: isoDate(row.requests_day),
     requestsUsed: row.requests_used ?? 0,
     autoFetchesUsed: row.auto_fetches_used ?? 0,
     message: row.message,
@@ -202,7 +215,7 @@ export async function loadHistory(fromIso: string, toIso: string) {
   return {
     points: (points as Array<Record<string, unknown>>).map(mapPoint),
     sun: (sun as Array<Record<string, unknown>>).map((row) => ({
-      date: String(row.day).slice(0, 10),
+      date: isoDate(row.day),
       sunrise: new Date(String(row.sunrise)).toISOString(),
       sunset: new Date(String(row.sunset)).toISOString(),
     })),

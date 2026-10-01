@@ -22,7 +22,8 @@ Default rooftop resource ID: `84d7-8b52-33f3-bd7b`.
 |---|---|
 | **Next.js app** (`web/`) | The only process that calls Solcast. Serves the dashboard at `/` and JSON at `/cache`. |
 | **Neon** | Stores the latest forecasts + estimated actuals, quota counters, and half-hour history. |
-| **Vercel Cron** | `GET /cron` once a day at 12:00 UTC. Same 4-hour and 5-pull cap as a phone download. |
+| **Neon `solpull`** | Calls `GET /cron` every 4 hours, first at 8:00am Detroit daylight time. Same 4-hour and 5-pull cap. |
+| **Vercel Cron** | `GET /cron` once a day at 12:00 UTC. Same gate, because Hobby cron cannot run more often. |
 | **Secret** | `SOLCAST_API_KEY` lives in Vercel env only. Never in git, never on the phones. |
 
 ```
