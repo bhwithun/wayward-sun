@@ -42,8 +42,11 @@ class AppStorage(private val context: Context) {
 
     companion object {
         const val DEFAULT_RESOURCE_ID = "84d7-8b52-33f3-bd7b"
-        const val DEFAULT_CACHE_URL = "https://solcast-cache-worker.brian-952.workers.dev"
-        private const val LEGACY_CACHE_URL = "https://sol-cache.brian-952.workers.dev"
+        const val DEFAULT_CACHE_URL = "https://sol-widget.vercel.app"
+        private val LEGACY_CACHE_URLS = setOf(
+            "https://sol-cache.brian-952.workers.dev",
+            "https://solcast-cache-worker.brian-952.workers.dev",
+        )
     }
 
     fun getStringFlow(key: Preferences.Key<String>, default: String? = null): Flow<String?> =
@@ -76,8 +79,7 @@ class AppStorage(private val context: Context) {
     suspend fun cacheUrlOnce(): String {
         val stored = getStringOnce(Keys.CACHE_URL)?.trim()?.trimEnd('/')
         val url = when {
-            stored.isNullOrBlank() || stored.equals(LEGACY_CACHE_URL, ignoreCase = true) ->
-                DEFAULT_CACHE_URL
+            stored.isNullOrBlank() || isLegacyCacheUrl(stored) -> DEFAULT_CACHE_URL
             else -> stored
         }
         if (stored != url) setCacheUrl(url)
@@ -92,12 +94,15 @@ class AppStorage(private val context: Context) {
     suspend fun setCacheUrl(value: String) {
         val trimmed = value.trim().trimEnd('/')
         val url = when {
-            trimmed.isBlank() || trimmed.equals(LEGACY_CACHE_URL, ignoreCase = true) ->
-                DEFAULT_CACHE_URL
+            trimmed.isBlank() || isLegacyCacheUrl(trimmed) -> DEFAULT_CACHE_URL
             else -> trimmed
         }
         setString(Keys.CACHE_URL, url)
     }
+
+    private fun isLegacyCacheUrl(url: String): Boolean =
+        LEGACY_CACHE_URLS.any { it.equals(url, ignoreCase = true) }
+
     suspend fun setResourceId(value: String) = setString(Keys.RESOURCE_ID, value.trim())
 
     suspend fun cachedForecasts(): String? = getStringOnce(Keys.CACHED_FORECASTS)

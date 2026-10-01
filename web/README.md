@@ -1,0 +1,29 @@
+# Wayward Sun web
+
+Next.js app on Vercel. It is the only Solcast client. Neon stores the latest snapshot and a half-hour history of solar, DTE rate, temperature, and precipitation probability.
+
+## Routes
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Dashboard |
+| GET | `/health` | `{ ok, runtime, deployed }` |
+| GET | `/cache` | JSON snapshot for the Android app. Pulls Solcast if the snapshot is older than 4 hours. |
+| POST | `/refresh` | Same gate as `GET /cache` |
+| GET | `/history?from=&to=` | Stored half-hour rows. `from` and `to` are ISO instants or `YYYY-MM-DD` (Detroit midnight). Max 366 days. |
+| GET | `/cron` | Vercel Cron, every 4 hours. Same Solcast gate. If `CRON_SECRET` is set, requires `Authorization: Bearer`. |
+
+There is no device `PUT` and no public force-refresh.
+
+## Setup
+
+1. Create a Neon database and run `db/001_init.sql`.
+2. Copy `.env.example` to `.env.local`. Set `DATABASE_URL`, `SOLCAST_API_KEY`, `SITE_LAT`, and `SITE_LNG` (the same place the phone uses).
+3. `npm install`, then `npm run dev`.
+4. Optional: `npm run seed` copies the current Cloudflare `/cache` into `fetch_state` so the first request does not spend Solcast quota.
+
+On Vercel, set the same env vars. Root directory is `web/`. Hobby cron plans may only allow a daily schedule; the config asks for `0 */4 * * *`.
+
+## Quota
+
+10 Solcast HTTP requests per UTC day. One pull is 2 calls. At most 5 pulls per UTC day, and only when the snapshot is older than 4 hours. Open-Meteo is separate and refreshes when the last weather write is older than 1 hour.
