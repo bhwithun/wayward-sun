@@ -3,6 +3,13 @@ import type { WeatherHour } from "./drafts";
 
 const FORECAST = "https://api.open-meteo.com/v1/forecast";
 
+/**
+ * Solcast forecasts request 336 hours, which lands on the 14th local day ahead.
+ * Open-Meteo counts today as a forecast day and starts at local midnight,
+ * so 15 days reaches the end of that same day.
+ */
+const FORECAST_DAYS = 15;
+
 export type SunDay = {
   day: string;
   sunrise: string;
@@ -30,7 +37,7 @@ export async function fetchSiteWeather(): Promise<WeatherFetch | null> {
     "&hourly=temperature_2m,precipitation_probability" +
     "&daily=sunrise,sunset" +
     "&temperature_unit=fahrenheit" +
-    "&past_days=2&forecast_days=3" +
+    `&past_days=2&forecast_days=${FORECAST_DAYS}` +
     "&timezone=America%2FDetroit";
   const response = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "WaywardSun/2.0" },

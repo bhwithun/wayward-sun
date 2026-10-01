@@ -8,6 +8,7 @@ import android.widget.Toast
 object IntentUtils {
     fun openUrl(context: Context, url: String) {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         if (intent.resolveActivity(context.packageManager) == null) {

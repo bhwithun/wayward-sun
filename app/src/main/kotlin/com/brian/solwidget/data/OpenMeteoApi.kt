@@ -39,7 +39,7 @@ class OpenMeteoApi {
             "&hourly=temperature_2m,precipitation_probability" +
             "&daily=sunrise,sunset" +
             "&temperature_unit=fahrenheit" +
-            "&past_days=2&forecast_days=3" +
+            "&past_days=2&forecast_days=$FORECAST_DAYS" +
             "&timezone=${URLEncoder.encode(zone.id, Charsets.UTF_8.name())}"
         val body = get(url)
         return body to parseHourly(body, zone)
@@ -125,6 +125,9 @@ class OpenMeteoApi {
 
     companion object {
         private const val FORECAST = "https://api.open-meteo.com/v1/forecast"
+
+        /** Today plus 14 days, matching the 336-hour Solcast forecast. */
+        private const val FORECAST_DAYS = 15
         private const val GEOCODE = "https://geocoding-api.open-meteo.com/v1/search"
     }
 }
