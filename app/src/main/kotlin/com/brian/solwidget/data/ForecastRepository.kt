@@ -124,8 +124,8 @@ class ForecastRepository private constructor(context: Context) {
 
     companion object {
         const val DAILY_LIMIT = 10
-        const val DAILY_AUTO_LIMIT = 5
-        const val REQUESTS_PER_REFRESH = 2
+        const val DAILY_AUTO_LIMIT = 8
+        const val REQUESTS_PER_REFRESH = 1
         val MIN_AUTO_AGE: Duration = Duration.ofHours(4)
 
         @Volatile

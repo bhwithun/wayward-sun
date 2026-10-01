@@ -103,8 +103,8 @@ fun SettingsScreen(
             }
             Text(
                 "Hobbyist Solcast accounts allow 10 requests per UTC day. " +
-                    "The Worker calls Solcast when this app downloads the cache and that snapshot is older than 4 hours, at most 5 times per UTC day. " +
-                    "The app never talks to Solcast directly.",
+                    "The server calls Solcast on a Detroit schedule: 8 forecasts from 6:00am to 11:30pm, plus actuals at 6:00am and 6:30pm. " +
+                    "This app only downloads the shared cache. It never talks to Solcast directly.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SolColors.Muted
             )

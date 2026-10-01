@@ -13,6 +13,10 @@ type StateRow = {
   requests_day: string | null;
   requests_used: number;
   auto_fetches_used: number;
+  actuals_fetches_used: number | null;
+  forecast_slot: string | null;
+  actuals_slot: string | null;
+  actuals_fetched_at: string | null;
   message: string | null;
   forecasts: SnapshotBody["forecasts"] | null;
   actuals: SnapshotBody["actuals"] | null;
@@ -35,7 +39,8 @@ export function isoDate(value: unknown): string {
 export async function loadState(): Promise<SnapshotBody | null> {
   const rows = await sql()`
     SELECT resource_id, fetched_at, source, requests_day, requests_used,
-           auto_fetches_used, message, forecasts, actuals, weather_fetched_at
+           auto_fetches_used, actuals_fetches_used, forecast_slot, actuals_slot,
+           actuals_fetched_at, message, forecasts, actuals, weather_fetched_at
     FROM fetch_state
     WHERE id = 1
   `;
@@ -50,6 +55,12 @@ export async function loadState(): Promise<SnapshotBody | null> {
     requestsDay: isoDate(row.requests_day),
     requestsUsed: row.requests_used ?? 0,
     autoFetchesUsed: row.auto_fetches_used ?? 0,
+    actualsFetchesUsed: row.actuals_fetches_used ?? 0,
+    forecastSlot: row.forecast_slot,
+    actualsSlot: row.actuals_slot,
+    actualsFetchedAt: row.actuals_fetched_at
+      ? new Date(row.actuals_fetched_at).toISOString()
+      : null,
     message: row.message,
     weatherFetchedAt: row.weather_fetched_at
       ? new Date(row.weather_fetched_at).toISOString()
@@ -71,7 +82,8 @@ export async function persistState(
   await db`
     INSERT INTO fetch_state (
       id, resource_id, fetched_at, source, requests_day, requests_used,
-      auto_fetches_used, message, forecasts, actuals, weather_fetched_at
+      auto_fetches_used, actuals_fetches_used, forecast_slot, actuals_slot,
+      actuals_fetched_at, message, forecasts, actuals, weather_fetched_at
     ) VALUES (
       1,
       ${state.resourceId},
@@ -80,6 +92,10 @@ export async function persistState(
       ${state.requestsDay || null},
       ${state.requestsUsed},
       ${state.autoFetchesUsed},
+      ${state.actualsFetchesUsed},
+      ${state.forecastSlot},
+      ${state.actualsSlot},
+      ${state.actualsFetchedAt},
       ${state.message},
       ${JSON.stringify(state.forecasts)}::jsonb,
       ${JSON.stringify(state.actuals)}::jsonb,
@@ -92,6 +108,10 @@ export async function persistState(
       requests_day = EXCLUDED.requests_day,
       requests_used = EXCLUDED.requests_used,
       auto_fetches_used = EXCLUDED.auto_fetches_used,
+      actuals_fetches_used = EXCLUDED.actuals_fetches_used,
+      forecast_slot = EXCLUDED.forecast_slot,
+      actuals_slot = EXCLUDED.actuals_slot,
+      actuals_fetched_at = EXCLUDED.actuals_fetched_at,
       message = EXCLUDED.message,
       forecasts = EXCLUDED.forecasts,
       actuals = EXCLUDED.actuals,
@@ -178,6 +198,7 @@ export function publicCache(snapshot: SnapshotBody) {
     requestsDay: snapshot.requestsDay,
     requestsUsed: snapshot.requestsUsed,
     autoFetchesUsed: snapshot.autoFetchesUsed,
+    actualsFetchesUsed: snapshot.actualsFetchesUsed,
     remainingRequests: Math.max(0, DAILY_LIMIT - (snapshot.requestsUsed || 0)),
     pointCount: combinedPoints(snapshot).length,
     message: snapshot.message,

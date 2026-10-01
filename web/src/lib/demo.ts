@@ -17,7 +17,15 @@ export type SnapshotBody = {
   actuals: { estimated_actuals: SolcastRow[] };
   requestsDay: string;
   requestsUsed: number;
+  /** Forecast HTTP calls already made on requestsDay. */
   autoFetchesUsed: number;
+  /** Estimated-actuals HTTP calls already made on requestsDay. */
+  actualsFetchesUsed: number;
+  /** Detroit slot id of the last successful forecast, `YYYY-MM-DDTHH:mm`. */
+  forecastSlot: string | null;
+  /** Detroit slot id of the last successful estimated-actuals pull. */
+  actualsSlot: string | null;
+  actualsFetchedAt: string | null;
   message: string | null;
   weatherFetchedAt: string | null;
 };
@@ -55,6 +63,10 @@ export function demoSnapshot(resourceId: string, now = new Date()): SnapshotBody
     requestsDay: utcDay(now),
     requestsUsed: 0,
     autoFetchesUsed: 0,
+    actualsFetchesUsed: 0,
+    forecastSlot: null,
+    actualsSlot: null,
+    actualsFetchedAt: null,
     message: "Demo curve — no Solcast key on this deployment.",
     weatherFetchedAt: null,
   };

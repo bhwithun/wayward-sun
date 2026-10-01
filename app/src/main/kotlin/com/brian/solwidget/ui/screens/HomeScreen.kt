@@ -50,6 +50,7 @@ import com.brian.solwidget.data.WeatherSnapshot
 import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
+import com.brian.solwidget.util.IntentUtils
 import com.brian.solwidget.viewmodel.HomeViewModel
 import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
 import java.time.Instant
@@ -78,8 +79,10 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Wayward Sun") },
                 actions = {
-                    TextButton(onClick = { viewModel.refresh(force = true) }) {
-                        Text("Refresh")
+                    TextButton(onClick = {
+                        IntentUtils.openUrl(context, "https://sun.brianandkathi.com")
+                    }) {
+                        Text("Web App")
                     }
                     TextButton(onClick = onOpenSettings) {
                         Text("Settings")

@@ -21,6 +21,33 @@ import {
 import { dayTotals, seriesFromHistory, type SunSpan } from "@/lib/series";
 import { addDays, detroitParts, displayRange, ymdKey, zonedTimeToUtc } from "@/lib/time";
 
+const LAYER_KEY = "wayward-sun-layers";
+
+const DEFAULT_LAYERS: ChartLayers = {
+  solar: true,
+  temp: true,
+  precip: true,
+  buy: true,
+  sell: true,
+};
+
+function readLayers(): ChartLayers {
+  try {
+    const raw = localStorage.getItem(LAYER_KEY);
+    if (!raw) return DEFAULT_LAYERS;
+    const parsed = JSON.parse(raw) as Partial<ChartLayers>;
+    return {
+      solar: parsed.solar !== false,
+      temp: parsed.temp !== false,
+      precip: parsed.precip !== false,
+      buy: parsed.buy !== false,
+      sell: parsed.sell !== false,
+    };
+  } catch {
+    return DEFAULT_LAYERS;
+  }
+}
+
 type CacheBody = {
   resourceId?: string;
   fetchedAt?: string | null;
@@ -28,6 +55,7 @@ type CacheBody = {
   requestsDay?: string;
   requestsUsed?: number;
   autoFetchesUsed?: number;
+  actualsFetchesUsed?: number;
   message?: string | null;
   error?: string;
 };
@@ -62,13 +90,8 @@ const RATES: Array<[string, string, string, string]> = [
 ];
 
 export function Dashboard() {
-  const [layers, setLayers] = useState<ChartLayers>({
-    solar: true,
-    temp: true,
-    precip: true,
-    buy: true,
-    sell: true,
-  });
+  const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
+  const [layersReady, setLayersReady] = useState(false);
   const [mode, setMode] = useState<RangeMode>("window");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -79,9 +102,16 @@ export function Dashboard() {
   const today = ymdKey(detroitParts(new Date(clock)));
 
   useEffect(() => {
+    setLayers(readLayers());
+    setLayersReady(true);
     const id = setInterval(() => setClock(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!layersReady) return;
+    localStorage.setItem(LAYER_KEY, JSON.stringify(layers));
+  }, [layers, layersReady]);
 
   const range = useMemo(
     () => resolveRange(mode, today, customFrom, customTo),
@@ -111,19 +141,6 @@ export function Dashboard() {
     void load();
   }, [load]);
 
-  async function askUpdate() {
-    setStatus("Working…");
-    const res = await fetch("/refresh", { method: "POST" });
-    const body = (await res.json()) as CacheBody;
-    if (!res.ok) {
-      setStatus(body.error || `HTTP ${res.status}`);
-      return;
-    }
-    setCache(body);
-    setStatus(body.message || "Updated.");
-    await load();
-  }
-
   const points = seriesFromHistory(history?.points ?? [], clock);
   const weather = (history?.points ?? [])
     .filter((point) => point.tempF != null)
@@ -144,7 +161,7 @@ export function Dashboard() {
     <main>
       <h1>Wayward Sun</h1>
       <p className="muted">
-        Shared Solcast cache on Vercel. Phones download <code>GET /cache</code>. This site is the only Solcast client.
+        Shared Solcast cache on Vercel. Phones download <code>GET /cache</code>. Solcast itself runs only on the Detroit schedule.
       </p>
 
       <div className="toolbar">
@@ -195,7 +212,7 @@ export function Dashboard() {
           demo={cache?.source === "demo"}
         />
         {history?.points?.length === 0 && !history.error && (
-          <p className="muted">No stored intervals in this range yet. Ask for an update after the database is migrated.</p>
+          <p className="muted">No stored intervals in this range yet.</p>
         )}
       </section>
 
@@ -223,8 +240,8 @@ export function Dashboard() {
         <section className="panel">
           <h2>Quota (UTC day {cache?.requestsDay || "—"})</h2>
           <div className="stat">{cache?.requestsUsed ?? 0} / 10 requests</div>
-          <p className="muted">{cache?.autoFetchesUsed ?? 0} / 5 automatic pulls</p>
-          <p className="muted">Solcast runs only when this snapshot is older than 4 hours.</p>
+          <p className="muted">{cache?.autoFetchesUsed ?? 0} / 8 forecasts · {cache?.actualsFetchesUsed ?? 0} / 2 actuals</p>
+          <p className="muted">Forecasts at 6:00am, 8:30am, 11:00am, 1:30pm, 4:00pm, 6:30pm, 9:00pm, and 11:30pm Detroit. Actuals at 6:00am and 6:30pm.</p>
         </section>
       </div>
 
@@ -257,9 +274,6 @@ export function Dashboard() {
         </p>
       </section>
 
-      <div className="toolbar">
-        <button className="gold" type="button" onClick={() => void askUpdate()}>Ask for update</button>
-      </div>
     </main>
   );
 }

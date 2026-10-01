@@ -1,60 +1,233 @@
 import { demoSnapshot, type SnapshotBody } from "./demo";
 import { loadState, persistState } from "./store";
-import { utcDay } from "./time";
+import { detroitParts, utcDay, ymdKey } from "./time";
 import { fetchSiteWeather } from "./weather";
 
 export const DAILY_LIMIT = 10;
-export const DAILY_AUTO_LIMIT = 5;
-const REQUESTS_PER_REFRESH = 2;
-const MIN_AUTO_AGE_MS = 4 * 60 * 60 * 1000;
-const WEATHER_AGE_MS = 60 * 60 * 1000;
+export const DAILY_FORECAST_LIMIT = 8;
+export const DAILY_ACTUALS_LIMIT = 2;
+export const FORECAST_HOURS = 336;
+export const ACTUALS_HOURS = 168;
+
+/** A cron that lands this many minutes after a slot still counts as that slot. */
+export const SLOT_GRACE_MINUTES = 10;
+
 const SOLCAST = "https://api.solcast.com.au";
+const WEATHER_AGE_MS = 60 * 60 * 1000;
+
+export type ForecastSlot = {
+  hour: number;
+  minute: number;
+  actuals: boolean;
+};
+
+/** Awake-hour forecast times in America/Detroit. Actuals ride on the first and the 6:30pm run. */
+export const FORECAST_SLOTS: ForecastSlot[] = [
+  { hour: 6, minute: 0, actuals: true },
+  { hour: 8, minute: 30, actuals: false },
+  { hour: 11, minute: 0, actuals: false },
+  { hour: 13, minute: 30, actuals: false },
+  { hour: 16, minute: 0, actuals: false },
+  { hour: 18, minute: 30, actuals: true },
+  { hour: 21, minute: 0, actuals: false },
+  { hour: 23, minute: 30, actuals: false },
+];
+
+export type PullPlan = {
+  slotId: string | null;
+  forecast: boolean;
+  actuals: boolean;
+  message: string | null;
+};
 
 export function resourceId(): string {
   return process.env.RESOURCE_ID || "84d7-8b52-33f3-bd7b";
 }
 
-export function snapshotAgeMs(snapshot: SnapshotBody | null, now: Date): number {
-  const fetchedAt = snapshot?.fetchedAt ? Date.parse(snapshot.fetchedAt) : 0;
-  return fetchedAt ? now.getTime() - fetchedAt : Number.POSITIVE_INFINITY;
+export function detroitSlot(now: Date): { id: string; actuals: boolean } | null {
+  const parts = detroitParts(now);
+  const nowMinutes = parts.hour * 60 + parts.minute;
+  for (const slot of FORECAST_SLOTS) {
+    const delta = nowMinutes - (slot.hour * 60 + slot.minute);
+    if (delta >= 0 && delta <= SLOT_GRACE_MINUTES) {
+      const hh = String(slot.hour).padStart(2, "0");
+      const mm = String(slot.minute).padStart(2, "0");
+      return { id: `${ymdKey(parts)}T${hh}:${mm}`, actuals: slot.actuals };
+    }
+  }
+  return null;
 }
 
-/** A demo snapshot is not a successful pull. Replace it once the key exists. */
-export function needsSolcastPull(
-  snapshot: SnapshotBody | null,
-  now: Date,
-  apiKey: string | undefined = process.env.SOLCAST_API_KEY
-): boolean {
-  if (!snapshot?.fetchedAt) return true;
-  if (snapshot.source !== "solcast" && apiKey) return true;
-  return snapshotAgeMs(snapshot, now) >= MIN_AUTO_AGE_MS;
-}
-
-export function isFresh(snapshot: SnapshotBody | null, now: Date): boolean {
-  return !needsSolcastPull(snapshot, now);
-}
-
-function weatherDue(snapshot: SnapshotBody | null, now: Date): boolean {
-  const fetched = snapshot?.weatherFetchedAt ? Date.parse(snapshot.weatherFetchedAt) : 0;
-  if (!fetched) return true;
-  return now.getTime() - fetched >= WEATHER_AGE_MS;
+function dayCounters(existing: SnapshotBody | null, now: Date) {
+  const day = utcDay(now);
+  const same = existing?.requestsDay === day;
+  return {
+    day,
+    requestsUsed: same ? existing?.requestsUsed ?? 0 : 0,
+    forecastsUsed: same ? existing?.autoFetchesUsed ?? 0 : 0,
+    actualsUsed: same ? existing?.actualsFetchesUsed ?? 0 : 0,
+  };
 }
 
 /**
- * Shared by GET /cache, POST /refresh, and the daily cron.
- * Solcast runs only when the snapshot is older than 4 hours, at most 5 times per UTC day.
+ * Which Solcast calls a cron hit should make. Cache reads do not use this.
+ * Forecasts only on an awake-hour slot that has not succeeded yet today.
+ * Estimated actuals only on the 6:00am and 6:30pm slots.
  */
+export function planSolcastCalls(
+  existing: SnapshotBody | null,
+  now: Date,
+  apiKey: string | undefined = process.env.SOLCAST_API_KEY
+): PullPlan {
+  const slot = detroitSlot(now);
+  if (!slot) return { slotId: null, forecast: false, actuals: false, message: null };
+  if (!apiKey) {
+    return {
+      slotId: slot.id,
+      forecast: false,
+      actuals: false,
+      message: "No SOLCAST_API_KEY — serving stored data.",
+    };
+  }
+
+  const counters = dayCounters(existing, now);
+  let requests = counters.requestsUsed;
+  if (requests >= DAILY_LIMIT) {
+    return {
+      slotId: slot.id,
+      forecast: false,
+      actuals: false,
+      message: `Daily Solcast quota reached (${requests}/${DAILY_LIMIT}).`,
+    };
+  }
+
+  const forecast =
+    existing?.forecastSlot !== slot.id &&
+    counters.forecastsUsed < DAILY_FORECAST_LIMIT &&
+    requests < DAILY_LIMIT;
+  if (forecast) requests += 1;
+
+  const actuals =
+    slot.actuals &&
+    existing?.actualsSlot !== slot.id &&
+    counters.actualsUsed < DAILY_ACTUALS_LIMIT &&
+    requests < DAILY_LIMIT;
+
+  let message: string | null = null;
+  if (!forecast && existing?.forecastSlot !== slot.id && counters.forecastsUsed >= DAILY_FORECAST_LIMIT) {
+    message = `Daily forecast limit reached (${DAILY_FORECAST_LIMIT}).`;
+  }
+  return { slotId: slot.id, forecast, actuals, message };
+}
+
+/** Stored snapshot for phones and the dashboard. Does not call Solcast. */
 export async function serveCache(): Promise<SnapshotBody> {
   const now = new Date();
+  const state = await loadState();
+  if (!state) return demoSnapshot(resourceId(), now);
+  return attachWeather(state, now);
+}
+
+/** Scheduled entry. Solcast runs only when `planSolcastCalls` says so. */
+export async function serveCron(): Promise<SnapshotBody> {
+  const now = new Date();
   let state = await loadState();
-  if (!isFresh(state, now)) {
-    state = await refreshSolcast(state, now);
+  const plan = planSolcastCalls(state, now);
+  if (plan.forecast || plan.actuals) {
+    state = await pullSolcast(state, plan, now);
+  } else if (plan.message && state) {
+    state = { ...state, message: plan.message };
+    await persistState(state, null, now);
   }
-  let weather = null;
+  if (!state) return demoSnapshot(resourceId(), now);
+  return attachWeather(state, now);
+}
+
+async function pullSolcast(
+  existing: SnapshotBody | null,
+  plan: PullPlan,
+  now: Date
+): Promise<SnapshotBody> {
+  const apiKey = process.env.SOLCAST_API_KEY;
+  if (!apiKey || !plan.slotId) throw new Error("Solcast pull missing key or slot");
+  const counters = dayCounters(existing, now);
+  const base = existing ?? emptySnapshot(now);
+  let state: SnapshotBody = {
+    ...base,
+    requestsDay: counters.day,
+    requestsUsed: counters.requestsUsed,
+    autoFetchesUsed: counters.forecastsUsed,
+    actualsFetchesUsed: counters.actualsUsed,
+  };
+  const id = encodeURIComponent(resourceId());
+
+  if (plan.forecast) {
+    const forecasts = (await solcastGet(
+      `${SOLCAST}/rooftop_sites/${id}/forecasts?format=json&hours=${FORECAST_HOURS}`,
+      apiKey
+    )) as SnapshotBody["forecasts"];
+    state = {
+      ...state,
+      resourceId: resourceId(),
+      fetchedAt: now.toISOString(),
+      source: "solcast",
+      forecasts,
+      requestsUsed: state.requestsUsed + 1,
+      autoFetchesUsed: state.autoFetchesUsed + 1,
+      forecastSlot: plan.slotId,
+      message: "Scheduled forecast pull.",
+    };
+    await persistState(state, null, now);
+  }
+
+  if (plan.actuals) {
+    try {
+      const actuals = (await solcastGet(
+        `${SOLCAST}/rooftop_sites/${id}/estimated_actuals?format=json&hours=${ACTUALS_HOURS}`,
+        apiKey
+      )) as SnapshotBody["actuals"];
+      state = {
+        ...state,
+        resourceId: resourceId(),
+        source: "solcast",
+        actuals,
+        requestsUsed: state.requestsUsed + 1,
+        actualsFetchesUsed: state.actualsFetchesUsed + 1,
+        actualsSlot: plan.slotId,
+        actualsFetchedAt: now.toISOString(),
+        message: plan.forecast
+          ? "Scheduled forecast and actuals pull."
+          : "Scheduled actuals pull.",
+      };
+      await persistState(state, null, now);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      state = {
+        ...state,
+        message: `${state.message ?? "Scheduled pull."} Actuals failed: ${reason}`.trim(),
+      };
+      await persistState(state, null, now);
+      throw error;
+    }
+  }
+
+  return state;
+}
+
+function emptySnapshot(now: Date): SnapshotBody {
+  return {
+    ...demoSnapshot(resourceId(), now),
+    source: "empty",
+    fetchedAt: null,
+    forecasts: { forecasts: [] },
+    actuals: { estimated_actuals: [] },
+    message: null,
+  };
+}
+
+async function attachWeather(state: SnapshotBody, now: Date): Promise<SnapshotBody> {
+  let weather: Awaited<ReturnType<typeof fetchSiteWeather>> = null;
   let notice: string | null = null;
-  if (!state) {
-    throw new Error("Solcast refresh returned no snapshot");
-  }
   if (weatherDue(state, now)) {
     try {
       weather = await fetchSiteWeather();
@@ -64,83 +237,19 @@ export async function serveCache(): Promise<SnapshotBody> {
         notice = "SITE_LAT and SITE_LNG are not set, so weather history was skipped.";
       }
     } catch (error) {
-      notice = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof Error ? error.message : String(error);
+      notice = `Weather history skipped: ${reason}`;
     }
   }
-  await persistState(state, weather, now);
-  if (notice) {
-    state = { ...state, message: state.message ? `${state.message} ${notice}` : notice };
-  }
+  if (weather) await persistState(state, weather, now);
+  if (notice) state = { ...state, message: notice };
   return state;
 }
 
-async function refreshSolcast(existing: SnapshotBody | null, now: Date): Promise<SnapshotBody> {
-  const day = utcDay(now);
-  const used = existing && existing.requestsDay === day ? existing.requestsUsed : 0;
-  const autoUsed = existing && existing.requestsDay === day ? existing.autoFetchesUsed : 0;
-  const weatherFetchedAt = existing?.weatherFetchedAt ?? null;
-
-  if (existing && !needsSolcastPull(existing, now)) {
-    return {
-      ...existing,
-      message: "Cache younger than 4 hours; skipped Solcast.",
-    };
-  }
-
-  if (autoUsed >= DAILY_AUTO_LIMIT) {
-    const base = existing ?? demoSnapshot(resourceId(), now);
-    return {
-      ...base,
-      requestsDay: existing?.requestsDay ?? day,
-      requestsUsed: existing ? existing.requestsUsed : 0,
-      autoFetchesUsed: autoUsed,
-      weatherFetchedAt,
-      message: `Daily automatic pull limit reached (${DAILY_AUTO_LIMIT}).`,
-    };
-  }
-
-  if (!process.env.SOLCAST_API_KEY) {
-    return {
-      ...demoSnapshot(resourceId(), now),
-      requestsDay: day,
-      requestsUsed: used,
-      autoFetchesUsed: autoUsed + 1,
-      weatherFetchedAt,
-      message: "No SOLCAST_API_KEY — serving demo data.",
-    };
-  }
-
-  if (used + REQUESTS_PER_REFRESH > DAILY_LIMIT) {
-    const base = existing ?? demoSnapshot(resourceId(), now);
-    return {
-      ...base,
-      weatherFetchedAt,
-      message: `Daily Solcast quota reached (${used}/${DAILY_LIMIT}).`,
-    };
-  }
-
-  const id = encodeURIComponent(resourceId());
-  const forecasts = (await solcastGet(
-    `${SOLCAST}/rooftop_sites/${id}/forecasts?format=json`,
-    process.env.SOLCAST_API_KEY
-  )) as SnapshotBody["forecasts"];
-  const actuals = (await solcastGet(
-    `${SOLCAST}/rooftop_sites/${id}/estimated_actuals?format=json`,
-    process.env.SOLCAST_API_KEY
-  )) as SnapshotBody["actuals"];
-
-  return {
-    resourceId: resourceId(),
-    fetchedAt: now.toISOString(),
-    source: "solcast",
-    forecasts,
-    actuals,
-    requestsDay: day,
-    requestsUsed: used + REQUESTS_PER_REFRESH,
-    autoFetchesUsed: autoUsed + 1,
-    message: "On-demand Solcast pull.",
-    weatherFetchedAt,
-  };
+function weatherDue(snapshot: SnapshotBody | null, now: Date): boolean {
+  const fetched = snapshot?.weatherFetchedAt ? Date.parse(snapshot.weatherFetchedAt) : 0;
+  if (!fetched) return true;
+  return now.getTime() - fetched >= WEATHER_AGE_MS;
 }
 
 async function solcastGet(url: string, apiKey: string): Promise<unknown> {
@@ -155,5 +264,5 @@ async function solcastGet(url: string, apiKey: string): Promise<unknown> {
   if (!response.ok) {
     throw new Error(`Solcast HTTP ${response.status}: ${body.slice(0, 240)}`);
   }
-  return JSON.parse(body) as SnapshotBody["forecasts"];
+  return JSON.parse(body) as unknown;
 }
