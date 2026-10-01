@@ -42,7 +42,7 @@ class AppStorage(private val context: Context) {
 
     companion object {
         const val DEFAULT_RESOURCE_ID = "84d7-8b52-33f3-bd7b"
-        const val DEFAULT_CACHE_URL = "https://sol-widget.vercel.app"
+        const val DEFAULT_CACHE_URL = "https://sol-widget-brianandkathi.vercel.app"
         private val LEGACY_CACHE_URLS = setOf(
             "https://sol-cache.brian-952.workers.dev",
             "https://solcast-cache-worker.brian-952.workers.dev",

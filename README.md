@@ -46,7 +46,7 @@ npm test
 
 Copy `web/.env.example` to `web/.env.local` and set `DATABASE_URL`, `SOLCAST_API_KEY`, `SITE_LAT`, and `SITE_LNG`. Apply `web/db/001_init.sql` on Neon. To carry today's quota across from the old Cloudflare cache: `npm run seed`.
 
-Deploy with the Vercel project rooted at `web/`. The Android default is `https://sol-widget.vercel.app`. If the project URL is different, change `AppStorage.DEFAULT_CACHE_URL` to match.
+Deploy with the Vercel project rooted at `web/`. The Android default is `https://sol-widget-brianandkathi.vercel.app`.
 
 Local preview: [http://127.0.0.1:3000/](http://127.0.0.1:3000/). More detail: `web/README.md`.
 
@@ -66,7 +66,7 @@ Refresh in the Android app re-downloads `/cache`. The phone never calls Solcast.
 ## Setup
 
 1. Confirm the Vercel app is deployed, `db/001_init.sql` has been applied, and `SOLCAST_API_KEY`, `DATABASE_URL`, `SITE_LAT`, and `SITE_LNG` are set.
-2. Install the app. Settings default to `https://sol-widget.vercel.app`. A phone still pointed at the old Cloudflare URL is rewritten to that default on the next read. Confirm weather place, then **Save and fetch**.
+2. Install the app. Settings default to `https://sol-widget-brianandkathi.vercel.app`. A phone still pointed at the old Cloudflare URL is rewritten to that default on the next read. Confirm weather place, then **Save and fetch**.
 3. Long-press the Android home screen → **Widgets** → **PV Live & Forecast**.
 
 ## Build

@@ -7,7 +7,7 @@ Pure Android app (Kotlin, Compose, Material 3, Glance widget) bootstrapped from 
 - Package: `com.brian.solwidget`
 - Solcast hobbyist rooftop endpoints only (not the commercial lat/lng PV power API)
 - Default resource ID: `84d7-8b52-33f3-bd7b`
-- Default cache URL: `https://sol-widget.vercel.app` (`AppStorage.DEFAULT_CACHE_URL`). The previous `*.workers.dev` URLs are legacy and rewrite to this default.
+- Default cache URL: `https://sol-widget-brianandkathi.vercel.app` (`AppStorage.DEFAULT_CACHE_URL`). The previous `*.workers.dev` URLs are legacy and rewrite to this default.
 - Never hardcode a Solcast API key. Never put it in the APK, git, or a committed env file. Store it only as the Vercel env var `SOLCAST_API_KEY`.
 - The web app (`web/`) is the **only** Solcast HTTP client. The Android app and widget only `GET /cache` (`CacheApi`). They must not call `api.solcast.com.au`.
 - No `CACHE_SECRET`. No device `PUT /cache`. Cache JSON is public at the site URL.
