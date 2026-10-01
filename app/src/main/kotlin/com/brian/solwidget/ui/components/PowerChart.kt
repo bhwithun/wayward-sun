@@ -137,8 +137,8 @@ fun PowerChart(
 
         if (layers.rates) {
             val bands = DteTou.bands(from, to)
-            if (layers.buy) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Buy.copy(alpha = 0.40f)) { it.cents }
-            if (layers.sell) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Sell.copy(alpha = 0.55f)) { it.sellCents }
+            if (layers.buy) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
+            if (layers.sell) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
         }
 
         if (layers.precipitation && weather.size >= 2) {
@@ -483,16 +483,34 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateArea(
 ) {
     if (bands.isEmpty()) return
     val baseline = yOf(ForecastSnapshot.RATE_MIN_CENTS)
+    val ceiling = yOf(ForecastSnapshot.RATE_MAX_CENTS)
     val path = ComposePath()
+    val edge = ComposePath()
     path.moveTo(xOf(bands.first().start), baseline)
-    bands.forEach { band ->
+    bands.forEachIndexed { index, band ->
         val y = yOf(centsOf(band.period))
-        path.lineTo(xOf(band.start), y)
-        path.lineTo(xOf(band.end), y)
+        val x1 = xOf(band.start)
+        val x2 = xOf(band.end)
+        path.lineTo(x1, y)
+        path.lineTo(x2, y)
+        if (index == 0) edge.moveTo(x1, y) else edge.lineTo(x1, y)
+        edge.lineTo(x2, y)
     }
     path.lineTo(xOf(bands.last().end), baseline)
     path.close()
-    drawPath(path, color)
+    drawPath(
+        path,
+        Brush.verticalGradient(
+            colors = listOf(color.copy(alpha = 0.20f), Color.Transparent),
+            startY = ceiling,
+            endY = baseline
+        )
+    )
+    drawPath(
+        edge,
+        color.copy(alpha = 0.55f),
+        style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Butt)
+    )
 }
 
 object ChartBitmapRenderer {
@@ -548,8 +566,8 @@ object ChartBitmapRenderer {
 
         if (layers.rates) {
             val bands = DteTou.bands(from, to)
-            if (layers.buy) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0x66E07070) { it.cents }
-            if (layers.sell) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0x997EB6FF.toInt()) { it.sellCents }
+            if (layers.buy) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFFC9898C.toInt()) { it.cents }
+            if (layers.sell) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFF8AA4C4.toInt()) { it.sellCents }
         }
 
         if (layers.precipitation && weather.size >= 2) {
@@ -747,21 +765,45 @@ object ChartBitmapRenderer {
     ) {
         if (bands.isEmpty()) return
         val baseline = yOf(ForecastSnapshot.RATE_MIN_CENTS)
+        val ceiling = yOf(ForecastSnapshot.RATE_MAX_CENTS)
         val path = Path()
+        val edge = Path()
         path.moveTo(xOf(bands.first().start), baseline)
-        bands.forEach { band ->
+        bands.forEachIndexed { index, band ->
             val y = yOf(centsOf(band.period))
-            path.lineTo(xOf(band.start), y)
-            path.lineTo(xOf(band.end), y)
+            val x1 = xOf(band.start)
+            val x2 = xOf(band.end)
+            path.lineTo(x1, y)
+            path.lineTo(x2, y)
+            if (index == 0) edge.moveTo(x1, y) else edge.lineTo(x1, y)
+            edge.lineTo(x2, y)
         }
         path.lineTo(xOf(bands.last().end), baseline)
         path.close()
-        val paint = Paint().apply {
+        val rgb = color and 0x00FFFFFF
+        val fill = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
-            this.color = color
+            shader = LinearGradient(
+                0f,
+                ceiling,
+                0f,
+                baseline,
+                rgb or (0x33 shl 24),
+                rgb,
+                Shader.TileMode.CLAMP
+            )
         }
-        canvas.drawPath(path, paint)
+        canvas.drawPath(path, fill)
+        val edgePaint = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            this.color = rgb or (0x8C shl 24)
+            strokeCap = Paint.Cap.BUTT
+            strokeJoin = Paint.Join.MITER
+        }
+        canvas.drawPath(edge, edgePaint)
     }
 
     private fun drawAndroidTempLine(

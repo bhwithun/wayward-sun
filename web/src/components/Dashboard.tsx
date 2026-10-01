@@ -180,8 +180,8 @@ export function Dashboard() {
           <span style={{ color: "#2EE6A6" }}>● Live</span>
           <span style={{ color: "#F5C542" }}>● Forecast</span>
           <span style={{ color: "#FF8A4C" }}>● Now</span>
-          {layers.buy && <span style={{ color: "#E07070" }}>▮ Buy</span>}
-          {layers.sell && <span style={{ color: "#7EB6FF" }}>▮ Sell</span>}
+          {layers.buy && <span style={{ color: "#C9898C" }}>▮ Buy</span>}
+          {layers.sell && <span style={{ color: "#8AA4C4" }}>▮ Sell</span>}
         </div>
         <PowerChart
           points={points}

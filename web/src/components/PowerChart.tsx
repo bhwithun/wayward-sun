@@ -10,8 +10,8 @@ const NOW = "#FF8A4C";
 const GRID = "rgba(74, 98, 136, 0.45)";
 const INK = "#E8EEF7";
 const PRECIP = "rgba(92, 168, 255, 0.40)";
-const BUY = "rgba(224, 112, 112, 0.40)";
-const SELL = "rgba(126, 182, 255, 0.55)";
+const BUY = { r: 201, g: 137, b: 140 };
+const SELL = { r: 138, g: 164, b: 196 };
 const TEMP = "#FFFFFF";
 const FREEZE = "#64B5F6";
 const HOT = "#FF8A4C";
@@ -95,8 +95,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   if (props.layers.buy || props.layers.sell) {
     const steps = rateSteps(new Date(props.from), new Date(props.to), props.rates);
     const baseline = yRate(RATE_MIN);
-    if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, BUY);
-    if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, SELL);
+    const ceiling = yRate(RATE_MAX);
+    if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, ceiling, BUY);
+    if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, ceiling, SELL);
   }
 
   if (props.layers.precip && props.weather.length >= 2) {
@@ -187,17 +188,34 @@ function fillSteps(
   xOf: (t: number) => number,
   yOf: (cents: number) => number,
   baseline: number,
-  color: string
+  ceiling: number,
+  color: { r: number; g: number; b: number }
 ) {
   if (vertices.length < 2) return;
+  const wash = ctx.createLinearGradient(0, ceiling, 0, baseline);
+  wash.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0.20)`);
+  wash.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
   ctx.save();
-  ctx.fillStyle = color;
+  ctx.fillStyle = wash;
   ctx.beginPath();
   ctx.moveTo(xOf(vertices[0].t), baseline);
   vertices.forEach((vertex) => ctx.lineTo(xOf(vertex.t), yOf(vertex.cents)));
   ctx.lineTo(xOf(vertices[vertices.length - 1].t), baseline);
   ctx.closePath();
   ctx.fill();
+  ctx.beginPath();
+  vertices.forEach((vertex, index) => {
+    const x = xOf(vertex.t);
+    const y = yOf(vertex.cents);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`;
+  ctx.lineWidth = 1;
+  ctx.lineJoin = "miter";
+  ctx.lineCap = "butt";
+  ctx.setLineDash([]);
+  ctx.stroke();
   ctx.restore();
 }
 
