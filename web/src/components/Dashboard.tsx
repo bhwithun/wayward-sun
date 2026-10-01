@@ -18,10 +18,22 @@ import {
   RATES_AS_OF,
   RIDER,
 } from "@/lib/dte";
-import { dayTotals, seriesFromHistory, type SunSpan } from "@/lib/series";
-import { addDays, detroitParts, displayRange, ymdKey, zonedTimeToUtc } from "@/lib/time";
+import { dayTotals, seriesFromHistory, type SeriesPoint, type SunSpan } from "@/lib/series";
+import {
+  addDays,
+  detroitParts,
+  liveWindow,
+  monthWeeks,
+  parseYmd,
+  shiftMonth,
+  ymdKey,
+  zonedTimeToUtc,
+  type CalendarWeek,
+  type Ymd,
+} from "@/lib/time";
 
 const LAYER_KEY = "wayward-sun-layers";
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const DEFAULT_LAYERS: ChartLayers = {
   solar: true,
@@ -60,22 +72,24 @@ type CacheBody = {
   error?: string;
 };
 
+type HistoryPoint = {
+  periodEnd: string;
+  actualKw: number | null;
+  forecastKw: number | null;
+  periodHours: number | null;
+  tempF: number | null;
+  precipPct: number | null;
+  importCents: number | null;
+  outflowCents: number | null;
+};
+
 type HistoryBody = {
-  points?: Array<{
-    periodEnd: string;
-    actualKw: number | null;
-    forecastKw: number | null;
-    periodHours: number | null;
-    tempF: number | null;
-    precipPct: number | null;
-    importCents: number | null;
-    outflowCents: number | null;
-  }>;
+  points?: HistoryPoint[];
   sun?: Array<{ date: string; sunrise: string; sunset: string }>;
   error?: string;
 };
 
-type RangeMode = "window" | "7" | "30" | "90" | "custom";
+type Tab = "live" | "history";
 
 const RATES: Array<[string, string, string, string]> = [
   ["Import base", cents(BASE_OFF_PEAK_CENTS), cents(BASE_MID_PEAK_CENTS), cents(BASE_PEAK_CENTS)],
@@ -89,17 +103,24 @@ const RATES: Array<[string, string, string, string]> = [
   ],
 ];
 
+const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
 export function Dashboard() {
   const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
   const [layersReady, setLayersReady] = useState(false);
-  const [mode, setMode] = useState<RangeMode>("window");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [tab, setTab] = useState<Tab>("live");
   const [cache, setCache] = useState<CacheBody | null>(null);
   const [history, setHistory] = useState<HistoryBody | null>(null);
   const [status, setStatus] = useState("");
   const [clock, setClock] = useState(() => Date.now());
-  const today = ymdKey(detroitParts(new Date(clock)));
+  const todayParts = detroitParts(new Date(clock));
+  const todayKey = ymdKey(todayParts);
+  const [month, setMonth] = useState(() => ({ year: todayParts.year, month: todayParts.month }));
+  const [weekId, setWeekId] = useState<string | null>(null);
 
   useEffect(() => {
     setLayers(readLayers());
@@ -113,10 +134,28 @@ export function Dashboard() {
     localStorage.setItem(LAYER_KEY, JSON.stringify(layers));
   }, [layers, layersReady]);
 
-  const range = useMemo(
-    () => resolveRange(mode, today, customFrom, customTo),
-    [mode, today, customFrom, customTo]
+  const weeks = useMemo(() => monthWeeks(month.year, month.month), [month]);
+  const selectedWeek = useMemo(
+    () =>
+      weeks.find((week) => week.id === weekId) ??
+      weeks.find((week) => week.days.some((day) => ymdKey(day) === todayKey)) ??
+      weeks[0],
+    [weeks, weekId, todayKey]
   );
+
+  const range = useMemo(() => {
+    const today = parseYmd(todayKey);
+    if (!today) return null;
+    if (tab === "live") {
+      const window = liveWindow(today);
+      return span(window.from, window.to);
+    }
+    if (weeks.length === 0) return null;
+    const start = parseYmd(weeks[0].id);
+    const endSunday = parseYmd(weeks[weeks.length - 1].id);
+    if (!start || !endSunday) return null;
+    return span(start, addDays(endSunday, 7));
+  }, [tab, todayKey, weeks]);
 
   const load = useCallback(async () => {
     if (!range) {
@@ -141,21 +180,8 @@ export function Dashboard() {
     void load();
   }, [load]);
 
-  const points = seriesFromHistory(history?.points ?? [], clock);
-  const weather = (history?.points ?? [])
-    .filter((point) => point.tempF != null)
-    .map((point) => ({
-      t: Date.parse(point.periodEnd),
-      tempF: point.tempF as number,
-      precipPct: point.precipPct,
-    }));
-  const sun: SunSpan[] = (history?.sun ?? []).map((day) => ({
-    sunrise: Date.parse(day.sunrise),
-    sunset: Date.parse(day.sunset),
-  }));
-  const totals = mode === "window" ? dayTotals(points) : [];
-  const fromMs = range ? Date.parse(range.from) : clock;
-  const toMs = range ? Date.parse(range.to) : clock;
+  const chart = chartModel(history, clock, tab === "history" ? selectedWeek : null, todayParts);
+  const monthName = MONTH_LABEL.format(new Date(Date.UTC(month.year, month.month - 1, 1)));
 
   return (
     <main>
@@ -164,23 +190,14 @@ export function Dashboard() {
         Shared Solcast cache on Vercel. Phones download <code>GET /cache</code>. Solcast itself runs only on the Detroit schedule.
       </p>
 
-      <div className="toolbar">
-        <RangeButton active={mode === "window"} onClick={() => setMode("window")}>5-day</RangeButton>
-        <RangeButton active={mode === "7"} onClick={() => setMode("7")}>7 days</RangeButton>
-        <RangeButton active={mode === "30"} onClick={() => setMode("30")}>30 days</RangeButton>
-        <RangeButton active={mode === "90"} onClick={() => setMode("90")}>90 days</RangeButton>
-        <RangeButton active={mode === "custom"} onClick={() => setMode("custom")}>Custom</RangeButton>
+      <div className="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === "live"} className={tab === "live" ? "on" : ""} onClick={() => setTab("live")}>
+          Live
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>
+          History
+        </button>
       </div>
-      {mode === "custom" && (
-        <div className="toolbar">
-          <label>
-            From <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-          </label>
-          <label>
-            To <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
-          </label>
-        </div>
-      )}
 
       <div className="toolbar">
         <Chip label="Solar" on={layers.solar} onClick={() => setLayers({ ...layers, solar: !layers.solar })} />
@@ -192,6 +209,44 @@ export function Dashboard() {
 
       {status && <p className="banner">{status}</p>}
 
+      {tab === "history" && (
+        <section className="panel calendar">
+          <div className="cal-nav">
+            <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month.year, month.month, -1))}>
+              ‹
+            </button>
+            <h2>{monthName}</h2>
+            <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month.year, month.month, 1))}>
+              ›
+            </button>
+          </div>
+          <div className="cal-dow">
+            {WEEKDAYS.map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+          {weeks.map((week) => (
+            <button
+              key={week.id}
+              type="button"
+              className={week.id === selectedWeek?.id ? "week selected" : "week"}
+              aria-pressed={week.id === selectedWeek?.id}
+              onClick={() => setWeekId(week.id)}
+            >
+              {week.days.map((day) => {
+                const key = ymdKey(day);
+                const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : ""].filter(Boolean).join(" ");
+                return (
+                  <span key={key} className={className}>
+                    {day.day}
+                  </span>
+                );
+              })}
+            </button>
+          ))}
+        </section>
+      )}
+
       <section className="panel chart-wrap">
         <div className="legend">
           <span style={{ color: "#2EE6A6" }}>● Live</span>
@@ -201,24 +256,22 @@ export function Dashboard() {
           {layers.sell && <span style={{ color: "#8AA4C4" }}>▮ Sell</span>}
         </div>
         <PowerChart
-          points={points}
-          weather={weather}
-          from={fromMs}
-          to={toMs}
+          points={chart.points}
+          weather={chart.weather}
+          from={chart.fromMs}
+          to={chart.toMs}
           now={clock}
           layers={layers}
-          sun={sun}
-          rates={history?.points ?? []}
+          sun={chart.sun}
+          rates={chart.rates}
           demo={cache?.source === "demo"}
         />
-        {history?.points?.length === 0 && !history.error && (
-          <p className="muted">No stored intervals in this range yet.</p>
-        )}
+        {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
 
-      {totals.length > 0 && (
+      {chart.totals.length > 0 && (
         <div className="totals">
-          {totals.map((day) => (
+          {chart.totals.map((day) => (
             <div key={day.label} className="panel total">
               <div className="muted">{day.label}</div>
               <div className="stat">{day.kwh.toFixed(1)} kWh</div>
@@ -230,68 +283,109 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="grid">
-        <section className="panel">
-          <h2>Snapshot</h2>
-          <div className="stat">{cache?.source || "—"}</div>
-          <p className="muted">as of {cache?.fetchedAt ? new Date(cache.fetchedAt).toLocaleString() : "never"}</p>
-          <p className="muted">resource {cache?.resourceId || "—"}</p>
-        </section>
-        <section className="panel">
-          <h2>Quota (UTC day {cache?.requestsDay || "—"})</h2>
-          <div className="stat">{cache?.requestsUsed ?? 0} / 10 requests</div>
-          <p className="muted">{cache?.autoFetchesUsed ?? 0} / 8 forecasts · {cache?.actualsFetchesUsed ?? 0} / 2 actuals</p>
-          <p className="muted">Forecasts at 6:00am, 8:30am, 11:00am, 1:30pm, 4:00pm, 6:30pm, 9:00pm, and 11:30pm Detroit. Actuals at 6:00am and 6:30pm.</p>
-        </section>
-      </div>
+      {tab === "live" && (
+        <>
+          <div className="grid">
+            <section className="panel">
+              <h2>Snapshot</h2>
+              <div className="stat">{cache?.source || "—"}</div>
+              <p className="muted">as of {cache?.fetchedAt ? new Date(cache.fetchedAt).toLocaleString() : "never"}</p>
+              <p className="muted">resource {cache?.resourceId || "—"}</p>
+            </section>
+            <section className="panel">
+              <h2>Quota (UTC day {cache?.requestsDay || "—"})</h2>
+              <div className="stat">{cache?.requestsUsed ?? 0} / 10 requests</div>
+              <p className="muted">{cache?.autoFetchesUsed ?? 0} / 8 forecasts · {cache?.actualsFetchesUsed ?? 0} / 2 actuals</p>
+              <p className="muted">Forecasts at 6:00am, 8:30am, 11:00am, 1:30pm, 4:00pm, 6:30pm, 9:00pm, and 11:30pm Detroit. Actuals at 6:00am and 6:30pm.</p>
+            </section>
+          </div>
 
-      <section className="panel rates">
-        <h2>Rates</h2>
-        <p>{PLAN_CODE} · {PLAN_NAME} · {RIDER}</p>
-        <table>
-          <thead>
-            <tr>
-              <th></th>
-              <th>Off-peak</th>
-              <th>Mid-peak</th>
-              <th>Peak</th>
-            </tr>
-          </thead>
-          <tbody>
-            {RATES.map(([label, off, mid, peak]) => (
-              <tr key={label}>
-                <td>{label}</td>
-                <td>{off}</td>
-                <td>{mid}</td>
-                <td>{peak}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="muted">Rates as of {RATES_AS_OF}. Import effective includes PSCR and volumetric surcharges. Excludes the $8.50 service charge and sales tax.</p>
-        <p className="muted">
-          Export is Rider 18 outflow (power supply only, before then plus PSCR {cents(PSCR_CENTS)}). Not 1:1 retail net metering. DTE rate book Sheet D-115, Case U-21860.
-        </p>
-      </section>
-
+          <section className="panel rates">
+            <h2>Rates</h2>
+            <p>{PLAN_CODE} · {PLAN_NAME} · {RIDER}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Off-peak</th>
+                  <th>Mid-peak</th>
+                  <th>Peak</th>
+                </tr>
+              </thead>
+              <tbody>
+                {RATES.map(([label, off, mid, peak]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <td>{off}</td>
+                    <td>{mid}</td>
+                    <td>{peak}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="muted">Rates as of {RATES_AS_OF}. Import effective includes PSCR and volumetric surcharges. Excludes the $8.50 service charge and sales tax.</p>
+            <p className="muted">
+              Export is Rider 18 outflow (power supply only, before then plus PSCR {cents(PSCR_CENTS)}). Not 1:1 retail net metering. DTE rate book Sheet D-115, Case U-21860.
+            </p>
+          </section>
+        </>
+      )}
     </main>
   );
 }
 
-function RangeButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: string;
-}) {
-  return (
-    <button type="button" className={active ? "on" : ""} onClick={onClick}>
-      {children}
-    </button>
-  );
+function chartModel(
+  history: HistoryBody | null,
+  clock: number,
+  week: CalendarWeek | null,
+  today: Ymd
+) {
+  const bounds = week
+    ? span(parseYmd(week.id) ?? { year: today.year, month: today.month, day: today.day }, addDays(parseYmd(week.id) ?? today, 7))
+    : span(liveWindow(today).from, liveWindow(today).to);
+  const fromMs = Date.parse(bounds.from);
+  const toMs = Date.parse(bounds.to);
+  const rows = (history?.points ?? []).filter((point) => {
+    const t = Date.parse(point.periodEnd);
+    return t >= fromMs && t < toMs;
+  });
+  const points = seriesFromHistory(rows, clock);
+  const weather = rows
+    .filter((point) => point.tempF != null)
+    .map((point) => ({
+      t: Date.parse(point.periodEnd),
+      tempF: point.tempF as number,
+      precipPct: point.precipPct,
+    }));
+  const sun: SunSpan[] = (history?.sun ?? [])
+    .map((day) => ({ sunrise: Date.parse(day.sunrise), sunset: Date.parse(day.sunset) }))
+    .filter((day) => day.sunset >= fromMs && day.sunrise < toMs);
+  const start = week ? parseYmd(week.id) : liveWindow(today).from;
+  return {
+    points,
+    weather,
+    sun,
+    fromMs,
+    toMs,
+    rates: rows,
+    totals: filledTotals(start ?? today, 7, points),
+    empty: history != null && rows.length === 0 && !history.error,
+  };
+}
+
+function filledTotals(start: Ymd, count: number, points: SeriesPoint[]) {
+  const byLabel = new Map(dayTotals(points).map((row) => [row.label, row]));
+  return Array.from({ length: count }, (_, index) => {
+    const label = ymdKey(addDays(start, index)).slice(5);
+    return byLabel.get(label) ?? { label, kwh: 0, liveKwh: 0, forecastKwh: 0 };
+  });
+}
+
+function span(from: Ymd, to: Ymd): { from: string; to: string } {
+  return {
+    from: zonedTimeToUtc(from.year, from.month, from.day).toISOString(),
+    to: zonedTimeToUtc(to.year, to.month, to.day).toISOString(),
+  };
 }
 
 function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
@@ -304,36 +398,4 @@ function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () 
 
 function cents(value: number): string {
   return `${value.toFixed(2)}¢`;
-}
-
-function resolveRange(
-  mode: RangeMode,
-  todayKey: string,
-  customFrom: string,
-  customTo: string
-): { from: string; to: string } | null {
-  const [year, month, day] = todayKey.split("-").map(Number);
-  const today = { year, month, day };
-  if (mode === "custom") {
-    if (!customFrom || !customTo) return null;
-    const [fy, fm, fd] = customFrom.split("-").map(Number);
-    const [ty, tm, td] = customTo.split("-").map(Number);
-    if (!fy || !ty) return null;
-    const end = addDays({ year: ty, month: tm, day: td }, 1);
-    return {
-      from: zonedTimeToUtc(fy, fm, fd).toISOString(),
-      to: zonedTimeToUtc(end.year, end.month, end.day).toISOString(),
-    };
-  }
-  if (mode === "window") {
-    const window = displayRange(zonedTimeToUtc(year, month, day, 12, 0));
-    return { from: window.from.toISOString(), to: window.to.toISOString() };
-  }
-  const days = Number(mode);
-  const start = addDays(today, -(days - 1));
-  const end = addDays(today, 3);
-  return {
-    from: zonedTimeToUtc(start.year, start.month, start.day).toISOString(),
-    to: zonedTimeToUtc(end.year, end.month, end.day).toISOString(),
-  };
 }

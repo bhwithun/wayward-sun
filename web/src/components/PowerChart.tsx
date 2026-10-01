@@ -148,14 +148,16 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     strokeTemp(ctx, props.weather, xOf, yTemp, props.sun);
   }
 
-  const nowX = clamp(xOf(props.now), left, right);
-  ctx.strokeStyle = NOW;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.moveTo(nowX, top);
-  ctx.lineTo(nowX, bottom);
-  ctx.stroke();
+  if (props.now >= props.from && props.now < props.to) {
+    const nowX = xOf(props.now);
+    ctx.strokeStyle = NOW;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(nowX, top);
+    ctx.lineTo(nowX, bottom);
+    ctx.stroke();
+  }
 }
 
 function strokeSeries(

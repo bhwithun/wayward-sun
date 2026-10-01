@@ -95,6 +95,53 @@ export function parseYmd(value: string): Ymd | null {
   return { year, month, day };
 }
 
+/** Sunday on or before this calendar date. Weeks are Sunday–Saturday. */
+export function weekStart(ymd: Ymd): Ymd {
+  const dow = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day)).getUTCDay();
+  return addDays(ymd, -dow);
+}
+
+export type CalendarDay = Ymd & { inMonth: boolean };
+
+export type CalendarWeek = {
+  /** Sunday, `YYYY-MM-DD`. */
+  id: string;
+  days: CalendarDay[];
+};
+
+/** One month, plus the spill days that complete the first and last Sunday weeks. */
+export function monthWeeks(year: number, month: number): CalendarWeek[] {
+  const first = weekStart({ year, month, day: 1 });
+  const next = month === 12 ? { year: year + 1, month: 1, day: 1 } : { year, month: month + 1, day: 1 };
+  const lastSunday = weekStart(addDays(next, -1));
+  const weeks: CalendarWeek[] = [];
+  let cursor = first;
+  while (ymdKey(cursor) <= ymdKey(lastSunday)) {
+    const days: CalendarDay[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = addDays(cursor, i);
+      days.push({ ...day, inMonth: day.year === year && day.month === month });
+    }
+    weeks.push({ id: ymdKey(cursor), days });
+    cursor = addDays(cursor, 7);
+  }
+  return weeks;
+}
+
+/** Start of 4 local days before `today` through the start of the day after 2 days ahead. */
+export function liveWindow(today: Ymd): { from: Ymd; to: Ymd } {
+  return { from: addDays(today, -4), to: addDays(today, 3) };
+}
+
+export function shiftMonth(year: number, month: number, delta: number): Ymd {
+  const shifted = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: 1,
+  };
+}
+
 /** Two local days before today through the start of the day after two days ahead. */
 export function displayRange(now: Date): { from: Date; to: Date } {
   const today = detroitParts(now);

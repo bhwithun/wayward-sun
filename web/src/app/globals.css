@@ -27,6 +27,27 @@ code { color: #F5C542; }
   margin: 12px 0;
 }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
+.tabs { display: flex; gap: 8px; margin-top: 16px; }
+.tabs button { min-width: 88px; }
+.calendar { margin-top: 4px; }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cal-nav h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 1rem; color: #E8EEF7; }
+.cal-nav button { min-width: 44px; font-size: 1.2rem; }
+.cal-dow, .week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+}
+.cal-dow { color: #9AA8BF; font-size: 0.78rem; margin: 8px 0 4px; }
+.week {
+  width: 100%;
+  background: #1C2B45;
+  margin-top: 4px;
+  padding: 8px 0;
+}
+.week.selected { outline: 1px solid #F5C542; background: #2A4163; }
+.week .out { color: #5C6B82; }
+.week .today { color: #F5C542; }
 button, input {
   background: #1C2B45;
   color: #E8EEF7;
@@ -47,7 +68,7 @@ button.gold { background: #F5C542; color: #1A1403; }
 .chart { width: 100%; height: 320px; display: block; }
 .legend { display: flex; gap: 14px; font-size: 0.85rem; margin-bottom: 6px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-.totals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+.totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 8px; margin-top: 12px; }
 .stat { font-size: 1.3rem; font-weight: 650; }
 table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 th, td { text-align: left; padding: 6px 8px; }
