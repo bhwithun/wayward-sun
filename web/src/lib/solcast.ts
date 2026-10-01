@@ -30,7 +30,7 @@ function weatherDue(snapshot: SnapshotBody | null, now: Date): boolean {
 }
 
 /**
- * Shared by GET /cache, POST /refresh, and the 4-hour cron.
+ * Shared by GET /cache, POST /refresh, and the daily cron.
  * Solcast runs only when the snapshot is older than 4 hours, at most 5 times per UTC day.
  */
 export async function serveCache(): Promise<SnapshotBody> {
