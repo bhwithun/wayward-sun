@@ -1,5 +1,5 @@
 import { demoSnapshot, type SnapshotBody } from "./demo";
-import { loadState, persistState } from "./store";
+import { loadState, persistState, scrubDemoActuals } from "./store";
 import { detroitParts, utcDay, ymdKey } from "./time";
 import { fetchSiteWeather } from "./weather";
 
@@ -123,15 +123,16 @@ export function planSolcastCalls(
 /** Stored snapshot for phones and the dashboard. Does not call Solcast. */
 export async function serveCache(): Promise<SnapshotBody> {
   const now = new Date();
-  const state = await loadState();
-  if (!state) return demoSnapshot(resourceId(), now);
+  const loaded = await loadState();
+  if (!loaded) return demoSnapshot(resourceId(), now);
+  const state = (await scrubDemoActuals(loaded)) ?? loaded;
   return attachWeather(state, now);
 }
 
 /** Scheduled entry. Solcast runs only when `planSolcastCalls` says so. */
 export async function serveCron(): Promise<SnapshotBody> {
   const now = new Date();
-  let state = await loadState();
+  let state = await scrubDemoActuals(await loadState());
   const plan = planSolcastCalls(state, now);
   if (plan.forecast || plan.actuals) {
     state = await pullSolcast(state, plan, now);

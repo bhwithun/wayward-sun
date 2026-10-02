@@ -1,4 +1,4 @@
-import { utcDay, zonedTimeToUtc, detroitParts, addDays } from "./time";
+import { utcDay, zonedTimeToUtc, detroitParts, addDays, ymdKey } from "./time";
 
 const PAST_DAYS = 2;
 const FUTURE_DAYS = 2;
@@ -30,6 +30,68 @@ export type SnapshotBody = {
   weatherFetchedAt: string | null;
 };
 
+const DEMO_SPAN = (PAST_DAYS + FUTURE_DAYS + 1) * 48;
+const DEMO_EPS = 0.0001;
+
+/** Sample-curve kW at `index` half-hours after a Detroit midnight. */
+export function demoKilowatts(periodEnd: Date, index: number): number {
+  const local = detroitParts(periodEnd);
+  const hour = local.hour + local.minute / 60;
+  const sun = Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI));
+  const clouds = 0.85 + 0.15 * Math.cos(index / 3);
+  return Math.round(6.4 * sun * sun * clouds * 1000) / 1000;
+}
+
+/**
+ * True when `kw` is the sample curve for this half-hour.
+ * Night zeros match the curve too, so only positive kW counts.
+ */
+export function matchesDemoActual(periodEnd: string, kw: number): boolean {
+  if (!(kw > 0)) return false;
+  const t = Date.parse(periodEnd);
+  if (!Number.isFinite(t)) return false;
+  const period = new Date(t);
+  const local = detroitParts(period);
+  for (let back = 0; back <= FUTURE_DAYS + PAST_DAYS; back++) {
+    const startYmd = addDays(local, -back);
+    const start = zonedTimeToUtc(startYmd.year, startYmd.month, startYmd.day);
+    const index = (t - start.getTime()) / (30 * 60 * 1000);
+    const rounded = Math.round(index);
+    if (rounded < 0 || rounded >= DEMO_SPAN) continue;
+    if (Math.abs(index - rounded) > 1e-6) continue;
+    if (Math.abs(demoKilowatts(period, rounded) - kw) < DEMO_EPS) return true;
+  }
+  return false;
+}
+
+export type ActualSample = { periodEnd: string; actualKw: number | null };
+
+/**
+ * Periods whose stored actual is still the sample curve.
+ * A Detroit day is included only when every positive actual that day matches,
+ * so a real Solcast day is left alone. Zeros on that day are included.
+ */
+export function demoActualPeriods(points: ActualSample[]): string[] {
+  const byDay = new Map<string, ActualSample[]>();
+  for (const point of points) {
+    if (point.actualKw == null || !Number.isFinite(point.actualKw)) continue;
+    const t = Date.parse(point.periodEnd);
+    if (!Number.isFinite(t)) continue;
+    const key = ymdKey(detroitParts(new Date(t)));
+    const list = byDay.get(key) ?? [];
+    list.push(point);
+    byDay.set(key, list);
+  }
+  const out: string[] = [];
+  for (const rows of byDay.values()) {
+    const positives = rows.filter((row) => (row.actualKw as number) > 0);
+    if (positives.length < 4) continue;
+    if (!positives.every((row) => matchesDemoActual(row.periodEnd, row.actualKw as number))) continue;
+    for (const row of rows) out.push(row.periodEnd);
+  }
+  return out;
+}
+
 export function demoSnapshot(resourceId: string, now = new Date()): SnapshotBody {
   const forecasts: SolcastRow[] = [];
   const actuals: SolcastRow[] = [];
@@ -40,11 +102,7 @@ export function demoSnapshot(resourceId: string, now = new Date()): SnapshotBody
 
   for (let i = 0; i < intervals; i++) {
     const periodEnd = new Date(start.getTime() + i * 30 * 60 * 1000);
-    const local = detroitParts(periodEnd);
-    const hour = local.hour + local.minute / 60;
-    const sun = Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI));
-    const clouds = 0.85 + 0.15 * Math.cos(i / 3);
-    const kw = Math.round(6.4 * sun * sun * clouds * 1000) / 1000;
+    const kw = demoKilowatts(periodEnd, i);
     const row: SolcastRow = {
       pv_estimate: kw,
       period_end: periodEnd.toISOString().replace(".000", ""),

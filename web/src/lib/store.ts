@@ -1,4 +1,4 @@
-import { combinedPoints, type SnapshotBody } from "./demo";
+import { combinedPoints, demoActualPeriods, type SnapshotBody } from "./demo";
 import { draftsFromSnapshot, type WeatherHour } from "./drafts";
 import { sql } from "./db";
 import type { IntervalDraft } from "./merge";
@@ -68,14 +68,35 @@ export async function loadState(): Promise<SnapshotBody | null> {
   };
 }
 
+/** Drop sample-curve days so a later forecast pull cannot write them back. */
+export function withoutDemoActuals(state: SnapshotBody): SnapshotBody {
+  const periods = demoActualPeriods(
+    state.actuals.estimated_actuals.map((row) => ({
+      periodEnd: row.period_end,
+      actualKw: Number(row.pv_estimate),
+    }))
+  );
+  if (periods.length === 0) return state;
+  const drop = new Set(periods.map((period) => Date.parse(period)));
+  return {
+    ...state,
+    actuals: {
+      estimated_actuals: state.actuals.estimated_actuals.filter(
+        (row) => !drop.has(Date.parse(row.period_end))
+      ),
+    },
+  };
+}
+
 export async function persistState(
   state: SnapshotBody,
   weather: { hours: WeatherHour[]; sun: SunDay[] } | null,
   now: Date
 ): Promise<void> {
+  const stored = withoutDemoActuals(state);
   const drafts = draftsFromSnapshot(
-    state.actuals.estimated_actuals,
-    state.forecasts.forecasts,
+    stored.actuals.estimated_actuals,
+    stored.forecasts.forecasts,
     weather?.hours ?? null
   );
   const db = sql();
@@ -86,20 +107,20 @@ export async function persistState(
       actuals_fetched_at, message, forecasts, actuals, weather_fetched_at
     ) VALUES (
       1,
-      ${state.resourceId},
-      ${state.fetchedAt},
-      ${state.source},
-      ${state.requestsDay || null},
-      ${state.requestsUsed},
-      ${state.autoFetchesUsed},
-      ${state.actualsFetchesUsed},
-      ${state.forecastSlot},
-      ${state.actualsSlot},
-      ${state.actualsFetchedAt},
-      ${state.message},
-      ${JSON.stringify(state.forecasts)}::jsonb,
-      ${JSON.stringify(state.actuals)}::jsonb,
-      ${state.weatherFetchedAt}
+      ${stored.resourceId},
+      ${stored.fetchedAt},
+      ${stored.source},
+      ${stored.requestsDay || null},
+      ${stored.requestsUsed},
+      ${stored.autoFetchesUsed},
+      ${stored.actualsFetchesUsed},
+      ${stored.forecastSlot},
+      ${stored.actualsSlot},
+      ${stored.actualsFetchedAt},
+      ${stored.message},
+      ${JSON.stringify(stored.forecasts)}::jsonb,
+      ${JSON.stringify(stored.actuals)}::jsonb,
+      ${stored.weatherFetchedAt}
     )
     ON CONFLICT (id) DO UPDATE SET
       resource_id = EXCLUDED.resource_id,
@@ -217,7 +238,43 @@ export type HistoryPoint = {
   outflowCents: number | null;
 };
 
+/**
+ * Clear sample-curve actuals from `intervals` and from the snapshot.
+ * Forecast kW for those periods stays, which is the running history.
+ */
+export async function scrubDemoActuals(state: SnapshotBody | null): Promise<SnapshotBody | null> {
+  const rows = await sql()`
+    SELECT period_end, actual_kw
+    FROM intervals
+    WHERE actual_kw IS NOT NULL
+  `;
+  const samples = (rows as Array<Record<string, unknown>>).map((row) => ({
+    periodEnd: instantIso(row.period_end),
+    actualKw: row.actual_kw == null ? null : Number(row.actual_kw),
+  }));
+  const periods = demoActualPeriods(samples);
+  if (periods.length > 0) {
+    await sql()`
+      UPDATE intervals AS i
+      SET actual_kw = NULL, updated_at = now()
+      FROM unnest(${periods}::timestamptz[]) AS d(period_end)
+      WHERE i.period_end = d.period_end
+    `;
+  }
+  if (!state) return null;
+  const cleaned = withoutDemoActuals(state);
+  if (cleaned !== state) await persistState(cleaned, null, new Date());
+  return cleaned;
+}
+
+function instantIso(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  const ms = Date.parse(String(value));
+  return Number.isNaN(ms) ? String(value) : new Date(ms).toISOString();
+}
+
 export async function loadHistory(fromIso: string, toIso: string) {
+  await scrubDemoActuals(await loadState());
   const points = await sql()`
     SELECT period_end, actual_kw, forecast_kw, period_hours, temp_f, precip_pct,
            rate_band, import_cents, outflow_cents

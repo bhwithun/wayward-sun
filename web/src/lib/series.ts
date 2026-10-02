@@ -20,9 +20,12 @@ export function seriesFromHistory(points: HistoryLike[], nowMs: number): SeriesP
     const t = Date.parse(point.periodEnd);
     if (!Number.isFinite(t)) continue;
     const hours = point.periodHours ?? 0.5;
-    if (point.actualKw != null && t <= nowMs) {
-      out.push({ t, kw: point.actualKw, kind: "live", hours });
-    } else if (point.forecastKw != null && t > nowMs) {
+    if (t <= nowMs) {
+      // Estimated actuals replace the forecast. Until they arrive, the frozen
+      // forecast is the historical trace for this half-hour.
+      const kw = point.actualKw ?? point.forecastKw;
+      if (kw != null) out.push({ t, kw, kind: "live", hours });
+    } else if (point.forecastKw != null) {
       out.push({ t, kw: point.forecastKw, kind: "forecast", hours });
     } else if (point.actualKw != null) {
       out.push({ t, kw: point.actualKw, kind: "live", hours });
