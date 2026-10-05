@@ -176,7 +176,7 @@ async function pullSolcast(
       requestsUsed: state.requestsUsed + 1,
       autoFetchesUsed: state.autoFetchesUsed + 1,
       forecastSlot: plan.slotId,
-      message: "Scheduled forecast pull.",
+      message: null,
     };
     await persistState(state, null, now);
   }
@@ -196,16 +196,14 @@ async function pullSolcast(
         actualsFetchesUsed: state.actualsFetchesUsed + 1,
         actualsSlot: plan.slotId,
         actualsFetchedAt: now.toISOString(),
-        message: plan.forecast
-          ? "Scheduled forecast and actuals pull."
-          : "Scheduled actuals pull.",
+        message: null,
       };
       await persistState(state, null, now);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       state = {
         ...state,
-        message: `${state.message ?? "Scheduled pull."} Actuals failed: ${reason}`.trim(),
+        message: `Actuals failed: ${reason}`,
       };
       await persistState(state, null, now);
       throw error;

@@ -40,10 +40,14 @@ import com.brian.solwidget.data.AppStorage
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.ForecastRepository
 import com.brian.solwidget.data.ForecastSnapshot
+import com.brian.solwidget.data.LivePastRepository
+import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.data.WeatherRepository
+import com.brian.solwidget.data.liveSolarPoints
 import com.brian.solwidget.ui.components.ChartBitmapRenderer
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
@@ -57,7 +61,10 @@ class ForecastWidget : GlanceAppWidget() {
         val layers = AppStorage(context).chartLayersOnce()
         val now = Instant.now()
         val zone = ZoneId.systemDefault()
-        val weatherPoints = weather.alignedWithPower(now, zone)
+        val (from, to) = widgetChartRange(now)
+        val weatherPoints = weather.inRange(from, to)
+        val past = LivePastRepository(context).forChart(now, zone)
+        val chartPoints = liveSolarPoints(past, snapshot.points, from, to, now)
         val openApp = actionStartActivity(
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -68,6 +75,11 @@ class ForecastWidget : GlanceAppWidget() {
             GlanceTheme {
                 WidgetContent(
                     snapshot = snapshot,
+                    chartPoints = chartPoints,
+                    chartDemo = snapshot.isDemo && past.isNullOrEmpty(),
+                    rangeFrom = from,
+                    rangeTo = to,
+                    now = now,
                     weather = weatherPoints,
                     sunDays = weather.sunDays,
                     layers = glanceLayers,
@@ -81,32 +93,33 @@ class ForecastWidget : GlanceAppWidget() {
 @Composable
 private fun WidgetContent(
     snapshot: ForecastSnapshot,
+    chartPoints: List<PowerPoint>,
+    chartDemo: Boolean,
+    rangeFrom: Instant,
+    rangeTo: Instant,
+    now: Instant,
     weather: List<WeatherPoint>,
     sunDays: List<SunTimes>,
     layers: ChartLayers,
     openApp: Action
 ) {
-    val now = Instant.now()
-    val zone = ZoneId.systemDefault()
     val size = LocalSize.current
     val chrome = 28.dp
     val demoReserve = if (snapshot.isDemo) 22.dp else 0.dp
     val chartHeightDp = (size.height - chrome - demoReserve).coerceAtLeast(72.dp)
     val chartWidth = (size.width.value * 2.75f).toInt().coerceIn(240, 1000)
     val chartHeightPx = (chartHeightDp.value * 2.75f).toInt().coerceIn(140, 640)
-    val (from, to) = ForecastSnapshot.range(now, zone)
-    val chartPoints = snapshot.displayPoints(now, zone)
     val chart = ChartBitmapRenderer.render(
         points = chartPoints,
         now = now,
         width = chartWidth,
         height = chartHeightPx,
-        rangeFrom = from,
-        rangeTo = to,
+        rangeFrom = rangeFrom,
+        rangeTo = rangeTo,
         weather = weather,
         layers = layers,
         sunDays = sunDays,
-        isDemo = snapshot.isDemo
+        isDemo = chartDemo
     )
 
     val muted = ColorProvider(Color(0xFF9AA8BF))
@@ -138,3 +151,7 @@ private fun WidgetContent(
 class ForecastWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = ForecastWidget()
 }
+
+/** Home-screen chart: the prior 48 hours through the next 72 hours. */
+fun widgetChartRange(now: Instant): Pair<Instant, Instant> =
+    now.minus(Duration.ofHours(48)) to now.plus(Duration.ofHours(72))

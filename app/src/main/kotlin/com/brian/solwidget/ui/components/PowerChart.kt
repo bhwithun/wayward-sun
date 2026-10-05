@@ -76,7 +76,8 @@ fun PowerChart(
     rangeTo: Instant? = null,
     layers: ChartLayers = ChartLayers(),
     sunDays: List<SunTimes> = emptyList(),
-    isDemo: Boolean = false
+    isDemo: Boolean = false,
+    zone: ZoneId = ZoneId.systemDefault()
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
         if (points.size < 2 && weather.size < 2 && !layers.rates) return@Canvas
@@ -199,15 +200,16 @@ fun PowerChart(
             drawTempLine(weather, ::xOf, ::yOfTemp, sunDays)
         }
 
-        val nowX = xOf(now).coerceIn(left, right)
-        drawLine(
-            color = SolColors.Now,
-            start = Offset(nowX, top),
-            end = Offset(nowX, bottom),
-            strokeWidth = 2.dp.toPx()
-        )
+        if (!now.isBefore(startInstant) && now.isBefore(endInstant)) {
+            val nowX = xOf(now)
+            drawLine(
+                color = SolColors.Now,
+                start = Offset(nowX, top),
+                end = Offset(nowX, bottom),
+                strokeWidth = 2.dp.toPx()
+            )
+        }
 
-        val zone = ZoneId.systemDefault()
         val dayTotals = if (layers.solcast) {
             SolarDayLabels.summaries(points, zone).associateBy { it.date }
         } else {

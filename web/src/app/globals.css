@@ -29,7 +29,7 @@ code { color: #F5C542; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
 .tabs { display: flex; gap: 8px; margin-top: 16px; }
 .tabs button { min-width: 88px; }
-.calendar { margin-top: 4px; }
+.calendar { margin-top: 12px; }
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cal-nav h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 1rem; color: #E8EEF7; }
 .cal-nav button { min-width: 44px; font-size: 1.2rem; }

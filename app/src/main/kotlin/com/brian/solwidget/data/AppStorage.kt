@@ -23,6 +23,7 @@ class AppStorage(private val context: Context) {
         val RESOURCE_ID = stringPreferencesKey("solcast_resource_id")
         val CACHED_FORECASTS = stringPreferencesKey("cached_forecasts_json")
         val CACHED_ACTUALS = stringPreferencesKey("cached_actuals_json")
+        val CACHED_LIVE_PAST = stringPreferencesKey("cached_live_past_json")
         val CACHED_SOURCE = stringPreferencesKey("cached_source")
         val LAST_FETCH_AT = longPreferencesKey("last_fetch_at")
         val REQUESTS_USED = intPreferencesKey("requests_used")
@@ -111,6 +112,8 @@ class AppStorage(private val context: Context) {
 
     suspend fun cachedForecasts(): String? = getStringOnce(Keys.CACHED_FORECASTS)
     suspend fun cachedActuals(): String? = getStringOnce(Keys.CACHED_ACTUALS)
+    suspend fun cachedLivePast(): String? = getStringOnce(Keys.CACHED_LIVE_PAST)
+    suspend fun saveLivePast(json: String) = setString(Keys.CACHED_LIVE_PAST, json)
     suspend fun cachedSource(): String? = getStringOnce(Keys.CACHED_SOURCE)
     suspend fun lastFetchAt(): Long = getLongOnce(Keys.LAST_FETCH_AT)
 

@@ -173,7 +173,7 @@ export function Dashboard() {
     setHistory(historyBody);
     if (!cacheRes.ok) setStatus(cacheBody.error || `Cache HTTP ${cacheRes.status}`);
     else if (!historyRes.ok) setStatus(historyBody.error || `History HTTP ${historyRes.status}`);
-    else if (cacheBody.message) setStatus(cacheBody.message);
+    else if (cacheBody.message && !isRoutinePullNote(cacheBody.message)) setStatus(cacheBody.message);
   }, [range]);
 
   useEffect(() => {
@@ -208,6 +208,28 @@ export function Dashboard() {
       </div>
 
       {status && <p className="banner">{status}</p>}
+
+      <section className="panel chart-wrap">
+        <div className="legend">
+          <span style={{ color: "#2EE6A6" }}>● Live</span>
+          <span style={{ color: "#F5C542" }}>● Forecast</span>
+          <span style={{ color: "#FF8A4C" }}>● Now</span>
+          {layers.buy && <span style={{ color: "#C9898C" }}>▮ Buy</span>}
+          {layers.sell && <span style={{ color: "#8AA4C4" }}>▮ Sell</span>}
+        </div>
+        <PowerChart
+          points={chart.points}
+          weather={chart.weather}
+          from={chart.fromMs}
+          to={chart.toMs}
+          now={clock}
+          layers={layers}
+          sun={chart.sun}
+          rates={chart.rates}
+          demo={cache?.source === "demo"}
+        />
+        {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
+      </section>
 
       {tab === "history" && (
         <section className="panel calendar">
@@ -246,28 +268,6 @@ export function Dashboard() {
           ))}
         </section>
       )}
-
-      <section className="panel chart-wrap">
-        <div className="legend">
-          <span style={{ color: "#2EE6A6" }}>● Live</span>
-          <span style={{ color: "#F5C542" }}>● Forecast</span>
-          <span style={{ color: "#FF8A4C" }}>● Now</span>
-          {layers.buy && <span style={{ color: "#C9898C" }}>▮ Buy</span>}
-          {layers.sell && <span style={{ color: "#8AA4C4" }}>▮ Sell</span>}
-        </div>
-        <PowerChart
-          points={chart.points}
-          weather={chart.weather}
-          from={chart.fromMs}
-          to={chart.toMs}
-          now={clock}
-          layers={layers}
-          sun={chart.sun}
-          rates={chart.rates}
-          demo={cache?.source === "demo"}
-        />
-        {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
-      </section>
 
       {chart.totals.length > 0 && (
         <div className="totals">
@@ -394,6 +394,11 @@ function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () 
       {label}
     </button>
   );
+}
+
+/** A normal Solcast slot stores this note. It is not a problem to show on the chart. */
+function isRoutinePullNote(message: string): boolean {
+  return /^Scheduled (forecast and actuals|forecast|actuals) pull\.$/.test(message);
 }
 
 function cents(value: number): string {

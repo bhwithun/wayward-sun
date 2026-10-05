@@ -2,6 +2,7 @@ package com.brian.solwidget.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,26 +36,40 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.brian.solwidget.GitHash
 import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
+import com.brian.solwidget.data.HistoryPage
 import com.brian.solwidget.data.WeatherSnapshot
+import com.brian.solwidget.data.chartFor
+import com.brian.solwidget.data.historyFetchKey
+import com.brian.solwidget.data.liveSolarPoints
+import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
+import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.viewmodel.HomeViewModel
 import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
 import java.time.Instant
+import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +82,7 @@ fun HomeScreen(
     val zone = ZoneId.systemDefault()
     val context = LocalContext.current
     var expandedPanel by remember { mutableStateOf<MetaPanel?>(null) }
+    val showLiveOverlay = state.tab == HomeTab.LIVE && expandedPanel != null
 
     LaunchedEffect(state.toastMessage) {
         val message = state.toastMessage ?: return@LaunchedEffect
@@ -77,7 +93,21 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Wayward Sun") },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Wayward Sun")
+                        if (GitHash.VALUE.isNotBlank()) {
+                            Text(
+                                text = GitHash.VALUE,
+                                color = SolColors.Muted,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                },
                 actions = {
                     TextButton(onClick = {
                         IntentUtils.openUrl(context, "https://sun.brianandkathi.com")
@@ -101,108 +131,331 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (snapshot == null && state.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            } else if (snapshot != null) {
-                Column(
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                HomeTabs(
+                    tab = state.tab,
+                    onSelect = viewModel::showTab,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                LayerToggles(
+                    layers = state.layers,
+                    onToggle = viewModel::setLayer,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+                )
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp)
+                        .weight(1f)
+                        .fillMaxWidth()
                 ) {
-                    LayerToggles(
-                        layers = state.layers,
-                        onToggle = viewModel::setLayer,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
-                    )
                     Column(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
+                            .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                    snapshot.errorMessage
-                        ?.takeUnless { it.isSolcastQuotaMessage() }
-                        ?.let { message ->
-                            StatusBanner(message)
+                        if (state.tab == HomeTab.LIVE) {
+                            LivePane(
+                                snapshot = snapshot,
+                                weather = state.weather,
+                                livePast = state.livePast,
+                                layers = state.layers,
+                                now = state.now,
+                                zone = zone,
+                                isLoading = state.isLoading,
+                                onOpenSettings = onOpenSettings,
+                                expandedPanel = expandedPanel,
+                                onToggleExpand = { panel ->
+                                    expandedPanel = if (expandedPanel == panel) null else panel
+                                }
+                            )
+                        } else {
+                            HistoryPane(
+                                month = state.historyMonth,
+                                selectedWeek = state.selectedWeek,
+                                history = state.history,
+                                historyKey = state.historyKey,
+                                historyLoading = state.historyLoading,
+                                historyError = state.historyError,
+                                layers = state.layers,
+                                now = state.now,
+                                onShiftMonth = viewModel::shiftHistoryMonth,
+                                onSelectWeek = viewModel::selectHistoryWeek
+                            )
                         }
-                    if (snapshot.isDemo && snapshot.errorMessage == null) {
-                        StatusBanner("Showing sample output until the shared cache has Solcast data.")
                     }
-
-                    Text(
-                        text = "2 days before through 2 days after",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = SolColors.Ink
-                    )
-
-                    val (rangeFrom, rangeTo) = ForecastSnapshot.range(state.now, zone)
-                    val chartPoints = snapshot.displayPoints(state.now, zone)
-                    val weatherPoints = state.weather?.alignedWithPower(state.now, zone).orEmpty()
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(300.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(SolColors.Panel)
-                            .padding(8.dp)
-                    ) {
-                        PowerChart(
-                            points = chartPoints,
-                            now = state.now,
-                            weather = weatherPoints,
-                            rangeFrom = rangeFrom,
-                            rangeTo = rangeTo,
-                            layers = state.layers,
-                            sunDays = state.weather?.sunDays.orEmpty(),
-                            isDemo = snapshot.isDemo
-                        )
-                    }
-
-                    LayerMetaPanel(
-                        layers = state.layers,
-                        snapshot = snapshot,
-                        weather = state.weather,
-                        now = state.now,
-                        onOpenSettings = onOpenSettings,
-                        expandedPanel = expandedPanel,
-                        onToggleExpand = { panel ->
-                            expandedPanel = if (expandedPanel == panel) null else panel
-                        }
-                    )
-
-                    if (state.isLoading) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center
+                    if (showLiveOverlay && snapshot != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(SolColors.Navy)
+                                .clickable { expandedPanel = null }
                         ) {
-                            CircularProgressIndicator()
+                            LayerMetaPanel(
+                                layers = state.layers,
+                                snapshot = snapshot,
+                                weather = state.weather,
+                                now = state.now,
+                                onOpenSettings = onOpenSettings,
+                                expandedPanel = expandedPanel,
+                                onToggleExpand = { panel ->
+                                    expandedPanel = if (expandedPanel == panel) null else panel
+                                },
+                                showOnly = expandedPanel
+                            )
                         }
-                    }
                     }
                 }
-                if (expandedPanel != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(SolColors.Navy)
-                            .clickable { expandedPanel = null }
-                            .padding(16.dp)
-                    ) {
-                        LayerMetaPanel(
-                            layers = state.layers,
-                            snapshot = snapshot,
-                            weather = state.weather,
-                            now = state.now,
-                            onOpenSettings = onOpenSettings,
-                            expandedPanel = expandedPanel,
-                            onToggleExpand = { panel ->
-                                expandedPanel = if (expandedPanel == panel) null else panel
-                            },
-                            showOnly = expandedPanel
-                        )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTabs(
+    tab: HomeTab,
+    onSelect: (HomeTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        LayerChip("Live", tab == HomeTab.LIVE, Modifier.weight(1f)) {
+            if (it) onSelect(HomeTab.LIVE)
+        }
+        LayerChip("History", tab == HomeTab.HISTORY, Modifier.weight(1f)) {
+            if (it) onSelect(HomeTab.HISTORY)
+        }
+    }
+}
+
+@Composable
+private fun LivePane(
+    snapshot: ForecastSnapshot?,
+    weather: WeatherSnapshot?,
+    livePast: List<PowerPoint>?,
+    layers: ChartLayers,
+    now: Instant,
+    zone: ZoneId,
+    isLoading: Boolean,
+    onOpenSettings: () -> Unit,
+    expandedPanel: MetaPanel?,
+    onToggleExpand: (MetaPanel) -> Unit
+) {
+    if (snapshot == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(300.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isLoading) CircularProgressIndicator()
+        }
+        return
+    }
+    snapshot.errorMessage
+        ?.takeUnless { it.isSolcastQuotaMessage() }
+        ?.let { message -> StatusBanner(message) }
+    if (snapshot.isDemo && snapshot.errorMessage == null) {
+        StatusBanner("Showing sample output until the shared cache has Solcast data.")
+    }
+    Text(
+        text = "2 days before through 2 days after",
+        style = MaterialTheme.typography.titleMedium,
+        color = SolColors.Ink
+    )
+    val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
+    ChartFrame {
+        PowerChart(
+            points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
+            now = now,
+            weather = weather?.alignedWithPower(now, zone).orEmpty(),
+            rangeFrom = rangeFrom,
+            rangeTo = rangeTo,
+            layers = layers,
+            sunDays = weather?.sunDays.orEmpty(),
+            isDemo = snapshot.isDemo && livePast.isNullOrEmpty()
+        )
+    }
+    LayerMetaPanel(
+        layers = layers,
+        snapshot = snapshot,
+        weather = weather,
+        now = now,
+        onOpenSettings = onOpenSettings,
+        expandedPanel = expandedPanel,
+        onToggleExpand = onToggleExpand
+    )
+    if (isLoading) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator()
+        }
+    }
+}
+
+@Composable
+private fun HistoryPane(
+    month: YearMonth?,
+    selectedWeek: LocalDate?,
+    history: HistoryPage?,
+    historyKey: String?,
+    historyLoading: Boolean,
+    historyError: String?,
+    layers: ChartLayers,
+    now: Instant,
+    onShiftMonth: (Int) -> Unit,
+    onSelectWeek: (LocalDate) -> Unit
+) {
+    val today = DetroitCalendar.today(now)
+    val shownMonth = month ?: YearMonth.from(today)
+    val weeks = DetroitCalendar.monthWeeks(shownMonth)
+    val week = weeks.find { it.id == selectedWeek }
+        ?: weeks.find { days -> days.days.any { it.date == today } }
+        ?: weeks.firstOrNull()
+    val (fetchFrom, fetchTo) = DetroitCalendar.monthFetchRange(weeks)
+    val pageMatches = historyKey == historyFetchKey(fetchFrom, fetchTo)
+    historyError?.let { StatusBanner(it) }
+    if (week != null) {
+        val (from, to) = DetroitCalendar.weekRange(week.id)
+        val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
+        ChartFrame {
+            if (chart != null) {
+                PowerChart(
+                    points = chart.points,
+                    now = now,
+                    weather = chart.weather,
+                    rangeFrom = from,
+                    rangeTo = to,
+                    layers = layers,
+                    sunDays = chart.sunDays,
+                    zone = DetroitCalendar.ZONE
+                )
+            }
+            if (chart == null && historyLoading) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+        }
+        if (pageMatches && history != null && chart != null &&
+            chart.points.isEmpty() && chart.weather.isEmpty() && historyError == null
+        ) {
+            Text(
+                text = "No stored intervals in this range yet.",
+                color = SolColors.Muted,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+    HistoryCalendar(
+        month = shownMonth,
+        weeks = weeks,
+        selectedWeek = week?.id,
+        today = today,
+        onShiftMonth = onShiftMonth,
+        onSelectWeek = onSelectWeek
+    )
+}
+
+@Composable
+private fun ChartFrame(content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(300.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(SolColors.Panel)
+            .padding(8.dp),
+        content = content
+    )
+}
+
+private val WeekdayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+private val MonthLabel = DateTimeFormatter.ofPattern("MMMM yyyy")
+
+@Composable
+private fun HistoryCalendar(
+    month: YearMonth,
+    weeks: List<com.brian.solwidget.data.CalendarWeek>,
+    selectedWeek: LocalDate?,
+    today: LocalDate,
+    onShiftMonth: (Int) -> Unit,
+    onSelectWeek: (LocalDate) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(SolColors.Panel)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            TextButton(
+                onClick = { onShiftMonth(-1) },
+                modifier = Modifier.semantics { contentDescription = "Previous month" }
+            ) { Text("‹", style = MaterialTheme.typography.titleLarge) }
+            Text(
+                text = MonthLabel.format(month),
+                color = SolColors.Ink,
+                style = MaterialTheme.typography.titleMedium
+            )
+            TextButton(
+                onClick = { onShiftMonth(1) },
+                modifier = Modifier.semantics { contentDescription = "Next month" }
+            ) { Text("›", style = MaterialTheme.typography.titleLarge) }
+        }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            WeekdayLabels.forEach { label ->
+                Text(
+                    text = label,
+                    modifier = Modifier.weight(1f),
+                    color = SolColors.Muted,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+        weeks.forEach { week ->
+            val selected = week.id == selectedWeek
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) SolColors.TableStripe else SolColors.PanelAlt)
+                    .then(
+                        if (selected) {
+                            Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clickable { onSelectWeek(week.id) }
+                    .padding(vertical = 8.dp)
+            ) {
+                week.days.forEach { day ->
+                    val color = when {
+                        day.date == today -> SolColors.Forecast
+                        !day.inMonth -> Color(0xFF5C6B82)
+                        else -> SolColors.Ink
                     }
+                    Text(
+                        text = day.date.dayOfMonth.toString(),
+                        modifier = Modifier.weight(1f),
+                        color = color,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         }

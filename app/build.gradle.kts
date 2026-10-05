@@ -1,7 +1,56 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.jetbrains.kotlin.compose)
+}
+
+abstract class GitHashTask : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Internal
+    abstract val workDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val hash = readGitHash()
+        val dir = outputDir.get().asFile.resolve("com/brian/solwidget")
+        dir.mkdirs()
+        val file = dir.resolve("GitHash.kt")
+        val text = """
+            package com.brian.solwidget
+
+            object GitHash {
+                const val VALUE: String = "$hash"
+            }
+        """.trimIndent() + "\n"
+        if (!file.exists() || file.readText() != text) {
+            file.writeText(text)
+        }
+    }
+
+    private fun readGitHash(): String {
+        return try {
+            val process = ProcessBuilder("git", "rev-parse", "--short=7", "HEAD")
+                .directory(workDir.get().asFile)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start()
+            val text = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            if (process.waitFor() == 0 && text.matches(Regex("[0-9a-fA-F]{7,40}"))) {
+                text.take(7)
+            } else {
+                ""
+            }
+        } catch (_: Exception) {
+            ""
+        }
+    }
 }
 
 android {
@@ -47,6 +96,18 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    sourceSets.named("main") {
+        java.srcDir(layout.buildDirectory.dir("generated/source/gitHash"))
+    }
+}
+
+val generateGitHash = tasks.register<GitHashTask>("generateGitHash") {
+    outputDir.set(layout.buildDirectory.dir("generated/source/gitHash"))
+    workDir.set(rootProject.layout.projectDirectory)
+}
+
+tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach {
+    dependsOn(generateGitHash)
 }
 
 dependencies {
