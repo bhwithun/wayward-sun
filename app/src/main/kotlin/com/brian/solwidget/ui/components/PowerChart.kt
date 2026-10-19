@@ -86,8 +86,10 @@ fun PowerChart(
         val units = axisUnits(layers, labelRates = true)
         val left = if (units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
         val right = size.width - 12.dp.toPx()
-        val top = if (layers.temperature) 32.dp.toPx() else 16.dp.toPx()
-        val bottom = size.height - if (layers.solcast) 48.dp.toPx() else 32.dp.toPx()
+        val dayBaseline = 16.dp.toPx()
+        val tempBaseline = 38.dp.toPx()
+        val top = if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()
+        val bottom = size.height - if (layers.solcast) 28.dp.toPx() else 12.dp.toPx()
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
@@ -235,8 +237,8 @@ fun PowerChart(
             val label = DayLabel.format(day.atStartOfDay(zone))
             val labelX = xOf(noon)
             if (labelX in left..right) {
+                native.drawText(label, labelX, dayBaseline, gridPaint)
                 if (layers.solcast) {
-                    native.drawText(label, labelX, bottom + 18.dp.toPx(), gridPaint)
                     val totals = dayTotals[day]
                     if (totals?.complete == true) {
                         native.drawText(
@@ -246,12 +248,10 @@ fun PowerChart(
                             kwhPaint
                         )
                     }
-                } else {
-                    native.drawText(label, labelX, size.height - 6f, gridPaint)
                 }
                 val temps = tempRanges[day]
                 if (temps != null) {
-                    drawTempRangeLabel(native, temps, labelX, 22.dp.toPx(), 26f)
+                    drawTempRangeLabel(native, temps, labelX, tempBaseline, 26f)
                 }
             }
             day = day.plusDays(1)
@@ -544,8 +544,10 @@ object ChartBitmapRenderer {
         val units = axisUnits(layers, labelRates = false)
         val left = if (units != AxisUnits.NONE) 52f else 8f
         val right = width - 8f
-        val top = if (layers.temperature) 52f else 6f
-        val bottom = height - if (layers.solcast) 80f else 22f
+        val dayBaseline = 36f
+        val tempBaseline = 84f
+        val top = if (layers.temperature) 100f else 52f
+        val bottom = height - if (layers.solcast) 52f else 8f
         val chartW = (right - left).coerceAtLeast(1f)
         val chartH = (bottom - top).coerceAtLeast(1f)
         val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.firstOrNull()?.time
@@ -637,7 +639,7 @@ object ChartBitmapRenderer {
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         val dayPaint = Paint().apply {
             color = 0xFFE8EEF7.toInt()
-            textSize = 22f
+            textSize = 40f
             isAntiAlias = true
             textAlign = Paint.Align.CENTER
         }
@@ -655,18 +657,16 @@ object ChartBitmapRenderer {
             val label = DayLabel.format(day.atStartOfDay(zone))
             val labelX = xOf(day.atTime(12, 0).atZone(zone).toInstant())
             if (labelX in left + 12f..right - 12f) {
+                canvas.drawText(label, labelX, dayBaseline, dayPaint)
                 if (layers.solcast) {
-                    canvas.drawText(label, labelX, bottom + 20f, dayPaint)
                     val totals = dayTotals[day]
                     if (totals?.complete == true) {
                         canvas.drawText(Formatters.kwh(totals.energyKwh), labelX, height - 8f, kwhPaint)
                     }
-                } else {
-                    canvas.drawText(label, labelX, height - 4f, dayPaint)
                 }
                 val temps = tempRanges[day]
                 if (temps != null) {
-                    drawTempRangeLabel(canvas, temps, labelX, 38f, 40f)
+                    drawTempRangeLabel(canvas, temps, labelX, tempBaseline, 40f)
                 }
             }
             day = day.plusDays(1)

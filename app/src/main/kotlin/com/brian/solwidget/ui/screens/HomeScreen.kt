@@ -64,6 +64,7 @@ import com.brian.solwidget.data.liveSolarPoints
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
+import com.brian.solwidget.util.AppUpdater
 import com.brian.solwidget.util.BuildLabel
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
@@ -76,6 +77,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -107,8 +109,30 @@ private fun CheckForUpdatesButton(buildLabel: BuildLabel) {
                         val decision = withContext(Dispatchers.IO) {
                             UpdateChecker.check(buildLabel)
                         }
-                        Toast.makeText(context, decision.message, Toast.LENGTH_LONG).show()
-                        decision.openUrl?.takeIf { it.isNotBlank() }?.let { IntentUtils.openUrl(context, it) }
+                        val apkUrl = decision.apkUrl?.takeIf { it.isNotBlank() }
+                        val updater = AppUpdater(context)
+                        if (apkUrl == null) {
+                            Toast.makeText(context, decision.message, Toast.LENGTH_LONG).show()
+                        } else if (!updater.canInstallPackages()) {
+                            Toast.makeText(
+                                context,
+                                "Allow Wayward Sun to install updates, then tap Check again.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            updater.openInstallPermissionSettings()
+                        } else {
+                            Toast.makeText(context, decision.message, Toast.LENGTH_LONG).show()
+                            val apk = withContext(Dispatchers.IO) { updater.download(apkUrl) }
+                            updater.promptInstall(apk)
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Toast.makeText(
+                            context,
+                            error.message ?: "Couldn't install the update.",
+                            Toast.LENGTH_LONG
+                        ).show()
                     } finally {
                         checking = false
                     }

@@ -3,11 +3,11 @@ package com.brian.solwidget.util
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class RemoteRelease(val tag: String, val pageUrl: String)
+data class RemoteRelease(val tag: String, val pageUrl: String, val apkUrl: String = "")
 
 enum class CommitRelation { SAME, LOCAL_BEHIND, LOCAL_AHEAD, DIVERGED, UNKNOWN }
 
-data class UpdateDecision(val message: String, val openUrl: String? = null)
+data class UpdateDecision(val message: String, val apkUrl: String? = null)
 
 fun decideUpdate(
     local: BuildLabel,
@@ -22,26 +22,26 @@ fun decideUpdate(
     val localRelease = Semver.parse(local.release)
     if (localRelease != null) {
         return when {
-            version > localRelease -> UpdateDecision(
-                "Release $version is available.",
-                remote.pageUrl.takeIf { it.isNotBlank() }
-            )
+            version > localRelease -> installOffer(version, remote.apkUrl)
             version == localRelease -> UpdateDecision("You're on release $localRelease.")
             else -> UpdateDecision("This is release $localRelease. Published release is $version.")
         }
     }
     return when (relation) {
-        CommitRelation.LOCAL_BEHIND -> UpdateDecision(
-            "Release $version is available.",
-            remote.pageUrl.takeIf { it.isNotBlank() }
-        )
+        CommitRelation.LOCAL_BEHIND -> installOffer(version, remote.apkUrl)
         CommitRelation.SAME -> UpdateDecision("This build matches release $version.")
         CommitRelation.LOCAL_AHEAD -> UpdateDecision("This build is ahead of release $version.")
-        CommitRelation.DIVERGED -> UpdateDecision(
-            "Release $version is on a different commit.",
-            remote.pageUrl.takeIf { it.isNotBlank() }
-        )
+        CommitRelation.DIVERGED -> UpdateDecision("Release $version is on a different commit.")
         CommitRelation.UNKNOWN -> UpdateDecision("Couldn't compare this build. Latest release is $version.")
+    }
+}
+
+private fun installOffer(version: Semver, apkUrl: String): UpdateDecision {
+    val apk = apkUrl.takeIf { it.isNotBlank() }
+    return if (apk == null) {
+        UpdateDecision("Release $version has no APK to install.")
+    } else {
+        UpdateDecision("Installing release $version.", apk)
     }
 }
 
@@ -78,7 +78,7 @@ class GithubReleases : ReleaseSource {
         }
         val tag = jsonString(response.body, "tag_name") ?: return null
         val page = jsonString(response.body, "html_url").orEmpty()
-        return RemoteRelease(tag, page)
+        return RemoteRelease(tag, page, apkDownloadUrl(response.body).orEmpty())
     }
 
     override fun relation(commit: String, tag: String): CommitRelation {
@@ -124,24 +124,32 @@ internal data class HttpText(val code: Int, val body: String)
 
 internal fun jsonString(body: String, key: String): String? {
     val match = Regex(""""${Regex.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"""").find(body) ?: return null
-    return buildString {
-        val raw = match.groupValues[1]
-        var index = 0
-        while (index < raw.length) {
-            val ch = raw[index]
-            if (ch != '\\' || index + 1 >= raw.length) {
-                append(ch)
-                index++
-                continue
-            }
-            when (val escaped = raw[index + 1]) {
-                '\\', '/' -> append(escaped)
-                '"' -> append('"')
-                'n' -> append('\n')
-                't' -> append('\t')
-                else -> append(escaped)
-            }
-            index += 2
+    return unescapeJson(match.groupValues[1])
+}
+
+internal fun apkDownloadUrl(body: String): String? {
+    val pattern = Regex(""""browser_download_url"\s*:\s*"((?:\\.|[^"\\])*)"""")
+    return pattern.findAll(body)
+        .map { unescapeJson(it.groupValues[1]) }
+        .firstOrNull { it.substringBefore('?').endsWith(".apk", ignoreCase = true) }
+}
+
+private fun unescapeJson(raw: String): String = buildString {
+    var index = 0
+    while (index < raw.length) {
+        val ch = raw[index]
+        if (ch != '\\' || index + 1 >= raw.length) {
+            append(ch)
+            index++
+            continue
         }
+        when (val escaped = raw[index + 1]) {
+            '\\', '/' -> append(escaped)
+            '"' -> append('"')
+            'n' -> append('\n')
+            't' -> append('\t')
+            else -> append(escaped)
+        }
+        index += 2
     }
 }

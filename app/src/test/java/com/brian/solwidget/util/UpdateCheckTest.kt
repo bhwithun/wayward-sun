@@ -8,13 +8,25 @@ class UpdateCheckTest {
 
     private val hashBuild = BuildLabel(text = "6e23c0b", release = "", commit = "a".repeat(40))
     private val releaseBuild = BuildLabel(text = "2.0.0", release = "2.0.0", commit = "b".repeat(40))
-    private val remote = RemoteRelease(tag = "v2.1.0", pageUrl = "https://github.com/bhwithun/wayward-sun/releases/tag/v2.1.0")
+    private val apk = "https://github.com/bhwithun/wayward-sun/releases/download/v2.1.0/wayward-sun-2.1.0.apk"
+    private val remote = RemoteRelease(
+        tag = "v2.1.0",
+        pageUrl = "https://github.com/bhwithun/wayward-sun/releases/tag/v2.1.0",
+        apkUrl = apk
+    )
 
     @Test
-    fun releaseBuildOpensANewerRelease() {
+    fun releaseBuildInstallsANewerRelease() {
         val decision = decideUpdate(releaseBuild, remote, CommitRelation.UNKNOWN)
-        assertEquals("Release 2.1.0 is available.", decision.message)
-        assertEquals(remote.pageUrl, decision.openUrl)
+        assertEquals("Installing release 2.1.0.", decision.message)
+        assertEquals(apk, decision.apkUrl)
+    }
+
+    @Test
+    fun newerReleaseWithoutAnApkDoesNotInstall() {
+        val decision = decideUpdate(releaseBuild, remote.copy(apkUrl = ""), CommitRelation.UNKNOWN)
+        assertEquals("Release 2.1.0 has no APK to install.", decision.message)
+        assertNull(decision.apkUrl)
     }
 
     @Test
@@ -22,21 +34,21 @@ class UpdateCheckTest {
         val same = remote.copy(tag = "v2.0.0")
         val decision = decideUpdate(releaseBuild, same, CommitRelation.UNKNOWN)
         assertEquals("You're on release 2.0.0.", decision.message)
-        assertNull(decision.openUrl)
+        assertNull(decision.apkUrl)
     }
 
     @Test
     fun hashBuildBehindTheReleaseOffersIt() {
         val decision = decideUpdate(hashBuild, remote, CommitRelation.LOCAL_BEHIND)
-        assertEquals("Release 2.1.0 is available.", decision.message)
-        assertEquals(remote.pageUrl, decision.openUrl)
+        assertEquals("Installing release 2.1.0.", decision.message)
+        assertEquals(apk, decision.apkUrl)
     }
 
     @Test
     fun hashBuildAheadOfTheReleaseDoesNotOfferIt() {
         val decision = decideUpdate(hashBuild, remote, CommitRelation.LOCAL_AHEAD)
         assertEquals("This build is ahead of release 2.1.0.", decision.message)
-        assertNull(decision.openUrl)
+        assertNull(decision.apkUrl)
     }
 
     @Test
@@ -57,8 +69,12 @@ class UpdateCheckTest {
 
     @Test
     fun githubJsonFieldsDecode() {
-        val body = """{"tag_name":"v2.0.0","html_url":"https://github.com/bhwithun/wayward-sun/releases/tag/v2.0.0","status":"ahead"}"""
+        val body = """{"tag_name":"v2.0.0","html_url":"https://github.com/bhwithun/wayward-sun/releases/tag/v2.0.0","assets":[{"name":"notes.txt","browser_download_url":"https://github.com/bhwithun/wayward-sun/releases/download/v2.0.0/notes.txt"},{"name":"wayward-sun-2.0.0.apk","browser_download_url":"https://github.com/bhwithun/wayward-sun/releases/download/v2.0.0/wayward-sun-2.0.0.apk"}],"status":"ahead"}"""
         assertEquals("v2.0.0", jsonString(body, "tag_name"))
         assertEquals("ahead", jsonString(body, "status"))
+        assertEquals(
+            "https://github.com/bhwithun/wayward-sun/releases/download/v2.0.0/wayward-sun-2.0.0.apk",
+            apkDownloadUrl(body)
+        )
     }
 }
