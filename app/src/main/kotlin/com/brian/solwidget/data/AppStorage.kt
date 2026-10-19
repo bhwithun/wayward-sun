@@ -41,6 +41,7 @@ class AppStorage(private val context: Context) {
         val SHOW_SELL = booleanPreferencesKey("show_sell_rate")
         val SHOW_PRECIPITATION = booleanPreferencesKey("show_precipitation")
         val SHOW_SOLCAST = booleanPreferencesKey("show_solcast")
+        val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
     }
 
     companion object {
@@ -206,6 +207,11 @@ class AppStorage(private val context: Context) {
             solcast = prefs[Keys.SHOW_SOLCAST] ?: true
         )
     }
+
+    suspend fun lastHomeTab(): String =
+        getStringOnce(Keys.LAST_HOME_TAB, "live")?.ifBlank { "live" } ?: "live"
+
+    suspend fun setLastHomeTab(value: String) = setString(Keys.LAST_HOME_TAB, value)
 
     suspend fun setChartLayer(layer: ChartLayer, visible: Boolean) {
         val key = when (layer) {

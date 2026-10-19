@@ -29,9 +29,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 enum class HomeTab { LIVE, HISTORY }
+
+fun homeTabStored(name: String?): HomeTab =
+    if (name == "history") HomeTab.HISTORY else HomeTab.LIVE
+
+fun HomeTab.storedName(): String = if (this == HomeTab.HISTORY) "history" else "live"
 
 data class HomeUiState(
     val snapshot: ForecastSnapshot? = null,
@@ -64,6 +70,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        val savedTab = runBlocking(Dispatchers.IO) { homeTabStored(storage.lastHomeTab()) }
+        if (savedTab == HomeTab.HISTORY) {
+            _uiState.update { it.copy(tab = savedTab) }
+            loadHistory()
+        }
         viewModelScope.launch {
             val cached = repo.loadSnapshot()
             val weatherCached = weatherRepo.loadSnapshot()
@@ -139,7 +150,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun showTab(tab: HomeTab) {
+        if (_uiState.value.tab == tab) return
         _uiState.update { it.copy(tab = tab) }
+        viewModelScope.launch { storage.setLastHomeTab(tab.storedName()) }
         if (tab == HomeTab.HISTORY) loadHistory()
     }
 
