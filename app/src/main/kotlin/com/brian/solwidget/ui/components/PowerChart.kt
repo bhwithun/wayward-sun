@@ -33,6 +33,7 @@ import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.data.dayTempRanges
 import com.brian.solwidget.data.isNight
+import com.brian.solwidget.data.liveStroke
 import com.brian.solwidget.data.sunEventFractions
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
@@ -190,7 +191,7 @@ fun PowerChart(
         }
 
         if (layers.solcast) {
-            val live = points.filter { it.kind == SeriesKind.LIVE }
+            val live = liveStroke(points)
             val forecast = points.filter { it.kind == SeriesKind.FORECAST }
             drawSeries(live, ::xOf, ::yOf, SolColors.Live, dotted = isDemo)
             drawSeries(forecast, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo)
@@ -674,7 +675,7 @@ object ChartBitmapRenderer {
         if (layers.solcast) {
             drawAndroidSeries(
                 canvas,
-                points.filter { it.kind == SeriesKind.LIVE },
+                liveStroke(points),
                 ::xOf,
                 ::yOf,
                 0xFF2EE6A6.toInt(),

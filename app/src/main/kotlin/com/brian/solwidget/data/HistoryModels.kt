@@ -61,9 +61,12 @@ fun HistoryPage.chartFor(from: Instant, to: Instant, now: Instant): HistoryChart
 fun historyFetchKey(from: Instant, to: Instant): String = "$from|$to"
 
 /**
- * Past half-hours come from stored history, drawn as the green trace.
+ * Past half-hours are the green trace. Stored history supplies them when it
+ * has arrived. The cache forecast still holds the half-hour that just ended,
+ * which history does not include until the next fetch, so that point stays
+ * in the series and is drawn green. Without it the join is an hour wide and
+ * the day total is withheld.
  * The latest cache forecast supplies the gold trace after now.
- * Until history arrives, the cache snapshot is used as-is.
  */
 fun liveSolarPoints(
     pastFromHistory: List<PowerPoint>?,
@@ -73,14 +76,31 @@ fun liveSolarPoints(
     now: Instant
 ): List<PowerPoint> {
     val inWindow = snapshotPoints.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
-    val past = pastFromHistory
+    val historyPast = pastFromHistory
         ?.filter { !it.periodEnd.isBefore(from) && !it.periodEnd.isAfter(now) }
         .orEmpty()
-    if (past.isEmpty()) return inWindow
+    val covered = historyPast.map { it.periodEnd }.toHashSet()
+    val snapshotPast = inWindow
+        .filter { !it.periodEnd.isAfter(now) && it.periodEnd !in covered }
+        .map { point ->
+            if (point.kind == SeriesKind.LIVE) point else point.copy(kind = SeriesKind.LIVE)
+        }
     val future = inWindow
         .filter { it.periodEnd.isAfter(now) }
         .map { point ->
             if (point.kind == SeriesKind.FORECAST) point else point.copy(kind = SeriesKind.FORECAST)
         }
-    return (past + future).sortedBy { it.periodEnd }
+    return (historyPast + snapshotPast + future).sortedBy { it.periodEnd }
+}
+
+/**
+ * The live stroke includes the first forecast point so the curve meets the
+ * gold line. The extra point is for drawing only. Day energy still counts
+ * each half-hour once.
+ */
+fun liveStroke(points: List<PowerPoint>): List<PowerPoint> {
+    val live = points.filter { it.kind == SeriesKind.LIVE }
+    val next = points.firstOrNull { it.kind == SeriesKind.FORECAST } ?: return live
+    if (live.isEmpty() || !next.periodEnd.isAfter(live.last().periodEnd)) return live
+    return live + next
 }

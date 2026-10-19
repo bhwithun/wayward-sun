@@ -10,7 +10,7 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.compose)
 }
 
-abstract class GitHashTask : DefaultTask() {
+abstract class GenerateBuildFactsTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -19,15 +19,33 @@ abstract class GitHashTask : DefaultTask() {
 
     @TaskAction
     fun generate() {
-        val hash = readGitHash()
+        val tags = git("tag", "--points-at", "HEAD").orEmpty().trim()
+        val status = git("status", "--porcelain")
+        // Untracked files do not change the commit. Edits to tracked files do.
+        val dirty = status == null || status.lineSequence().any { line ->
+            line.isNotBlank() && !line.startsWith("??")
+        }
+        val shortHash = git("rev-parse", "--short=7", "HEAD")
+            ?.trim()
+            ?.takeIf { it.matches(Regex("[0-9a-fA-F]{7,40}")) }
+            ?.take(7)
+            .orEmpty()
+        val commit = git("rev-parse", "HEAD")
+            ?.trim()
+            ?.takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) }
+            .orEmpty()
         val dir = outputDir.get().asFile.resolve("com/brian/solwidget")
         dir.mkdirs()
-        val file = dir.resolve("GitHash.kt")
+        dir.resolve("GitHash.kt").delete()
+        val file = dir.resolve("BuildFacts.kt")
         val text = """
             package com.brian.solwidget
 
-            object GitHash {
-                const val VALUE: String = "$hash"
+            object BuildFacts {
+                const val TAGS: String = ${kotlinQuote(tags)}
+                const val DIRTY: Boolean = $dirty
+                const val SHORT_HASH: String = ${kotlinQuote(shortHash)}
+                const val COMMIT: String = ${kotlinQuote(commit)}
             }
         """.trimIndent() + "\n"
         if (!file.exists() || file.readText() != text) {
@@ -35,21 +53,33 @@ abstract class GitHashTask : DefaultTask() {
         }
     }
 
-    private fun readGitHash(): String {
+    private fun git(vararg args: String): String? {
         return try {
-            val process = ProcessBuilder("git", "rev-parse", "--short=7", "HEAD")
+            val process = ProcessBuilder(listOf("git") + args)
                 .directory(workDir.get().asFile)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
-            val text = process.inputStream.bufferedReader().use { it.readText() }.trim()
-            if (process.waitFor() == 0 && text.matches(Regex("[0-9a-fA-F]{7,40}"))) {
-                text.take(7)
-            } else {
-                ""
-            }
+            val text = process.inputStream.bufferedReader().use { it.readText() }
+            if (process.waitFor() == 0) text else null
         } catch (_: Exception) {
-            ""
+            null
         }
+    }
+
+    private fun kotlinQuote(value: String): String {
+        val escaped = buildString {
+            value.forEach { ch ->
+                when (ch) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\n' -> append("\\n")
+                    '\r' -> Unit
+                    '$' -> append("\${'$'}")
+                    else -> append(ch)
+                }
+            }
+        }
+        return "\"$escaped\""
     }
 }
 
@@ -101,13 +131,14 @@ android {
     }
 }
 
-val generateGitHash = tasks.register<GitHashTask>("generateGitHash") {
+val generateBuildFacts = tasks.register<GenerateBuildFactsTask>("generateBuildFacts") {
     outputDir.set(layout.buildDirectory.dir("generated/source/gitHash"))
     workDir.set(rootProject.layout.projectDirectory)
+    outputs.upToDateWhen { false }
 }
 
 tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach {
-    dependsOn(generateGitHash)
+    dependsOn(generateBuildFacts)
 }
 
 dependencies {

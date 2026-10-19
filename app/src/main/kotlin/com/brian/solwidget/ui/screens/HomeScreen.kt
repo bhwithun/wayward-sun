@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -31,22 +32,25 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.brian.solwidget.GitHash
+import com.brian.solwidget.BuildFacts
 import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DetroitCalendar
@@ -60,8 +64,10 @@ import com.brian.solwidget.data.liveSolarPoints
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
+import com.brian.solwidget.util.BuildLabel
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
+import com.brian.solwidget.util.UpdateChecker
 import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.viewmodel.HomeViewModel
 import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
@@ -70,6 +76,48 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+private fun CheckForUpdatesButton(buildLabel: BuildLabel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    if (checking) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(14.dp),
+            strokeWidth = 2.dp,
+            color = SolColors.Muted
+        )
+        return
+    }
+    Text(
+        text = "Check",
+        color = SolColors.Ink,
+        fontSize = 11.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.dp, SolColors.TableStripe, RoundedCornerShape(4.dp))
+            .clickable(role = Role.Button) {
+                checking = true
+                scope.launch {
+                    try {
+                        val decision = withContext(Dispatchers.IO) {
+                            UpdateChecker.check(buildLabel)
+                        }
+                        Toast.makeText(context, decision.message, Toast.LENGTH_LONG).show()
+                        decision.openUrl?.takeIf { it.isNotBlank() }?.let { IntentUtils.openUrl(context, it) }
+                    } finally {
+                        checking = false
+                    }
+                }
+            }
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .semantics { contentDescription = "Check for updates" }
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,6 +129,9 @@ fun HomeScreen(
     val snapshot = state.snapshot
     val zone = ZoneId.systemDefault()
     val context = LocalContext.current
+    val buildLabel = remember {
+        BuildLabel.resolve(BuildFacts.TAGS, BuildFacts.DIRTY, BuildFacts.SHORT_HASH, BuildFacts.COMMIT)
+    }
     var expandedPanel by remember { mutableStateOf<MetaPanel?>(null) }
     val showLiveOverlay = state.tab == HomeTab.LIVE && expandedPanel != null
 
@@ -98,13 +149,20 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Wayward Sun")
-                        if (GitHash.VALUE.isNotBlank()) {
+                        Text(
+                            text = "Wayward Sun",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (buildLabel.text.isNotBlank()) {
                             Text(
-                                text = GitHash.VALUE,
+                                text = buildLabel.text,
                                 color = SolColors.Muted,
-                                style = MaterialTheme.typography.labelMedium
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1
                             )
+                            CheckForUpdatesButton(buildLabel)
                         }
                     }
                 },

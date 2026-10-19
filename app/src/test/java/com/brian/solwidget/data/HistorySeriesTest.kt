@@ -61,11 +61,27 @@ class HistorySeriesTest {
     }
 
     @Test
-    fun liveChartKeepsTheSnapshotUntilHistoryArrives() {
+    fun cacheKeepsTheHalfHourThatJustLeftTheForecast() {
         val from = now.minusSeconds(7200)
         val to = now.plusSeconds(7200)
-        val forecast = PowerPoint(now.minusSeconds(1800), 1.0, 0.5, SeriesKind.FORECAST)
-        assertEquals(listOf(forecast), liveSolarPoints(null, listOf(forecast), from, to, now))
+        val historyLast = PowerPoint(now.minusSeconds(3600), 2.0, 0.5, SeriesKind.LIVE)
+        val justEnded = PowerPoint(now.minusSeconds(1800), 3.0, 0.5, SeriesKind.FORECAST)
+        val upcoming = PowerPoint(now.plusSeconds(1800), 4.0, 0.5, SeriesKind.FORECAST)
+        val later = PowerPoint(now.plusSeconds(3600), 5.0, 0.5, SeriesKind.FORECAST)
+        val merged = liveSolarPoints(listOf(historyLast), listOf(justEnded, upcoming, later), from, to, now)
+        val joined = justEnded.copy(kind = SeriesKind.LIVE)
+        assertEquals(listOf(historyLast, joined, upcoming, later), merged)
+        assertEquals(listOf(historyLast, joined, upcoming), liveStroke(merged))
+    }
+
+    @Test
+    fun staleCacheForecastBeforeNowIsDrawnLiveUntilHistoryArrives() {
+        val from = now.minusSeconds(7200)
+        val to = now.plusSeconds(7200)
+        val stalePast = PowerPoint(now.minusSeconds(1800), 1.0, 0.5, SeriesKind.FORECAST)
+        val future = PowerPoint(now.plusSeconds(1800), 4.0, 0.5, SeriesKind.FORECAST)
+        val merged = liveSolarPoints(null, listOf(stalePast, future), from, to, now)
+        assertEquals(listOf(stalePast.copy(kind = SeriesKind.LIVE), future), merged)
     }
 
     @Test
