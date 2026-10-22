@@ -64,11 +64,10 @@ import com.brian.solwidget.data.liveSolarPoints
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
-import com.brian.solwidget.util.AppUpdater
 import com.brian.solwidget.util.BuildLabel
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
-import com.brian.solwidget.util.UpdateChecker
+import com.brian.solwidget.util.presentUpdate
 import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.viewmodel.HomeViewModel
 import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
@@ -78,12 +77,10 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
-private fun CheckForUpdatesButton(buildLabel: BuildLabel) {
+private fun CheckForUpdatesButton() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
@@ -106,25 +103,7 @@ private fun CheckForUpdatesButton(buildLabel: BuildLabel) {
                 checking = true
                 scope.launch {
                     try {
-                        val decision = withContext(Dispatchers.IO) {
-                            UpdateChecker.check(buildLabel)
-                        }
-                        val apkUrl = decision.apkUrl?.takeIf { it.isNotBlank() }
-                        val updater = AppUpdater(context)
-                        if (apkUrl == null) {
-                            Toast.makeText(context, decision.message, Toast.LENGTH_LONG).show()
-                        } else if (!updater.canInstallPackages()) {
-                            Toast.makeText(
-                                context,
-                                "Allow Wayward Sun to install updates, then tap Check again.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            updater.openInstallPermissionSettings()
-                        } else {
-                            Toast.makeText(context, decision.message, Toast.LENGTH_LONG).show()
-                            val apk = withContext(Dispatchers.IO) { updater.download(apkUrl) }
-                            updater.promptInstall(apk)
-                        }
+                        presentUpdate(context, announceWhenCurrent = true)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Exception) {
@@ -186,7 +165,7 @@ fun HomeScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1
                             )
-                            CheckForUpdatesButton(buildLabel)
+                            CheckForUpdatesButton()
                         }
                     }
                 },
@@ -570,7 +549,8 @@ private fun LayerToggles(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        LayerChip("Solar", layers.solcast, Modifier.weight(1f)) { onToggle(ChartLayer.SOLCAST, it) }
+        LayerChip("Solcast", layers.solcast, Modifier.weight(1f)) { onToggle(ChartLayer.SOLCAST, it) }
+        LayerChip("Enphase", layers.enphase, Modifier.weight(1f)) { onToggle(ChartLayer.ENPHASE, it) }
         LayerChip("Temp", layers.temperature, Modifier.weight(1f)) { onToggle(ChartLayer.TEMPERATURE, it) }
         LayerChip("Precip", layers.precipitation, Modifier.weight(1f)) { onToggle(ChartLayer.PRECIPITATION, it) }
         LayerChip("Buy", layers.buy, Modifier.weight(1f)) { onToggle(ChartLayer.BUY, it) }
@@ -619,13 +599,13 @@ private fun LayerMetaPanel(
         modifier = if (expanded) Modifier.fillMaxSize() else Modifier,
         verticalArrangement = Arrangement.spacedBy(if (expanded) 16.dp else 8.dp)
     ) {
-        if (layers.solcast && (showOnly == null || showOnly == MetaPanel.SOLAR)) {
+        if (layers.power && (showOnly == null || showOnly == MetaPanel.SOLAR)) {
             MetaCard(
                 title = "Solar",
                 expanded = expanded,
                 onClick = { onToggleExpand(MetaPanel.SOLAR) }
             ) {
-                LegendKeys(type, "● Live" to SolColors.Live, "● Forecast" to SolColors.Forecast, "● Now" to SolColors.Now)
+                LegendKeys(type, "● Solcast" to SolColors.Forecast, "● Enphase" to SolColors.Live, "● Now" to SolColors.Now)
                 Text(snapshot.resourceId, color = SolColors.Ink, style = type.body)
                 Text(Formatters.asOf(snapshot.fetchedAt, now), color = SolColors.Muted, style = type.caption)
             }

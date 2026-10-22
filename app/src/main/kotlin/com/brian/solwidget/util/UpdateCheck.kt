@@ -9,6 +9,15 @@ enum class CommitRelation { SAME, LOCAL_BEHIND, LOCAL_AHEAD, DIVERGED, UNKNOWN }
 
 data class UpdateDecision(val message: String, val apkUrl: String? = null)
 
+object UpdateSchedule {
+    const val AUTO_INTERVAL_MS = 24L * 60L * 60L * 1000L
+
+    fun isDue(lastCheckAtMillis: Long, nowMillis: Long, intervalMs: Long = AUTO_INTERVAL_MS): Boolean {
+        if (lastCheckAtMillis <= 0L) return true
+        return nowMillis - lastCheckAtMillis >= intervalMs
+    }
+}
+
 fun decideUpdate(
     local: BuildLabel,
     remote: RemoteRelease?,

@@ -25,23 +25,31 @@ data class HistoryChart(
 )
 
 /**
- * Past half-hours use estimated actuals, or the frozen forecast until those arrive.
+ * Past half-hours keep the measured actual and the stored forecast when both
+ * exist. Until an actual arrives, the frozen forecast is the only past trace.
  * Future half-hours use the forecast.
  */
-fun HistoryInterval.toPowerPoint(now: Instant): PowerPoint? {
+fun HistoryInterval.toPowerPoints(now: Instant): List<PowerPoint> {
     val hours = if (periodHours > 0.0) periodHours else 0.5
-    return if (!periodEnd.isAfter(now)) {
-        val kw = actualKw ?: forecastKw ?: return null
-        PowerPoint(periodEnd, kw, hours, SeriesKind.LIVE)
-    } else {
-        val forecast = forecastKw
-        if (forecast != null) {
-            PowerPoint(periodEnd, forecast, hours, SeriesKind.FORECAST)
-        } else {
-            val actual = actualKw ?: return null
-            PowerPoint(periodEnd, actual, hours, SeriesKind.LIVE)
+    if (!periodEnd.isAfter(now)) {
+        if (actualKw != null && forecastKw != null) {
+            return listOf(
+                PowerPoint(periodEnd, actualKw, hours, SeriesKind.LIVE),
+                PowerPoint(periodEnd, forecastKw, hours, SeriesKind.FORECAST),
+            )
         }
+        val kw = actualKw ?: forecastKw ?: return emptyList()
+        return listOf(PowerPoint(periodEnd, kw, hours, SeriesKind.LIVE))
     }
+    val forecast = forecastKw
+    if (forecast != null) return listOf(PowerPoint(periodEnd, forecast, hours, SeriesKind.FORECAST))
+    val actual = actualKw ?: return emptyList()
+    return listOf(PowerPoint(periodEnd, actual, hours, SeriesKind.LIVE))
+}
+
+fun HistoryInterval.toPowerPoint(now: Instant): PowerPoint? {
+    val points = toPowerPoints(now)
+    return points.firstOrNull { it.kind == SeriesKind.LIVE } ?: points.firstOrNull()
 }
 
 fun HistoryPage.chartFor(from: Instant, to: Instant, now: Instant): HistoryChart {
@@ -52,7 +60,7 @@ fun HistoryPage.chartFor(from: Instant, to: Instant, now: Instant): HistoryChart
     }
     val sunDays = sun.filter { day -> !day.sunset.isBefore(from) && day.sunrise.isBefore(to) }
     return HistoryChart(
-        points = rows.mapNotNull { it.toPowerPoint(now) },
+        points = rows.flatMap { it.toPowerPoints(now) },
         weather = weather,
         sunDays = sunDays
     )
@@ -98,9 +106,22 @@ fun liveSolarPoints(
  * gold line. The extra point is for drawing only. Day energy still counts
  * each half-hour once.
  */
+/**
+ * Past forecast is drawn at half opacity. The last past point is repeated on
+ * the future stroke so the line stays continuous across now.
+ */
+fun forecastStrokes(points: List<PowerPoint>, now: Instant): Pair<List<PowerPoint>, List<PowerPoint>> {
+    val forecast = points.filter { it.kind == SeriesKind.FORECAST }
+    val past = forecast.filter { !it.periodEnd.isAfter(now) }
+    val ahead = forecast.filter { it.periodEnd.isAfter(now) }
+    val future = if (past.isNotEmpty() && ahead.isNotEmpty()) listOf(past.last()) + ahead else ahead
+    return past to future
+}
+
 fun liveStroke(points: List<PowerPoint>): List<PowerPoint> {
     val live = points.filter { it.kind == SeriesKind.LIVE }
-    val next = points.firstOrNull { it.kind == SeriesKind.FORECAST } ?: return live
-    if (live.isEmpty() || !next.periodEnd.isAfter(live.last().periodEnd)) return live
+    if (live.isEmpty()) return live
+    val next = points.firstOrNull { it.kind == SeriesKind.FORECAST && it.periodEnd.isAfter(live.last().periodEnd) }
+        ?: return live
     return live + next
 }

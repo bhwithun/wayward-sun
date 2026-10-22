@@ -27,10 +27,10 @@ import com.brian.solwidget.data.DayTempRange
 import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.PowerPoint
-import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
+import com.brian.solwidget.data.forecastStrokes
 import com.brian.solwidget.data.dayTempRanges
 import com.brian.solwidget.data.isNight
 import com.brian.solwidget.data.liveStroke
@@ -58,7 +58,7 @@ private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP, RATES }
 
 private fun axisUnits(layers: ChartLayers, labelRates: Boolean): AxisUnits {
     val labeled = buildList {
-        if (layers.solcast) add(AxisUnits.SOLAR)
+        if (layers.power) add(AxisUnits.SOLAR)
         if (layers.temperature) add(AxisUnits.TEMP)
         if (layers.precipitation) add(AxisUnits.PRECIP)
         if (labelRates && layers.rates) add(AxisUnits.RATES)
@@ -89,7 +89,7 @@ fun PowerChart(
         val dayBaseline = 16.dp.toPx()
         val tempBaseline = 38.dp.toPx()
         val top = if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()
-        val bottom = size.height - if (layers.solcast) 28.dp.toPx() else 12.dp.toPx()
+        val bottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
@@ -193,10 +193,12 @@ fun PowerChart(
         }
 
         if (layers.solcast) {
-            val live = liveStroke(points)
-            val forecast = points.filter { it.kind == SeriesKind.FORECAST }
-            drawSeries(live, ::xOf, ::yOf, SolColors.Live, dotted = isDemo)
-            drawSeries(forecast, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo)
+            val (past, future) = forecastStrokes(points, now)
+            drawSeries(past, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo, alpha = 0.5f)
+            drawSeries(future, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo)
+        }
+        if (layers.enphase) {
+            drawSeries(liveStroke(points), ::xOf, ::yOf, SolColors.Live, dotted = isDemo)
         }
 
         if (layers.temperature && weather.size >= 2) {
@@ -213,7 +215,7 @@ fun PowerChart(
             )
         }
 
-        val dayTotals = if (layers.solcast) {
+        val dayTotals = if (layers.power) {
             SolarDayLabels.summaries(points, zone).associateBy { it.date }
         } else {
             emptyMap()
@@ -238,7 +240,7 @@ fun PowerChart(
             val labelX = xOf(noon)
             if (labelX in left..right) {
                 native.drawText(label, labelX, dayBaseline, gridPaint)
-                if (layers.solcast) {
+                if (layers.power) {
                     val totals = dayTotals[day]
                     if (totals?.complete == true) {
                         native.drawText(
@@ -325,7 +327,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
     xOf: (Instant) -> Float,
     yOf: (Double) -> Float,
     color: Color,
-    dotted: Boolean = false
+    dotted: Boolean = false,
+    alpha: Float = 1f
 ) {
     if (series.size < 2) return
     val line = ComposePath()
@@ -348,14 +351,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
         drawPath(
             path = fill,
             brush = Brush.verticalGradient(
-                colors = listOf(color.copy(alpha = 0.35f), color.copy(alpha = 0.02f))
+                colors = listOf(color.copy(alpha = 0.35f * alpha), color.copy(alpha = 0.02f * alpha))
             )
         )
     }
     val strokeW = 3.dp.toPx()
     drawPath(
         path = line,
-        color = color,
+        color = color.copy(alpha = alpha),
         style = Stroke(
             width = strokeW,
             cap = StrokeCap.Round,
@@ -547,7 +550,7 @@ object ChartBitmapRenderer {
         val dayBaseline = 36f
         val tempBaseline = 84f
         val top = if (layers.temperature) 100f else 52f
-        val bottom = height - if (layers.solcast) 52f else 8f
+        val bottom = height - if (layers.power) 52f else 8f
         val chartW = (right - left).coerceAtLeast(1f)
         val chartH = (bottom - top).coerceAtLeast(1f)
         val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.firstOrNull()?.time
@@ -629,7 +632,7 @@ object ChartBitmapRenderer {
         }
 
         val zone = ZoneId.systemDefault()
-        val dayTotals = if (layers.solcast) {
+        val dayTotals = if (layers.power) {
             SolarDayLabels.summaries(points, zone).associateBy { it.date }
         } else {
             emptyMap()
@@ -658,7 +661,7 @@ object ChartBitmapRenderer {
             val labelX = xOf(day.atTime(12, 0).atZone(zone).toInstant())
             if (labelX in left + 12f..right - 12f) {
                 canvas.drawText(label, labelX, dayBaseline, dayPaint)
-                if (layers.solcast) {
+                if (layers.power) {
                     val totals = dayTotals[day]
                     if (totals?.complete == true) {
                         canvas.drawText(Formatters.kwh(totals.energyKwh), labelX, height - 8f, kwhPaint)
@@ -673,24 +676,12 @@ object ChartBitmapRenderer {
         }
 
         if (layers.solcast) {
-            drawAndroidSeries(
-                canvas,
-                liveStroke(points),
-                ::xOf,
-                ::yOf,
-                0xFF2EE6A6.toInt(),
-                bottom,
-                dotted = isDemo
-            )
-            drawAndroidSeries(
-                canvas,
-                points.filter { it.kind == SeriesKind.FORECAST },
-                ::xOf,
-                ::yOf,
-                0xFFF5C542.toInt(),
-                bottom,
-                dotted = isDemo
-            )
+            val (past, future) = forecastStrokes(points, now)
+            drawAndroidSeries(canvas, past, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom, dotted = isDemo, alpha = 0.5f)
+            drawAndroidSeries(canvas, future, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom, dotted = isDemo)
+        }
+        if (layers.enphase) {
+            drawAndroidSeries(canvas, liveStroke(points), ::xOf, ::yOf, 0xFF2EE6A6.toInt(), bottom, dotted = isDemo)
         }
 
         if (layers.temperature && weather.size >= 2) {
@@ -717,7 +708,8 @@ object ChartBitmapRenderer {
         yOf: (Double) -> Float,
         color: Int,
         baseline: Float,
-        dotted: Boolean = false
+        dotted: Boolean = false,
+        alpha: Float = 1f
     ) {
         if (series.size < 2) return
         val linePath = Path()
@@ -741,9 +733,10 @@ object ChartBitmapRenderer {
             val fillPaint = Paint().apply {
                 isAntiAlias = true
                 style = Paint.Style.FILL
+                val wash = (0x59 * alpha).toInt().coerceIn(0, 255)
                 shader = LinearGradient(
                     0f, 0f, 0f, baseline,
-                    color and 0x00FFFFFF or 0x59000000,
+                    color and 0x00FFFFFF or (wash shl 24),
                     color and 0x00FFFFFF,
                     Shader.TileMode.CLAMP
                 )
@@ -755,6 +748,7 @@ object ChartBitmapRenderer {
             style = Paint.Style.STROKE
             strokeWidth = 3.5f
             this.color = color
+            this.alpha = (255f * alpha).toInt().coerceIn(0, 255)
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
             if (dotted) {

@@ -1,5 +1,6 @@
 package com.brian.solwidget.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,13 +20,21 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.brian.solwidget.BuildConfig
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.IntentUtils
+import com.brian.solwidget.util.presentUpdate
 import com.brian.solwidget.viewmodel.SettingsViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +44,9 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -119,6 +131,38 @@ fun SettingsScreen(
                 onClick = { IntentUtils.openUrl(context, "https://toolkit.solcast.com.au/") }
             ) {
                 Text("Open Solcast Toolkit")
+            }
+            Text(
+                "Version ${BuildConfig.VERSION_NAME}. The app looks for a newer release once a day. You can check any time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SolColors.Muted
+            )
+            Button(
+                onClick = {
+                    checking = true
+                    updateMessage = null
+                    scope.launch {
+                        try {
+                            val decision = presentUpdate(context, announceWhenCurrent = true)
+                            updateMessage = decision.message
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            val message = error.message ?: "Couldn't install the update."
+                            updateMessage = message
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        } finally {
+                            checking = false
+                        }
+                    }
+                },
+                enabled = !checking,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (checking) "Checking…" else "Check for updates")
+            }
+            updateMessage?.let { message ->
+                Text(message, color = SolColors.Ink, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }

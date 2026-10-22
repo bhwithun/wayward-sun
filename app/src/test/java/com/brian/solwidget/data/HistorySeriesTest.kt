@@ -29,6 +29,26 @@ class HistorySeriesTest {
     }
 
     @Test
+    fun pastActualKeepsTheStoredForecast() {
+        val points = interval(now.minusSeconds(3600), actual = 1.5, forecast = 4.0).toPowerPoints(now)
+        assertEquals(SeriesKind.LIVE, points[0].kind)
+        assertEquals(1.5, points[0].kw, 0.0)
+        assertEquals(SeriesKind.FORECAST, points[1].kind)
+        assertEquals(4.0, points[1].kw, 0.0)
+    }
+
+    @Test
+    fun historicalForecastKeepsTheSeamOnTheFutureStroke() {
+        val past = PowerPoint(now.minusSeconds(3600), 4.0, 0.5, SeriesKind.FORECAST)
+        val seam = PowerPoint(now, 3.0, 0.5, SeriesKind.FORECAST)
+        val ahead = PowerPoint(now.plusSeconds(3600), 5.0, 0.5, SeriesKind.FORECAST)
+        val live = PowerPoint(now.minusSeconds(3600), 1.5, 0.5, SeriesKind.LIVE)
+        val (history, future) = forecastStrokes(listOf(past, seam, ahead, live), now)
+        assertEquals(listOf(4.0, 3.0), history.map { it.kw })
+        assertEquals(listOf(3.0, 5.0), future.map { it.kw })
+    }
+
+    @Test
     fun pastForecastStandsInUntilActualsArrive() {
         val point = interval(now.minusSeconds(1800), actual = null, forecast = 2.25).toPowerPoint(now)
         assertEquals(SeriesKind.LIVE, point?.kind)

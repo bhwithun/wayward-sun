@@ -1,6 +1,7 @@
 package com.brian.solwidget.data
 
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -47,11 +48,13 @@ object SolarDayLabels {
     ): DayTotals {
         val dayPoints = sorted.filter { it.periodEnd.atZone(zone).toLocalDate() == date }
         if (dayPoints.isEmpty()) return emptyDay(date)
-        val producing = dayPoints.filter { it.kw > PRODUCING_KW }
-        val peak = dayPoints.maxBy { it.kw }
+        val timeline = onePerPeriod(sorted)
+        val counted = timeline.filter { it.periodEnd.atZone(zone).toLocalDate() == date }
+        val producing = counted.filter { it.kw > PRODUCING_KW }
+        val peak = counted.maxBy { it.kw }
         val base = DayTotals(
             date = date,
-            energyKwh = dayPoints.sumOf { it.energyKwh },
+            energyKwh = counted.sumOf { it.energyKwh },
             peakKw = peak.kw,
             liveEnergyKwh = dayPoints.filter { it.kind == SeriesKind.LIVE }.sumOf { it.energyKwh },
             forecastEnergyKwh = dayPoints.filter { it.kind == SeriesKind.FORECAST }.sumOf { it.energyKwh },
@@ -61,14 +64,24 @@ object SolarDayLabels {
 
         val firstProd = producing.first()
         val lastProd = producing.last()
-        val firstIdx = sorted.indexOfFirst { it.periodEnd == firstProd.periodEnd }
-        val lastIdx = sorted.indexOfFirst { it.periodEnd == lastProd.periodEnd }
+        val firstIdx = timeline.indexOfFirst { it.periodEnd == firstProd.periodEnd }
+        val lastIdx = timeline.indexOfFirst { it.periodEnd == lastProd.periodEnd }
         if (firstIdx < 0 || lastIdx < firstIdx) return base
 
-        val complete = !hasInteriorGap(sorted, firstIdx, lastIdx) &&
-            isBookendedStart(sorted, firstIdx, firstProd) &&
-            isBookendedEnd(sorted, lastIdx, lastProd)
+        val complete = !hasInteriorGap(timeline, firstIdx, lastIdx) &&
+            isBookendedStart(timeline, firstIdx, firstProd) &&
+            isBookendedEnd(timeline, lastIdx, lastProd)
         return base.copy(complete = complete)
+    }
+
+    /** One point per half-hour. A measured actual stands in for that period's energy. */
+    private fun onePerPeriod(points: List<PowerPoint>): List<PowerPoint> {
+        val byEnd = linkedMapOf<Instant, PowerPoint>()
+        for (point in points.sortedBy { it.periodEnd }) {
+            val current = byEnd[point.periodEnd]
+            if (current == null || point.kind == SeriesKind.LIVE) byEnd[point.periodEnd] = point
+        }
+        return byEnd.values.toList()
     }
 
     private fun hasInteriorGap(sorted: List<PowerPoint>, firstIdx: Int, lastIdx: Int): Boolean {

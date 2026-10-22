@@ -15,6 +15,7 @@ import com.brian.solwidget.data.ChartLayers
 object WidgetUpdater {
     val REVISION = longPreferencesKey("widget_revision")
     val SHOW_SOLAR = booleanPreferencesKey("widget_show_solcast")
+    val SHOW_ENPHASE = booleanPreferencesKey("widget_show_enphase")
     val SHOW_TEMP = booleanPreferencesKey("widget_show_temperature")
     val SHOW_PRECIP = booleanPreferencesKey("widget_show_precipitation")
     val SHOW_RATES = booleanPreferencesKey("widget_show_dte_rates")
@@ -45,8 +46,10 @@ object WidgetUpdater {
     }
 
     fun layersFrom(prefs: androidx.datastore.preferences.core.Preferences, fallback: ChartLayers): ChartLayers {
+        val solcast = prefs[SHOW_SOLAR] ?: fallback.solcast
         return ChartLayers(
-            solcast = prefs[SHOW_SOLAR] ?: fallback.solcast,
+            solcast = solcast,
+            enphase = prefs[SHOW_ENPHASE] ?: solcast,
             temperature = prefs[SHOW_TEMP] ?: fallback.temperature,
             precipitation = prefs[SHOW_PRECIP] ?: fallback.precipitation,
             buy = prefs[SHOW_BUY] ?: prefs[SHOW_RATES] ?: fallback.buy,
@@ -59,6 +62,7 @@ object WidgetUpdater {
         layers: ChartLayers
     ) {
         prefs[SHOW_SOLAR] = layers.solcast
+        prefs[SHOW_ENPHASE] = layers.enphase
         prefs[SHOW_TEMP] = layers.temperature
         prefs[SHOW_PRECIP] = layers.precipitation
         prefs[SHOW_BUY] = layers.buy

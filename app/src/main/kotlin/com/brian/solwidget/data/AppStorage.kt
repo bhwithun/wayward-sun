@@ -41,7 +41,9 @@ class AppStorage(private val context: Context) {
         val SHOW_SELL = booleanPreferencesKey("show_sell_rate")
         val SHOW_PRECIPITATION = booleanPreferencesKey("show_precipitation")
         val SHOW_SOLCAST = booleanPreferencesKey("show_solcast")
+        val SHOW_ENPHASE = booleanPreferencesKey("show_enphase")
         val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
+        val UPDATE_CHECK_AT = longPreferencesKey("update_check_at")
     }
 
     companion object {
@@ -199,12 +201,14 @@ class AppStorage(private val context: Context) {
     suspend fun chartLayersOnce(): ChartLayers {
         val prefs = context.dataStore.data.first()
         val legacyRates = prefs[Keys.SHOW_DTE_RATES]
+        val solcast = prefs[Keys.SHOW_SOLCAST] ?: true
         return ChartLayers(
             temperature = prefs[Keys.SHOW_TEMPERATURE] ?: true,
             buy = prefs[Keys.SHOW_BUY] ?: legacyRates ?: true,
             sell = prefs[Keys.SHOW_SELL] ?: legacyRates ?: true,
             precipitation = prefs[Keys.SHOW_PRECIPITATION] ?: true,
-            solcast = prefs[Keys.SHOW_SOLCAST] ?: true
+            solcast = solcast,
+            enphase = prefs[Keys.SHOW_ENPHASE] ?: solcast
         )
     }
 
@@ -213,6 +217,10 @@ class AppStorage(private val context: Context) {
 
     suspend fun setLastHomeTab(value: String) = setString(Keys.LAST_HOME_TAB, value)
 
+    suspend fun updateCheckAt(): Long = getLongOnce(Keys.UPDATE_CHECK_AT)
+
+    suspend fun stampUpdateCheck(atMillis: Long) = setLong(Keys.UPDATE_CHECK_AT, atMillis)
+
     suspend fun setChartLayer(layer: ChartLayer, visible: Boolean) {
         val key = when (layer) {
             ChartLayer.TEMPERATURE -> Keys.SHOW_TEMPERATURE
@@ -220,6 +228,7 @@ class AppStorage(private val context: Context) {
             ChartLayer.SELL -> Keys.SHOW_SELL
             ChartLayer.PRECIPITATION -> Keys.SHOW_PRECIPITATION
             ChartLayer.SOLCAST -> Keys.SHOW_SOLCAST
+            ChartLayer.ENPHASE -> Keys.SHOW_ENPHASE
         }
         setBoolean(key, visible)
     }

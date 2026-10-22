@@ -1,7 +1,9 @@
 package com.brian.solwidget.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UpdateCheckTest {
@@ -65,6 +67,14 @@ class UpdateCheckTest {
         }
         val decision = UpdateChecker.check(hashBuild, source)
         assertEquals("This build matches release 2.1.0.", decision.message)
+    }
+
+    @Test
+    fun automaticCheckWaitsADay() {
+        val now = 1_700_000_000_000L
+        assertTrue(UpdateSchedule.isDue(0L, now))
+        assertFalse(UpdateSchedule.isDue(now - UpdateSchedule.AUTO_INTERVAL_MS + 1, now))
+        assertTrue(UpdateSchedule.isDue(now - UpdateSchedule.AUTO_INTERVAL_MS, now))
     }
 
     @Test
