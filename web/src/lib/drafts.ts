@@ -25,6 +25,7 @@ export function draftsFromSnapshot(
       ...(current ?? draft),
       actualKw: draft.actualKw,
       periodHours: draft.periodHours,
+      actualSource: "solcast",
     });
   }
 

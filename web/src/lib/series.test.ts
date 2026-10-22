@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { seriesFromHistory } from "./series";
+import { dayTotals, seriesFromHistory } from "./series";
 
 const now = Date.parse("2026-10-02T20:00:00.000Z");
 
@@ -16,7 +16,19 @@ describe("seriesFromHistory", () => {
     expect(points.map((point) => [point.kind, point.kw])).toEqual([
       ["live", 1.6826],
       ["live", 3.2],
+      ["forecast", 2.5],
       ["forecast", 6.1318],
     ]);
+  });
+
+  it("counts a past prediction beside the measured day, not twice", () => {
+    const points = seriesFromHistory(
+      [{ periodEnd: "2026-10-02T18:00:00.000Z", actualKw: 3.2, forecastKw: 2.5, periodHours: 0.5 }],
+      now
+    );
+    const [day] = dayTotals(points, now);
+    expect(day.kwh).toBeCloseTo(1.6);
+    expect(day.liveKwh).toBeCloseTo(1.6);
+    expect(day.forecastKwh).toBeCloseTo(1.25);
   });
 });

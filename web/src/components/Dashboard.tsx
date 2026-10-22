@@ -368,13 +368,13 @@ function chartModel(
     fromMs,
     toMs,
     rates: rows,
-    totals: filledTotals(start ?? today, 7, points),
+    totals: filledTotals(start ?? today, 7, points, clock),
     empty: history != null && rows.length === 0 && !history.error,
   };
 }
 
-function filledTotals(start: Ymd, count: number, points: SeriesPoint[]) {
-  const byLabel = new Map(dayTotals(points).map((row) => [row.label, row]));
+function filledTotals(start: Ymd, count: number, points: SeriesPoint[], nowMs: number) {
+  const byLabel = new Map(dayTotals(points, nowMs).map((row) => [row.label, row]));
   return Array.from({ length: count }, (_, index) => {
     const label = ymdKey(addDays(start, index)).slice(5);
     return byLabel.get(label) ?? { label, kwh: 0, liveKwh: 0, forecastKwh: 0 };

@@ -4,8 +4,8 @@ A household solar dashboard for one rooftop. It is an Android **app**, a **home-
 
 The main chart is the same idea as the Solcast Toolkit **Graph: Live and Forecasts** view, for a five-day window (two local days before today through two after):
 
-- **Live** (green) — estimated actual production
-- **Forecast** (gold) — predicted production
+- **Live** (green) — measured production from Enphase when it is connected, otherwise Solcast's estimated actual
+- **Forecast** (gold) — Solcast's prediction, including on past days where that prediction was stored
 - a **now** marker
 
 The display is **layers you can turn on or off**: solar (live + forecast), **rain / precipitation**, temperature, and **DTE rate periods** (Dynamic Peak Pricing D1.8: off-peak, mid-peak, and peak hours in America/Detroit). It is not a commercial PV monitoring portal, not a utility account, and not a generic weather app. There is no current-kW hero number; the graph is the point.

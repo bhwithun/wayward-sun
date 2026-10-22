@@ -40,6 +40,22 @@ describe("interval merge", () => {
     expect(mergeInterval(existing, incoming, now).forecastKw).toBe(2);
   });
 
+  it("keeps a measured actual when a Solcast estimate arrives", () => {
+    const existing = { ...row("2026-06-17T15:00:00Z", 4.2), actualSource: "enphase" };
+    const incoming = { ...row("2026-06-17T15:00:00Z", 3.1), actualSource: "solcast" };
+    const merged = mergeInterval(existing, incoming, now);
+    expect(merged.actualKw).toBe(4.2);
+    expect(merged.actualSource).toBe("enphase");
+  });
+
+  it("lets a measured zero replace an estimate", () => {
+    const existing = { ...row("2026-06-17T15:00:00Z", 1.5), actualSource: "solcast" };
+    const incoming = { ...row("2026-06-17T15:00:00Z", 0), actualSource: "enphase" };
+    const merged = mergeInterval(existing, incoming, now);
+    expect(merged.actualKw).toBe(0);
+    expect(merged.actualSource).toBe("enphase");
+  });
+
   it("keeps the first rate cents", () => {
     const existing = row("2026-06-17T15:00:00Z", 1);
     const incoming = { ...row("2026-06-17T15:00:00Z", 2), importCents: 1, outflowCents: 1, rateBand: "OFF_PEAK" };

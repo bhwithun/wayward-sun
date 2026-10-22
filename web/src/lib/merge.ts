@@ -1,12 +1,15 @@
 /**
  * Row merge used by the intervals upsert.
- * The SQL in ingest.ts must follow the same rules:
+ * The SQL in store.ts must follow the same rules:
  * - actual_kw: incoming wins when present, never clears a stored actual
+ * - an Enphase actual sticks. A later Solcast estimate does not replace it
  * - forecast_kw: incoming replaces only while period_end is still in the future;
  *   a past incoming forecast fills the column only when it was empty
  * - temp and precip: incoming wins when present
  * - rate band and cents: first write sticks
  */
+export const METER_ACTUAL_SOURCE = "enphase";
+
 export type IntervalDraft = {
   periodEnd: string;
   actualKw: number | null;
@@ -17,6 +20,8 @@ export type IntervalDraft = {
   rateBand: string | null;
   importCents: number | null;
   outflowCents: number | null;
+  /** `enphase` is measured production. `solcast` is an estimated actual. */
+  actualSource?: string | null;
 };
 
 export function mergeInterval(
@@ -31,9 +36,15 @@ export function mergeInterval(
   if (incoming.forecastKw != null) {
     if (future || existing.forecastKw == null) forecastKw = incoming.forecastKw;
   }
+  const meterStays = existing.actualSource === METER_ACTUAL_SOURCE && incoming.actualSource !== METER_ACTUAL_SOURCE;
   return {
     periodEnd: incoming.periodEnd,
-    actualKw: incoming.actualKw ?? existing.actualKw,
+    actualKw: meterStays ? existing.actualKw : incoming.actualKw ?? existing.actualKw,
+    actualSource: meterStays
+      ? existing.actualSource
+      : incoming.actualKw != null
+        ? incoming.actualSource ?? existing.actualSource
+        : existing.actualSource,
     forecastKw,
     periodHours: incoming.periodHours ?? existing.periodHours,
     tempF: incoming.tempF ?? existing.tempF,

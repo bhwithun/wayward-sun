@@ -1,4 +1,5 @@
 import { demoSnapshot, type SnapshotBody } from "./demo";
+import { harvestEnphase } from "./enphase";
 import { loadState, persistState, scrubDemoActuals } from "./store";
 import { detroitParts, utcDay, ymdKey } from "./time";
 import { fetchSiteWeather } from "./weather";
@@ -140,8 +141,15 @@ export async function serveCron(): Promise<SnapshotBody> {
     state = { ...state, message: plan.message };
     await persistState(state, null, now);
   }
-  if (!state) return demoSnapshot(resourceId(), now);
-  return attachWeather(state, now);
+  if (!state) state = demoSnapshot(resourceId(), now);
+  const snapshot = await attachWeather(state, now);
+  try {
+    await harvestEnphase(now);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`Enphase harvest failed: ${reason}`);
+  }
+  return snapshot;
 }
 
 async function pullSolcast(

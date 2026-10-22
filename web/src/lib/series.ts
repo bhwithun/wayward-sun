@@ -21,10 +21,15 @@ export function seriesFromHistory(points: HistoryLike[], nowMs: number): SeriesP
     if (!Number.isFinite(t)) continue;
     const hours = point.periodHours ?? 0.5;
     if (t <= nowMs) {
-      // Estimated actuals replace the forecast. Until they arrive, the frozen
-      // forecast is the historical trace for this half-hour.
-      const kw = point.actualKw ?? point.forecastKw;
-      if (kw != null) out.push({ t, kw, kind: "live", hours });
+      // A stored forecast stays visible beside a measured actual. Until an
+      // actual arrives, that frozen forecast is the only historical trace.
+      if (point.actualKw != null && point.forecastKw != null) {
+        out.push({ t, kw: point.actualKw, kind: "live", hours });
+        out.push({ t, kw: point.forecastKw, kind: "forecast", hours });
+      } else {
+        const kw = point.actualKw ?? point.forecastKw;
+        if (kw != null) out.push({ t, kw, kind: "live", hours });
+      }
     } else if (point.forecastKw != null) {
       out.push({ t, kw: point.forecastKw, kind: "forecast", hours });
     } else if (point.actualKw != null) {
@@ -41,7 +46,7 @@ export type DayTotal = {
   forecastKwh: number;
 };
 
-export function dayTotals(points: SeriesPoint[]): DayTotal[] {
+export function dayTotals(points: SeriesPoint[], nowMs: number): DayTotal[] {
   const groups = new Map<string, DayTotal>();
   for (const point of points) {
     const ymd = detroitParts(new Date(point.t));
@@ -53,9 +58,13 @@ export function dayTotals(points: SeriesPoint[]): DayTotal[] {
       liveKwh: 0,
       forecastKwh: 0,
     };
-    current.kwh += energy;
-    if (point.kind === "live") current.liveKwh += energy;
-    else current.forecastKwh += energy;
+    if (point.kind === "live") {
+      current.liveKwh += energy;
+      current.kwh += energy;
+    } else {
+      current.forecastKwh += energy;
+      if (point.t > nowMs) current.kwh += energy;
+    }
     groups.set(key, current);
   }
   return [...groups.values()];

@@ -8,8 +8,8 @@ Pure Android app (Kotlin, Compose, Material 3, Glance widget) bootstrapped from 
 - Solcast hobbyist rooftop endpoints only (not the commercial lat/lng PV power API)
 - Default resource ID: `84d7-8b52-33f3-bd7b`
 - Default cache URL: `https://wayward-sun-brianandkathi.vercel.app` (`AppStorage.DEFAULT_CACHE_URL`). The previous `sol-widget` Vercel host and `*.workers.dev` URLs are legacy and rewrite to this default.
-- Never hardcode a Solcast API key. Never put it in the APK, git, or a committed env file. Store it only as the Vercel env var `SOLCAST_API_KEY`.
-- The web app (`web/`) is the **only** Solcast HTTP client. Live and the widget `GET /cache` (`CacheApi`). Live, the widget, and the phone History tab also `GET /history` for the green trace. They must not call `api.solcast.com.au`.
+- Never hardcode a Solcast API key or an Enphase key, client secret, or token. Never put them in the APK, git, or a committed env file. Solcast stays in the Vercel env var `SOLCAST_API_KEY`. Enphase uses `ENPHASE_API_KEY`, `ENPHASE_CLIENT_ID`, and `ENPHASE_CLIENT_SECRET`. The rotating refresh token is stored in `fetch_state`, not in the Android app.
+- The web app (`web/`) is the **only** Solcast HTTP client and the only Enphase client. Live and the widget `GET /cache` (`CacheApi`). Live, the widget, and the phone History tab also `GET /history` for the green trace. They must not call `api.solcast.com.au` or `api.enphaseenergy.com`.
 - No `CACHE_SECRET`. No device `PUT /cache`. Cache JSON is public at the site URL.
 - Daily hobbyist limit is 10 HTTP requests per UTC day. A forecast call requests 14 days (`hours=336`) and an estimated-actuals call requests 7 days (`hours=168`). Solcast runs only from `GET /cron`, and only on eight America/Detroit slots from 6:00am through 11:30pm (every 2.5 hours). The 6:00am and 6:30pm slots also call estimated actuals. That is 8 forecast requests and 2 actuals requests. `GET /cache` never calls Solcast. There is no manual refresh.
 - Neon function `solpull` (`web/functions/solpull.ts`) on Neon project `wayward-sun` calls `GET /cron` every 30 minutes across the UTC hours that contain that awake window in both daylight and standard time (`0,30 10-23 * * *` and `0,30 0-4 * * *`). The route decides whether the Detroit clock is on a slot. The function only forwards the request; it does not call Solcast. Vercel Hobby cron calls `GET /cron` once a day at 12:30 UTC (the 8:30am daylight-time slot). A repeated slot does not call Solcast again. Set `CRON_SECRET` on Vercel and on the Neon function so the route requires `Authorization: Bearer`.
@@ -26,18 +26,19 @@ com.brian.solwidget/
 ├── work/          # 5-hour WorkManager cache download; hourly weather
 └── util/
 
-web/               # Next.js on Vercel (only Solcast client)
+web/               # Next.js on Vercel (only Solcast and Enphase client)
 ├── db/001_init.sql
-├── src/app/       # /, /cache, /health, /history, /cron
+├── src/app/       # /, /cache, /health, /history, /cron, /enphase/connect, /enphase/callback
 └── src/lib/       # quota gate, DTE port, interval upsert
 ```
 
 ## Vercel and Neon
 
 - Project root is `web/`. Database is Neon via `DATABASE_URL`.
-- `fetch_state` is the latest Solcast snapshot and quota counters. `intervals` is one row per Solcast `period_end` (actual kW, forecast kW, temp °F, precip %, rate band and cents). `sun_days` holds sunrise and sunset.
+- `fetch_state` is the latest Solcast snapshot, quota counters, and the Enphase token fields. `intervals` is one row per Solcast `period_end` (actual kW, forecast kW, temp °F, precip %, rate band and cents). `actual_source` is `enphase` for measured production. `sun_days` holds sunrise and sunset.
 - Forecast kW is replaced only while that period is still in the future. Rate cents stick at first insert. Temp and precip take the newest Open-Meteo value.
-- `GET /history` serves the web chart, the phone History tab, and the green trace on Live and the widget. The cache forecast starts at the latest pull, so past half-hours come from stored history (estimated actuals, or the frozen forecast until actuals arrive). The History tab shares the Live layer chips (Solar, Temp, Precip, Buy, Sell).
+- `GET /history` serves the web chart, the phone History tab, and the green trace on Live and the widget. The cache forecast starts at the latest pull, so past half-hours come from stored history (Enphase measured kW, otherwise estimated actuals, or the frozen forecast until either arrives). When a past half-hour has both, green is the measurement and gold is the stored Solcast forecast. An Enphase half-hour is not replaced by a later Solcast estimate. The History tab shares the Live layer chips (Solar, Temp, Precip, Buy, Sell).
+- Enphase credentials for the existing HomeEnergyManager app live in `ENPHASE_DIR` (`credentials.json` and `tokens.json`), outside this repo. A refresh writes the new refresh token back to that folder. Enphase runs only from `GET /cron`, and only when that app is connected and the last production pull is an hour old. It reads site production (`production_meter`, or `production_micro` when the site has no meter) and rolls 15-minute or 5-minute watt-hours into the existing half-hour rows. That call does not spend Solcast quota. `/cache` never calls Enphase. The homeowner grants access once at `/enphase/connect`.
 - Do not add `CACHE_SECRET` back. Do not put the Solcast key in the Android app.
 - Weather on the phone stays Open-Meteo and does not go through Solcast.
 

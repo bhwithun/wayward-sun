@@ -140,8 +140,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   }
 
   if (props.layers.solar) {
-    strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo);
     strokeSeries(ctx, props.points.filter((p) => p.kind === "forecast"), xOf, ySolar, FORECAST, props.demo);
+    strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo);
   }
 
   if (props.layers.temp && props.weather.length >= 2) {

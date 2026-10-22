@@ -1,7 +1,7 @@
 import { combinedPoints, demoActualPeriods, type SnapshotBody } from "./demo";
 import { draftsFromSnapshot, type WeatherHour } from "./drafts";
 import { sql } from "./db";
-import type { IntervalDraft } from "./merge";
+import { METER_ACTUAL_SOURCE, type IntervalDraft } from "./merge";
 import type { SunDay } from "./weather";
 
 const DAILY_LIMIT = 10;
@@ -142,9 +142,10 @@ export async function persistState(
   if (weather && weather.sun.length > 0) await upsertSun(weather.sun);
 }
 
-async function upsertIntervals(drafts: IntervalDraft[], now: Date): Promise<void> {
+export async function upsertIntervals(drafts: IntervalDraft[], now: Date): Promise<void> {
   const periodEnd = drafts.map((d) => d.periodEnd);
   const actualKw = drafts.map((d) => d.actualKw);
+  const actualSource = drafts.map((d) => d.actualSource ?? null);
   const forecastKw = drafts.map((d) => d.forecastKw);
   const periodHours = drafts.map((d) => d.periodHours);
   const tempF = drafts.map((d) => d.tempF);
@@ -153,17 +154,22 @@ async function upsertIntervals(drafts: IntervalDraft[], now: Date): Promise<void
   const importCents = drafts.map((d) => d.importCents);
   const outflowCents = drafts.map((d) => d.outflowCents);
   const nowIso = now.toISOString();
+  const allowMeter = drafts.some((draft) => draft.actualSource === METER_ACTUAL_SOURCE) ? "1" : "0";
   await sql()`
+    WITH allow AS (
+      SELECT set_config('wayward.allow_meter', ${allowMeter}, true)
+    )
     INSERT INTO intervals (
-      period_end, actual_kw, forecast_kw, period_hours, temp_f, precip_pct,
+      period_end, actual_kw, actual_source, forecast_kw, period_hours, temp_f, precip_pct,
       rate_band, import_cents, outflow_cents, updated_at
     )
     SELECT
-      t.period_end, t.actual_kw, t.forecast_kw, t.period_hours, t.temp_f, t.precip_pct,
+      t.period_end, t.actual_kw, t.actual_source, t.forecast_kw, t.period_hours, t.temp_f, t.precip_pct,
       t.rate_band, t.import_cents, t.outflow_cents, ${nowIso}::timestamptz
-    FROM unnest(
+    FROM allow, unnest(
       ${periodEnd}::timestamptz[],
       ${actualKw}::float8[],
+      ${actualSource}::text[],
       ${forecastKw}::float8[],
       ${periodHours}::float8[],
       ${tempF}::float8[],
@@ -172,11 +178,23 @@ async function upsertIntervals(drafts: IntervalDraft[], now: Date): Promise<void
       ${importCents}::float8[],
       ${outflowCents}::float8[]
     ) AS t(
-      period_end, actual_kw, forecast_kw, period_hours, temp_f, precip_pct,
+      period_end, actual_kw, actual_source, forecast_kw, period_hours, temp_f, precip_pct,
       rate_band, import_cents, outflow_cents
     )
     ON CONFLICT (period_end) DO UPDATE SET
-      actual_kw = COALESCE(EXCLUDED.actual_kw, intervals.actual_kw),
+      actual_kw = CASE
+        WHEN intervals.actual_source = ${METER_ACTUAL_SOURCE}
+         AND EXCLUDED.actual_source IS DISTINCT FROM ${METER_ACTUAL_SOURCE}
+          THEN intervals.actual_kw
+        ELSE COALESCE(EXCLUDED.actual_kw, intervals.actual_kw)
+      END,
+      actual_source = CASE
+        WHEN intervals.actual_source = ${METER_ACTUAL_SOURCE}
+         AND EXCLUDED.actual_source IS DISTINCT FROM ${METER_ACTUAL_SOURCE}
+          THEN intervals.actual_source
+        WHEN EXCLUDED.actual_kw IS NULL THEN intervals.actual_source
+        ELSE COALESCE(EXCLUDED.actual_source, intervals.actual_source)
+      END,
       forecast_kw = CASE
         WHEN EXCLUDED.forecast_kw IS NULL THEN intervals.forecast_kw
         WHEN intervals.period_end > ${nowIso}::timestamptz THEN EXCLUDED.forecast_kw
@@ -256,7 +274,7 @@ export async function scrubDemoActuals(state: SnapshotBody | null): Promise<Snap
   if (periods.length > 0) {
     await sql()`
       UPDATE intervals AS i
-      SET actual_kw = NULL, updated_at = now()
+      SET actual_kw = NULL, actual_source = NULL, updated_at = now()
       FROM unnest(${periods}::timestamptz[]) AS d(period_end)
       WHERE i.period_end = d.period_end
     `;
@@ -324,4 +342,73 @@ function num(value: unknown): number | null {
   if (value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+export type MeterAuth = {
+  refreshToken: string | null;
+  accessToken: string | null;
+  accessExpiresAt: string | null;
+  systemId: string | null;
+  meterKind: string | null;
+  meterFetchedAt: string | null;
+};
+
+/** Enphase tokens and the last measured-production pull. Not part of /cache or /history. */
+export async function loadMeterAuth(): Promise<MeterAuth> {
+  const rows = await sql()`
+    SELECT enphase_refresh_token, enphase_access_token, enphase_access_expires_at,
+           enphase_system_id, meter_kind, meter_fetched_at
+    FROM fetch_state
+    WHERE id = 1
+  `;
+  const row = rows[0] as Record<string, unknown> | undefined;
+  if (!row) {
+    return {
+      refreshToken: null,
+      accessToken: null,
+      accessExpiresAt: null,
+      systemId: null,
+      meterKind: null,
+      meterFetchedAt: null,
+    };
+  }
+  return {
+    refreshToken: textOrNull(row.enphase_refresh_token),
+    accessToken: textOrNull(row.enphase_access_token),
+    accessExpiresAt: row.enphase_access_expires_at
+      ? new Date(String(row.enphase_access_expires_at)).toISOString()
+      : null,
+    systemId: textOrNull(row.enphase_system_id),
+    meterKind: textOrNull(row.meter_kind),
+    meterFetchedAt: row.meter_fetched_at ? new Date(String(row.meter_fetched_at)).toISOString() : null,
+  };
+}
+
+export async function saveMeterAuth(resourceId: string, auth: MeterAuth): Promise<void> {
+  const updated = await sql()`
+    UPDATE fetch_state SET
+      enphase_refresh_token = ${auth.refreshToken},
+      enphase_access_token = ${auth.accessToken},
+      enphase_access_expires_at = ${auth.accessExpiresAt},
+      enphase_system_id = ${auth.systemId},
+      meter_kind = ${auth.meterKind},
+      meter_fetched_at = ${auth.meterFetchedAt}
+    WHERE id = 1
+    RETURNING id
+  `;
+  if (updated.length > 0) return;
+  await sql()`
+    INSERT INTO fetch_state (
+      id, resource_id, enphase_refresh_token, enphase_access_token,
+      enphase_access_expires_at, enphase_system_id, meter_kind, meter_fetched_at
+    ) VALUES (
+      1, ${resourceId}, ${auth.refreshToken}, ${auth.accessToken},
+      ${auth.accessExpiresAt}, ${auth.systemId}, ${auth.meterKind}, ${auth.meterFetchedAt}
+    )
+  `;
+}
+
+function textOrNull(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  return String(value);
 }
