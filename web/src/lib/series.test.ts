@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayTotals, seriesFromHistory } from "./series";
+import { dayTotals, forecastStrokes, seriesFromHistory } from "./series";
 
 const now = Date.parse("2026-10-02T20:00:00.000Z");
 
@@ -30,5 +30,21 @@ describe("seriesFromHistory", () => {
     expect(day.kwh).toBeCloseTo(1.6);
     expect(day.liveKwh).toBeCloseTo(1.6);
     expect(day.forecastKwh).toBeCloseTo(1.25);
+  });
+});
+
+describe("forecastStrokes", () => {
+  it("keeps the seam point on the solid future stroke", () => {
+    const strokes = forecastStrokes(
+      [
+        { t: Date.parse("2026-10-02T18:00:00.000Z"), kw: 2.5, kind: "forecast", hours: 0.5 },
+        { t: Date.parse("2026-10-02T19:00:00.000Z"), kw: 2.0, kind: "forecast", hours: 0.5 },
+        { t: Date.parse("2026-10-03T16:00:00.000Z"), kw: 6.1, kind: "forecast", hours: 0.5 },
+        { t: Date.parse("2026-10-02T18:00:00.000Z"), kw: 3.2, kind: "live", hours: 0.5 },
+      ],
+      now
+    );
+    expect(strokes.past.map((point) => point.kw)).toEqual([2.5, 2.0]);
+    expect(strokes.future.map((point) => point.kw)).toEqual([2.0, 6.1]);
   });
 });

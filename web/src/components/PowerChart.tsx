@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
-import { isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
+import { forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 
 const LIVE = "#2EE6A6";
 const FORECAST = "#F5C542";
@@ -24,7 +24,8 @@ const RATE_MIN = 0;
 const RATE_MAX = 40;
 
 export type ChartLayers = {
-  solar: boolean;
+  solcast: boolean;
+  enphase: boolean;
   temp: boolean;
   precip: boolean;
   buy: boolean;
@@ -58,7 +59,7 @@ export function PowerChart(props: Props) {
     return () => observer.disconnect();
   }, [props]);
 
-  return <canvas ref={ref} className="chart" aria-label="Solar, weather, and buy and sell rate chart" />;
+  return <canvas ref={ref} className="chart" aria-label="Solcast, Enphase, weather, and buy and sell rate chart" />;
 }
 
 function paint(canvas: HTMLCanvasElement, props: Props) {
@@ -78,8 +79,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const units = axisUnits(props.layers);
   const left = units === "none" ? 12 : 52;
   const right = width - 12;
+  const showPower = props.layers.solcast || props.layers.enphase;
   const top = props.layers.temp ? 28 : 16;
-  const bottom = height - (props.layers.solar ? 36 : 28);
+  const bottom = height - (showPower ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -139,9 +141,13 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     }
   }
 
-  if (props.layers.solar) {
-    strokeSeries(ctx, props.points.filter((p) => p.kind === "forecast"), xOf, ySolar, FORECAST, props.demo);
-    strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo);
+  if (props.layers.solcast) {
+    const gold = forecastStrokes(props.points, props.now);
+    strokeSeries(ctx, gold.past, xOf, ySolar, FORECAST, props.demo, 0.5);
+    strokeSeries(ctx, gold.future, xOf, ySolar, FORECAST, props.demo, 1);
+  }
+  if (props.layers.enphase) {
+    strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo, 1);
   }
 
   if (props.layers.temp && props.weather.length >= 2) {
@@ -166,10 +172,12 @@ function strokeSeries(
   xOf: (t: number) => number,
   yOf: (kw: number) => number,
   color: string,
-  demo: boolean
+  demo: boolean,
+  alpha: number
 ) {
   if (points.length < 2) return;
   ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.lineJoin = "round";
@@ -283,7 +291,7 @@ function trace(
 
 function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | "rates" {
   const labeled: Array<"solar" | "temp" | "precip" | "rates"> = [];
-  if (layers.solar) labeled.push("solar");
+  if (layers.solcast || layers.enphase) labeled.push("solar");
   if (layers.temp) labeled.push("temp");
   if (layers.precip) labeled.push("precip");
   if (layers.buy || layers.sell) labeled.push("rates");

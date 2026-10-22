@@ -36,7 +36,8 @@ const LAYER_KEY = "wayward-sun-layers";
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const DEFAULT_LAYERS: ChartLayers = {
-  solar: true,
+  solcast: true,
+  enphase: true,
   temp: true,
   precip: true,
   buy: true,
@@ -47,9 +48,11 @@ function readLayers(): ChartLayers {
   try {
     const raw = localStorage.getItem(LAYER_KEY);
     if (!raw) return DEFAULT_LAYERS;
-    const parsed = JSON.parse(raw) as Partial<ChartLayers>;
+    const parsed = JSON.parse(raw) as Partial<ChartLayers> & { solar?: boolean };
+    const legacy = parsed.solar !== false;
     return {
-      solar: parsed.solar !== false,
+      solcast: parsed.solcast ?? legacy,
+      enphase: parsed.enphase ?? legacy,
       temp: parsed.temp !== false,
       precip: parsed.precip !== false,
       buy: parsed.buy !== false,
@@ -200,7 +203,8 @@ export function Dashboard() {
       </div>
 
       <div className="toolbar">
-        <Chip label="Solar" on={layers.solar} onClick={() => setLayers({ ...layers, solar: !layers.solar })} />
+        <Chip label="Solcast" on={layers.solcast} onClick={() => setLayers({ ...layers, solcast: !layers.solcast })} />
+        <Chip label="Enphase" on={layers.enphase} onClick={() => setLayers({ ...layers, enphase: !layers.enphase })} />
         <Chip label="Temp" on={layers.temp} onClick={() => setLayers({ ...layers, temp: !layers.temp })} />
         <Chip label="Precip" on={layers.precip} onClick={() => setLayers({ ...layers, precip: !layers.precip })} />
         <Chip label="Buy" on={layers.buy} onClick={() => setLayers({ ...layers, buy: !layers.buy })} />
@@ -211,8 +215,8 @@ export function Dashboard() {
 
       <section className="panel chart-wrap">
         <div className="legend">
-          <span style={{ color: "#2EE6A6" }}>● Live</span>
-          <span style={{ color: "#F5C542" }}>● Forecast</span>
+          <span style={{ color: "#F5C542" }}>● Solcast</span>
+          <span style={{ color: "#2EE6A6" }}>● Enphase</span>
           <span style={{ color: "#FF8A4C" }}>● Now</span>
           {layers.buy && <span style={{ color: "#C9898C" }}>▮ Buy</span>}
           {layers.sell && <span style={{ color: "#8AA4C4" }}>▮ Sell</span>}

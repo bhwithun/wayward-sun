@@ -39,6 +39,15 @@ export function seriesFromHistory(points: HistoryLike[], nowMs: number): SeriesP
   return out;
 }
 
+/** Past gold stays at half opacity. The segment that crosses now stays solid. */
+export function forecastStrokes(points: SeriesPoint[], nowMs: number): { past: SeriesPoint[]; future: SeriesPoint[] } {
+  const forecast = points.filter((point) => point.kind === "forecast");
+  const past = forecast.filter((point) => point.t <= nowMs);
+  const ahead = forecast.filter((point) => point.t > nowMs);
+  const future = past.length > 0 && ahead.length > 0 ? [past[past.length - 1], ...ahead] : ahead;
+  return { past, future };
+}
+
 export type DayTotal = {
   label: string;
   kwh: number;
