@@ -49,7 +49,7 @@ object WidgetUpdater {
         val solcast = prefs[SHOW_SOLAR] ?: fallback.solcast
         return ChartLayers(
             solcast = solcast,
-            enphase = prefs[SHOW_ENPHASE] ?: solcast,
+            enphase = prefs[SHOW_ENPHASE] ?: fallback.enphase,
             temperature = prefs[SHOW_TEMP] ?: fallback.temperature,
             precipitation = prefs[SHOW_PRECIP] ?: fallback.precipitation,
             buy = prefs[SHOW_BUY] ?: prefs[SHOW_RATES] ?: fallback.buy,

@@ -123,6 +123,25 @@ class HistorySeriesTest {
     }
 
     @Test
+    fun storedHistoryKeepsTheSolcastForecastBesideTheMeasurement() {
+        val now = Instant.parse("2026-10-22T18:00:00Z")
+        val measured = PowerPoint(now.minusSeconds(1800), 4.6, 0.5, SeriesKind.LIVE)
+        val prediction = PowerPoint(now.minusSeconds(1800), 3.1, 0.5, SeriesKind.FORECAST)
+        val stored = StoredLivePast("window", now, listOf(measured, prediction))
+        val decoded = LivePastStore.decode(LivePastStore.encode(stored))
+        assertEquals(listOf(SeriesKind.LIVE, SeriesKind.FORECAST), decoded?.points?.map { it.kind })
+        assertEquals(listOf(4.6, 3.1), decoded?.points?.map { it.kw })
+        val legacy = LivePastStore.decode("window\n${now.toEpochMilli()}\n${measured.periodEnd.toEpochMilli()},4.6,0.5\n")
+        assertEquals(SeriesKind.LIVE, legacy?.points?.single()?.kind)
+        val unmarkedPair = LivePastStore.decode(
+            "window\n${now.toEpochMilli()}\n" +
+                "${measured.periodEnd.toEpochMilli()},4.6,0.5\n" +
+                "${measured.periodEnd.toEpochMilli()},3.1,0.5\n"
+        )
+        assertEquals(listOf(SeriesKind.LIVE, SeriesKind.FORECAST), unmarkedPair?.points?.map { it.kind })
+    }
+
+    @Test
     fun storedLivePastIsStaleWhenTheWindowMovesOrTheSaveIsOld() {
         val zone = ZoneId.of("America/Detroit")
         val now = Instant.parse("2026-10-05T20:00:00Z")

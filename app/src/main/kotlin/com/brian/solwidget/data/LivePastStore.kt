@@ -14,8 +14,10 @@ data class StoredLivePast(
 )
 
 /**
- * Past half-hours for the green trace. The shared cache forecast starts at the
- * latest pull, so Live and the widget read stored history for everything up to now.
+ * Past half-hours for Live and the widget. The shared cache forecast starts at
+ * the latest pull, so both read stored history for everything up to now.
+ * Each row keeps its series: measured production stays green, and a stored
+ * Solcast forecast stays gold.
  */
 object LivePastStore {
     val MAX_AGE: Duration = Duration.ofMinutes(45)
@@ -31,6 +33,8 @@ object LivePastStore {
             append(point.kw)
             append(',')
             append(point.periodHours)
+            append(',')
+            append(if (point.kind == SeriesKind.FORECAST) "F" else "L")
             append('\n')
         }
     }
@@ -40,15 +44,42 @@ object LivePastStore {
         val lines = text.lineSequence().filter { it.isNotBlank() }.toList()
         if (lines.size < 2) return null
         val savedAt = lines[1].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return null
-        val points = lines.drop(2).mapNotNull { line ->
-            val parts = line.split(',')
-            if (parts.size != 3) return@mapNotNull null
-            val end = parts[0].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return@mapNotNull null
-            val kw = parts[1].toDoubleOrNull() ?: return@mapNotNull null
-            val hours = parts[2].toDoubleOrNull()?.takeIf { it > 0.0 } ?: 0.5
-            PowerPoint(end, kw, hours, SeriesKind.LIVE)
+        val points = mutableListOf<PowerPoint>()
+        for (line in lines.drop(2)) {
+            val row = parseRow(line) ?: continue
+            val kind = row.kind ?: if (
+                points.lastOrNull()?.periodEnd == row.end &&
+                points.last().kind == SeriesKind.LIVE
+            ) {
+                SeriesKind.FORECAST
+            } else {
+                SeriesKind.LIVE
+            }
+            points.add(PowerPoint(row.end, row.kw, row.hours, kind))
         }
         return StoredLivePast(lines[0], savedAt, points.sortedBy { it.periodEnd })
+    }
+
+    private data class ParsedRow(
+        val end: Instant,
+        val kw: Double,
+        val hours: Double,
+        val kind: SeriesKind?
+    )
+
+    private fun parseRow(line: String): ParsedRow? {
+        val parts = line.split(',')
+        if (parts.size !in 3..4) return null
+        val end = parts[0].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return null
+        val kw = parts[1].toDoubleOrNull() ?: return null
+        val hours = parts[2].toDoubleOrNull()?.takeIf { it > 0.0 } ?: 0.5
+        val kind = when (parts.getOrNull(3)) {
+            "F" -> SeriesKind.FORECAST
+            "L" -> SeriesKind.LIVE
+            null -> null
+            else -> SeriesKind.LIVE
+        }
+        return ParsedRow(end, kw, hours, kind)
     }
 
     fun isFresh(stored: StoredLivePast, now: Instant, zone: ZoneId): Boolean {
