@@ -37,6 +37,7 @@ import com.brian.solwidget.data.liveStroke
 import com.brian.solwidget.data.sunEventFractions
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -194,8 +195,8 @@ fun PowerChart(
 
         if (layers.solcast) {
             val (past, future) = forecastStrokes(points, now)
-            drawSeries(past, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo, alpha = 0.5f)
-            drawSeries(future, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo)
+            drawSeries(past, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo, alpha = 0.5f, breakGaps = true)
+            drawSeries(future, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo, breakGaps = true)
         }
         if (layers.enphase) {
             drawSeries(liveStroke(points), ::xOf, ::yOf, SolColors.Live, dotted = isDemo)
@@ -322,14 +323,37 @@ private fun drawDemoWatermark(
     canvas.restore()
 }
 
+private fun contiguousSeries(series: List<PowerPoint>): List<List<PowerPoint>> {
+    if (series.isEmpty()) return emptyList()
+    val runs = ArrayList<List<PowerPoint>>()
+    val current = ArrayList<PowerPoint>()
+    for (point in series) {
+        val previous = current.lastOrNull()
+        if (previous != null && Duration.between(previous.periodEnd, point.periodEnd) > SolarDayLabels.MAX_GAP) {
+            runs.add(current.toList())
+            current.clear()
+        }
+        current.add(point)
+    }
+    if (current.isNotEmpty()) runs.add(current.toList())
+    return runs
+}
+
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
     series: List<PowerPoint>,
     xOf: (Instant) -> Float,
     yOf: (Double) -> Float,
     color: Color,
     dotted: Boolean = false,
-    alpha: Float = 1f
+    alpha: Float = 1f,
+    breakGaps: Boolean = false
 ) {
+    if (breakGaps) {
+        contiguousSeries(series).forEach { run ->
+            drawSeries(run, xOf, yOf, color, dotted, alpha, breakGaps = false)
+        }
+        return
+    }
     if (series.size < 2) return
     val line = ComposePath()
     val fill = ComposePath()
@@ -677,8 +701,8 @@ object ChartBitmapRenderer {
 
         if (layers.solcast) {
             val (past, future) = forecastStrokes(points, now)
-            drawAndroidSeries(canvas, past, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom, dotted = isDemo, alpha = 0.5f)
-            drawAndroidSeries(canvas, future, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom, dotted = isDemo)
+            drawAndroidSeries(canvas, past, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom, dotted = isDemo, alpha = 0.5f, breakGaps = true)
+            drawAndroidSeries(canvas, future, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom, dotted = isDemo, breakGaps = true)
         }
         if (layers.enphase) {
             drawAndroidSeries(canvas, liveStroke(points), ::xOf, ::yOf, 0xFF2EE6A6.toInt(), bottom, dotted = isDemo)
@@ -709,8 +733,15 @@ object ChartBitmapRenderer {
         color: Int,
         baseline: Float,
         dotted: Boolean = false,
-        alpha: Float = 1f
+        alpha: Float = 1f,
+        breakGaps: Boolean = false
     ) {
+        if (breakGaps) {
+            contiguousSeries(series).forEach { run ->
+                drawAndroidSeries(canvas, run, xOf, yOf, color, baseline, dotted, alpha, breakGaps = false)
+            }
+            return
+        }
         if (series.size < 2) return
         val linePath = Path()
         val fillPath = Path()

@@ -1,5 +1,6 @@
 package com.brian.solwidget.data
 
+import java.time.Duration
 import java.time.Instant
 
 data class HistoryInterval(
@@ -25,21 +26,23 @@ data class HistoryChart(
 )
 
 /**
- * Past half-hours keep the measured actual and the stored forecast when both
- * exist. Until an actual arrives, the frozen forecast is the only past trace.
- * Future half-hours use the forecast.
+ * Past half-hours keep the measured actual and the stored forecast. A forecast
+ * with no measurement yet still stands in on the green trace, and it stays on
+ * the gold line. Future half-hours use the forecast.
  */
 fun HistoryInterval.toPowerPoints(now: Instant): List<PowerPoint> {
     val hours = if (periodHours > 0.0) periodHours else 0.5
     if (!periodEnd.isAfter(now)) {
-        if (actualKw != null && forecastKw != null) {
-            return listOf(
-                PowerPoint(periodEnd, actualKw, hours, SeriesKind.LIVE),
-                PowerPoint(periodEnd, forecastKw, hours, SeriesKind.FORECAST),
-            )
+        val points = ArrayList<PowerPoint>(2)
+        if (actualKw != null) {
+            points.add(PowerPoint(periodEnd, actualKw, hours, SeriesKind.LIVE))
+        } else if (forecastKw != null) {
+            points.add(PowerPoint(periodEnd, forecastKw, hours, SeriesKind.LIVE))
         }
-        val kw = actualKw ?: forecastKw ?: return emptyList()
-        return listOf(PowerPoint(periodEnd, kw, hours, SeriesKind.LIVE))
+        if (forecastKw != null) {
+            points.add(PowerPoint(periodEnd, forecastKw, hours, SeriesKind.FORECAST))
+        }
+        return points
     }
     val forecast = forecastKw
     if (forecast != null) return listOf(PowerPoint(periodEnd, forecast, hours, SeriesKind.FORECAST))
@@ -90,8 +93,12 @@ fun liveSolarPoints(
     val covered = historyPast.map { it.periodEnd }.toHashSet()
     val snapshotPast = inWindow
         .filter { !it.periodEnd.isAfter(now) && it.periodEnd !in covered }
-        .map { point ->
-            if (point.kind == SeriesKind.LIVE) point else point.copy(kind = SeriesKind.LIVE)
+        .flatMap { point ->
+            if (point.kind == SeriesKind.FORECAST) {
+                listOf(point.copy(kind = SeriesKind.LIVE), point)
+            } else {
+                listOf(point)
+            }
         }
     val future = inWindow
         .filter { it.periodEnd.isAfter(now) }
@@ -111,10 +118,14 @@ fun liveSolarPoints(
  * the future stroke so the line stays continuous across now.
  */
 fun forecastStrokes(points: List<PowerPoint>, now: Instant): Pair<List<PowerPoint>, List<PowerPoint>> {
-    val forecast = points.filter { it.kind == SeriesKind.FORECAST }
+    val forecast = points.filter { it.kind == SeriesKind.FORECAST }.sortedBy { it.periodEnd }
     val past = forecast.filter { !it.periodEnd.isAfter(now) }
     val ahead = forecast.filter { it.periodEnd.isAfter(now) }
-    val future = if (past.isNotEmpty() && ahead.isNotEmpty()) listOf(past.last()) + ahead else ahead
+    val seam = past.lastOrNull()
+    val next = ahead.firstOrNull()
+    val joined = seam != null && next != null &&
+        Duration.between(seam.periodEnd, next.periodEnd).compareTo(SolarDayLabels.MAX_GAP) <= 0
+    val future = if (joined) listOf(seam) + ahead else ahead
     return past to future
 }
 

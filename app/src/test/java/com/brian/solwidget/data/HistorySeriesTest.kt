@@ -41,7 +41,7 @@ class HistorySeriesTest {
     fun historicalForecastKeepsTheSeamOnTheFutureStroke() {
         val past = PowerPoint(now.minusSeconds(3600), 4.0, 0.5, SeriesKind.FORECAST)
         val seam = PowerPoint(now, 3.0, 0.5, SeriesKind.FORECAST)
-        val ahead = PowerPoint(now.plusSeconds(3600), 5.0, 0.5, SeriesKind.FORECAST)
+        val ahead = PowerPoint(now.plusSeconds(1800), 5.0, 0.5, SeriesKind.FORECAST)
         val live = PowerPoint(now.minusSeconds(3600), 1.5, 0.5, SeriesKind.LIVE)
         val (history, future) = forecastStrokes(listOf(past, seam, ahead, live), now)
         assertEquals(listOf(4.0, 3.0), history.map { it.kw })
@@ -50,9 +50,20 @@ class HistorySeriesTest {
 
     @Test
     fun pastForecastStandsInUntilActualsArrive() {
-        val point = interval(now.minusSeconds(1800), actual = null, forecast = 2.25).toPowerPoint(now)
-        assertEquals(SeriesKind.LIVE, point?.kind)
-        assertEquals(2.25, point?.kw)
+        val points = interval(now.minusSeconds(1800), actual = null, forecast = 2.25).toPowerPoints(now)
+        assertEquals(SeriesKind.LIVE, points[0].kind)
+        assertEquals(2.25, points[0].kw, 0.0)
+        assertEquals(SeriesKind.FORECAST, points[1].kind)
+        assertEquals(2.25, points[1].kw, 0.0)
+    }
+
+    @Test
+    fun forecastStrokeDoesNotBridgeALongGap() {
+        val yesterday = PowerPoint(now.minus(Duration.ofHours(19)), 5.0, 0.5, SeriesKind.FORECAST)
+        val later = PowerPoint(now.plusSeconds(1800), 1.6, 0.5, SeriesKind.FORECAST)
+        val (history, future) = forecastStrokes(listOf(yesterday, later), now)
+        assertEquals(listOf(5.0), history.map { it.kw })
+        assertEquals(listOf(1.6), future.map { it.kw })
     }
 
     @Test
@@ -90,7 +101,7 @@ class HistorySeriesTest {
         val later = PowerPoint(now.plusSeconds(3600), 5.0, 0.5, SeriesKind.FORECAST)
         val merged = liveSolarPoints(listOf(historyLast), listOf(justEnded, upcoming, later), from, to, now)
         val joined = justEnded.copy(kind = SeriesKind.LIVE)
-        assertEquals(listOf(historyLast, joined, upcoming, later), merged)
+        assertEquals(listOf(historyLast, joined, justEnded, upcoming, later), merged)
         assertEquals(listOf(historyLast, joined, upcoming), liveStroke(merged))
     }
 
@@ -101,7 +112,7 @@ class HistorySeriesTest {
         val stalePast = PowerPoint(now.minusSeconds(1800), 1.0, 0.5, SeriesKind.FORECAST)
         val future = PowerPoint(now.plusSeconds(1800), 4.0, 0.5, SeriesKind.FORECAST)
         val merged = liveSolarPoints(null, listOf(stalePast, future), from, to, now)
-        assertEquals(listOf(stalePast.copy(kind = SeriesKind.LIVE), future), merged)
+        assertEquals(listOf(stalePast.copy(kind = SeriesKind.LIVE), stalePast, future), merged)
     }
 
     @Test

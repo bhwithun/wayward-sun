@@ -21,14 +21,15 @@ export function seriesFromHistory(points: HistoryLike[], nowMs: number): SeriesP
     if (!Number.isFinite(t)) continue;
     const hours = point.periodHours ?? 0.5;
     if (t <= nowMs) {
-      // A stored forecast stays visible beside a measured actual. Until an
-      // actual arrives, that frozen forecast is the only historical trace.
-      if (point.actualKw != null && point.forecastKw != null) {
+      // Gold is every stored Solcast forecast, including half-hours Enphase
+      // has not measured yet. Those still stand in on the green trace.
+      if (point.actualKw != null) {
         out.push({ t, kw: point.actualKw, kind: "live", hours });
+      } else if (point.forecastKw != null) {
+        out.push({ t, kw: point.forecastKw, kind: "live", hours });
+      }
+      if (point.forecastKw != null) {
         out.push({ t, kw: point.forecastKw, kind: "forecast", hours });
-      } else {
-        const kw = point.actualKw ?? point.forecastKw;
-        if (kw != null) out.push({ t, kw, kind: "live", hours });
       }
     } else if (point.forecastKw != null) {
       out.push({ t, kw: point.forecastKw, kind: "forecast", hours });
@@ -39,12 +40,18 @@ export function seriesFromHistory(points: HistoryLike[], nowMs: number): SeriesP
   return out;
 }
 
+/** Half-hours further apart than this are a break in the line, not a chord. */
+export const FORECAST_GAP_MS = 45 * 60 * 1000;
+
 /** Past gold stays at half opacity. The segment that crosses now stays solid. */
 export function forecastStrokes(points: SeriesPoint[], nowMs: number): { past: SeriesPoint[]; future: SeriesPoint[] } {
-  const forecast = points.filter((point) => point.kind === "forecast");
+  const forecast = points.filter((point) => point.kind === "forecast").sort((a, b) => a.t - b.t);
   const past = forecast.filter((point) => point.t <= nowMs);
   const ahead = forecast.filter((point) => point.t > nowMs);
-  const future = past.length > 0 && ahead.length > 0 ? [past[past.length - 1], ...ahead] : ahead;
+  const seam = past.at(-1);
+  const next = ahead[0];
+  const future =
+    seam != null && next != null && next.t - seam.t <= FORECAST_GAP_MS ? [seam, ...ahead] : ahead;
   return { past, future };
 }
 

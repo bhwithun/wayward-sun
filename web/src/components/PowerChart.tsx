@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
-import { forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
+import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 
 const LIVE = "#2EE6A6";
 const FORECAST = "#F5C542";
@@ -143,8 +143,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
 
   if (props.layers.solcast) {
     const gold = forecastStrokes(props.points, props.now);
-    strokeSeries(ctx, gold.past, xOf, ySolar, FORECAST, props.demo, 0.5);
-    strokeSeries(ctx, gold.future, xOf, ySolar, FORECAST, props.demo, 1);
+    strokeSeries(ctx, gold.past, xOf, ySolar, FORECAST, props.demo, 0.5, FORECAST_GAP_MS);
+    strokeSeries(ctx, gold.future, xOf, ySolar, FORECAST, props.demo, 1, FORECAST_GAP_MS);
   }
   if (props.layers.enphase) {
     strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo, 1);
@@ -173,7 +173,8 @@ function strokeSeries(
   yOf: (kw: number) => number,
   color: string,
   demo: boolean,
-  alpha: number
+  alpha: number,
+  maxGapMs?: number
 ) {
   if (points.length < 2) return;
   ctx.save();
@@ -187,7 +188,8 @@ function strokeSeries(
   points.forEach((point, index) => {
     const x = xOf(point.t);
     const y = yOf(point.kw);
-    if (index === 0) ctx.moveTo(x, y);
+    const gap = index > 0 && maxGapMs != null && point.t - points[index - 1].t > maxGapMs;
+    if (index === 0 || gap) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
   ctx.stroke();
