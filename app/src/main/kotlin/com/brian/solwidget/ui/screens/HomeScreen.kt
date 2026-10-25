@@ -4,6 +4,8 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -245,6 +251,7 @@ fun HomeScreen(
                                 layers = state.layers,
                                 now = state.now,
                                 onShiftMonth = viewModel::shiftHistoryMonth,
+                                onShiftWeek = viewModel::shiftHistoryWeek,
                                 onSelectWeek = viewModel::selectHistoryWeek
                             )
                         }
@@ -373,6 +380,7 @@ private fun HistoryPane(
     layers: ChartLayers,
     now: Instant,
     onShiftMonth: (Int) -> Unit,
+    onShiftWeek: (Int) -> Unit,
     onSelectWeek: (LocalDate) -> Unit
 ) {
     val today = DetroitCalendar.today(now)
@@ -387,7 +395,14 @@ private fun HistoryPane(
     if (week != null) {
         val (from, to) = DetroitCalendar.weekRange(week.id)
         val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
-        ChartFrame {
+        ChartFrame(
+            modifier = Modifier
+                .adjacentSwipe(onShiftWeek)
+                .semantics {
+                    contentDescription =
+                        "History week. Swipe left for the next week or right for the previous week."
+                }
+        ) {
             if (chart != null) {
                 PowerChart(
                     points = chart.points,
@@ -425,9 +440,12 @@ private fun HistoryPane(
 }
 
 @Composable
-private fun ChartFrame(content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+private fun ChartFrame(
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(300.dp)
             .clip(RoundedCornerShape(20.dp))
@@ -436,6 +454,52 @@ private fun ChartFrame(content: @Composable androidx.compose.foundation.layout.B
         content = content
     )
 }
+
+/**
+ * Finger moving left opens the next page. Finger moving right opens the previous.
+ * Watches the initial pass so a sideways swipe is not also a week tap, and a vertical
+ * drag still scrolls the page.
+ */
+private fun Modifier.adjacentSwipe(onAdjacent: (Int) -> Unit): Modifier =
+    pointerInput(onAdjacent) {
+        val distance = 36.dp.toPx()
+        val speed = 900.dp.toPx()
+        val slop = viewConfiguration.touchSlop
+        awaitEachGesture {
+            val down = awaitFirstDown(pass = PointerEventPass.Initial)
+            val tracker = VelocityTracker()
+            tracker.addPosition(down.uptimeMillis, down.position)
+            var horizontal = false
+            var dragged = 0f
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                if (horizontal) change.consume()
+                if (!change.pressed) break
+                val dx = change.position.x - down.position.x
+                val dy = change.position.y - down.position.y
+                tracker.addPosition(change.uptimeMillis, change.position)
+                dragged = dx
+                if (!horizontal) {
+                    if (abs(dy) > slop && abs(dy) > abs(dx)) return@awaitEachGesture
+                    if (abs(dx) > slop && abs(dx) > abs(dy)) {
+                        horizontal = true
+                        change.consume()
+                    }
+                }
+            }
+            if (!horizontal) return@awaitEachGesture
+            val velocity = tracker.calculateVelocity().x
+            val delta = when {
+                dragged <= -distance -> 1
+                dragged >= distance -> -1
+                velocity <= -speed -> 1
+                velocity >= speed -> -1
+                else -> 0
+            }
+            if (delta != 0) onAdjacent(delta)
+        }
+    }
 
 private val WeekdayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 private val MonthLabel = DateTimeFormatter.ofPattern("MMMM yyyy")
@@ -454,6 +518,11 @@ private fun HistoryCalendar(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(SolColors.Panel)
+            .adjacentSwipe(onShiftMonth)
+            .semantics {
+                contentDescription =
+                    "Month calendar. Swipe left for the next month or right for the previous month."
+            }
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {

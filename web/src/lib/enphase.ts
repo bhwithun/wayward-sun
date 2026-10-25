@@ -12,6 +12,9 @@ export const HARVEST_AGE_MS = 60 * 60 * 1000;
 /** Recent bins are revised as inverters report, so each pull covers the last 36 hours. */
 const LOOKBACK_SEC = 36 * 60 * 60;
 
+/** A first pull, or one after the harvest has been down, covers a week in that same call. */
+const CATCHUP_SEC = 7 * 24 * 60 * 60;
+
 const FIVE_MIN = 300;
 const FIFTEEN_MIN = 900;
 const HALF_HOUR = 1800;
@@ -69,6 +72,13 @@ export function planMeterHarvest(fetchedAtMs: number | null, nowMs: number, read
   if (!ready) return false;
   if (fetchedAtMs == null || !Number.isFinite(fetchedAtMs)) return true;
   return nowMs - fetchedAtMs >= HARVEST_AGE_MS;
+}
+
+/** How far back one telemetry read should reach. A stale harvest catches up a week. */
+export function meterLookbackSec(fetchedAtMs: number | null, nowMs: number): number {
+  if (fetchedAtMs == null || !Number.isFinite(fetchedAtMs)) return CATCHUP_SEC;
+  if (nowMs - fetchedAtMs > LOOKBACK_SEC * 1000) return CATCHUP_SEC;
+  return LOOKBACK_SEC;
 }
 
 /**
@@ -173,8 +183,8 @@ export async function harvestEnphase(now: Date): Promise<{ pulled: boolean; inte
   if (!config) return { pulled: false, intervals: 0 };
   const stored = await loadMeterAuth();
   const refreshToken = config.refreshToken || stored.refreshToken;
-  const firstPull = !stored.meterFetchedAt;
-  if (!planMeterHarvest(stored.meterFetchedAt ? Date.parse(stored.meterFetchedAt) : null, now.getTime(), Boolean(refreshToken))) {
+  const fetchedAtMs = stored.meterFetchedAt ? Date.parse(stored.meterFetchedAt) : null;
+  if (!planMeterHarvest(fetchedAtMs, now.getTime(), Boolean(refreshToken))) {
     return { pulled: false, intervals: 0 };
   }
   if (!refreshToken) return { pulled: false, intervals: 0 };
@@ -183,7 +193,7 @@ export async function harvestEnphase(now: Date): Promise<{ pulled: boolean; inte
     const accessToken = await ensureAccessToken(config, { ...stored, refreshToken }, refreshToken, now);
     const systemId = await ensureSystemId(config, stored, accessToken);
     const started = await loadMeterAuth();
-    const lookbackSec = firstPull ? 7 * 24 * 60 * 60 : LOOKBACK_SEC;
+    const lookbackSec = meterLookbackSec(fetchedAtMs, now.getTime());
     const kind = await readProduction(config, systemId, accessToken, started.meterKind, now, lookbackSec);
     const points = halfHourActuals(readTelemetryIntervals(kind.body), now.getTime());
     const drafts = meterDrafts(points);

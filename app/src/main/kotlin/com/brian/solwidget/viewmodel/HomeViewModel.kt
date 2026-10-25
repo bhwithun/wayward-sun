@@ -174,6 +174,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(selectedWeek = sunday) }
     }
 
+    /** Swipe on the history chart. One step is the adjacent Sunday–Saturday week. */
+    fun shiftHistoryWeek(delta: Int) {
+        if (delta == 0) return
+        val today = DetroitCalendar.today(_uiState.value.now)
+        val state = _uiState.value
+        val month = state.historyMonth ?: YearMonth.from(today)
+        val week = state.selectedWeek ?: DetroitCalendar.weekStart(today)
+        val focus = DetroitCalendar.shiftWeek(month, week, delta)
+        val monthChanged = focus.month != month || state.historyMonth == null
+        _uiState.update { it.copy(historyMonth = focus.month, selectedWeek = focus.week) }
+        if (monthChanged) loadHistory()
+    }
+
     /**
      * Loads the visible month once. Week taps reuse that page.
      * A failed fetch keeps the previous page and shows [HomeUiState.historyError].

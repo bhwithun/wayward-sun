@@ -91,8 +91,8 @@ android {
         applicationId = "com.brian.solwidget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "2.3.2"
+        versionCode = 8
+        versionName = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

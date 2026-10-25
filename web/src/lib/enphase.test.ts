@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { halfHourActuals, planMeterHarvest, readTelemetryIntervals, HARVEST_AGE_MS } from "./enphase";
+import { halfHourActuals, meterLookbackSec, planMeterHarvest, readTelemetryIntervals, HARVEST_AGE_MS } from "./enphase";
 
 const noon = Date.parse("2026-06-17T15:30:00Z");
 
@@ -54,6 +54,18 @@ describe("readTelemetryIntervals", () => {
     expect(readTelemetryIntervals({
       intervals: [{ end_at: 100, wh_del: 12, devices_reporting: 1 }, { end_at: "nope" }],
     })).toEqual([{ endAt: 100, wh: 12 }]);
+  });
+});
+
+describe("meterLookbackSec", () => {
+  const noon = Date.parse("2026-06-17T16:00:00Z");
+  const day = 24 * 60 * 60;
+  const week = 7 * day;
+
+  it("uses a week for the first pull and after the harvest has been down", () => {
+    expect(meterLookbackSec(null, noon)).toBe(week);
+    expect(meterLookbackSec(noon - 36 * 60 * 60 * 1000 - 1, noon)).toBe(week);
+    expect(meterLookbackSec(noon - 36 * 60 * 60 * 1000, noon)).toBe(36 * 60 * 60);
   });
 });
 

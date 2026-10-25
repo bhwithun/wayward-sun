@@ -16,6 +16,12 @@ data class CalendarWeek(
     val days: List<CalendarDay>
 )
 
+/** Visible month plus the Sunday–Saturday week drawn on the history chart. */
+data class HistoryFocus(
+    val month: YearMonth,
+    val week: LocalDate
+)
+
 /**
  * Sunday–Saturday weeks in America/Detroit, matching the website history calendar.
  */
@@ -54,6 +60,20 @@ object DetroitCalendar {
         val from = start.atStartOfDay(ZONE).toInstant()
         val to = start.plusDays(7).atStartOfDay(ZONE).toInstant()
         return from to to
+    }
+
+    /**
+     * Moves one Sunday–Saturday week. A week still on the visible month stays there.
+     * Otherwise the month moves with [delta] so the new week is on the calendar.
+     */
+    fun shiftWeek(month: YearMonth, week: LocalDate, delta: Int): HistoryFocus {
+        val nextWeek = weekStart(week).plusDays(7L * delta)
+        if (monthWeeks(month).any { it.id == nextWeek }) {
+            return HistoryFocus(month, nextWeek)
+        }
+        val adjacent = month.plusMonths(delta.toLong())
+        val selected = monthWeeks(adjacent).find { it.id == nextWeek }?.id ?: nextWeek
+        return HistoryFocus(adjacent, selected)
     }
 
     /** First Sunday of the visible month through the day after its last Saturday. */

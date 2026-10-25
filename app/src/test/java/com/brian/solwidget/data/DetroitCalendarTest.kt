@@ -2,6 +2,7 @@ package com.brian.solwidget.data
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -18,6 +19,22 @@ class DetroitCalendarTest {
         assertTrue(weeks.first().days.first { it.date == LocalDate.of(2026, 10, 1) }.inMonth)
         assertEquals(7, weeks.first().days.size)
         assertEquals(LocalDate.of(2026, 10, 3), weeks.first().days.last().date)
+    }
+
+    @Test
+    fun shiftWeekStaysInOctoberUntilTheWeekLeavesTheMonth() {
+        val october = YearMonth.of(2026, 10)
+        val earlier = DetroitCalendar.shiftWeek(october, LocalDate.of(2026, 10, 4), -1)
+        assertEquals(october, earlier.month)
+        assertEquals(LocalDate.of(2026, 9, 27), earlier.week)
+
+        val intoSeptember = DetroitCalendar.shiftWeek(october, LocalDate.of(2026, 9, 27), -1)
+        assertEquals(YearMonth.of(2026, 9), intoSeptember.month)
+        assertEquals(LocalDate.of(2026, 9, 20), intoSeptember.week)
+
+        val intoNovember = DetroitCalendar.shiftWeek(october, LocalDate.of(2026, 10, 25), 1)
+        assertEquals(YearMonth.of(2026, 11), intoNovember.month)
+        assertEquals(LocalDate.of(2026, 11, 1), intoNovember.week)
     }
 
     @Test
