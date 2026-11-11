@@ -1,0 +1,116 @@
+import { describe, expect, it } from "vitest";
+import {
+  ECOBEE_GAP_MS,
+  classifyEcobee,
+  downsampleEcobee,
+  ecobeeFillSegments,
+  parseEcobeeSetpoint,
+  prepareEcobee,
+  sharedFahrenheitRange,
+  type EcobeeSample,
+} from "./ecobee";
+
+const t0 = Date.parse("2026-01-15T15:00:00Z");
+
+function sample(t: number, indoorF: number, coolF: number | null, heatF: number | null): EcobeeSample {
+  return { t, indoorF, coolF, heatF };
+}
+
+describe("ecobee bands", () => {
+  it("fills a cooling gap above the cool setpoint", () => {
+    const mark = classifyEcobee(sample(t0, 75, 74, 68));
+    expect(mark.band).toBe("cooling");
+    expect(mark.setF).toBe(74);
+  });
+
+  it("fills a heating gap below the heat setpoint", () => {
+    const mark = classifyEcobee(sample(t0, 67, 74, 68));
+    expect(mark.band).toBe("heating");
+    expect(mark.setF).toBe(68);
+  });
+
+  it("leaves the deadband empty and draws no setpoint", () => {
+    const mark = classifyEcobee(sample(t0, 71, 74, 68));
+    expect(mark.band).toBe("deadband");
+    expect(mark.setF).toBeNull();
+    expect(classifyEcobee(sample(t0, 74, 74, 68)).band).toBe("deadband");
+    expect(classifyEcobee(sample(t0, 68, 74, 68)).band).toBe("deadband");
+  });
+
+  it("skips a null or off setpoint", () => {
+    expect(classifyEcobee(sample(t0, 60, null, 68)).band).toBe("heating");
+    expect(classifyEcobee(sample(t0, 80, null, 68)).band).toBe("deadband");
+    expect(classifyEcobee(sample(t0, 80, 74, null)).band).toBe("cooling");
+    expect(classifyEcobee(sample(t0, 70, null, null)).setF).toBeNull();
+    expect(parseEcobeeSetpoint("off")).toBeNull();
+    expect(parseEcobeeSetpoint("  ")).toBeNull();
+    expect(parseEcobeeSetpoint("74.5")).toBe(74.5);
+  });
+
+  it("splits fills on the deadband", () => {
+    const run = [
+      classifyEcobee(sample(t0, 75, 74, 68)),
+      classifyEcobee(sample(t0 + 300_000, 76, 74, 68)),
+      classifyEcobee(sample(t0 + 600_000, 71, 74, 68)),
+      classifyEcobee(sample(t0 + 900_000, 66, 74, 68)),
+      classifyEcobee(sample(t0 + 1_200_000, 65, 74, 68)),
+    ];
+    const fills = ecobeeFillSegments(run);
+    expect(fills.map((segment) => segment.map((mark) => mark.indoorF))).toEqual([
+      [75, 76],
+      [66, 65],
+    ]);
+  });
+});
+
+describe("ecobee geometry", () => {
+  it("keeps a 15 minute step and breaks a longer hole", () => {
+    const samples = [
+      sample(t0, 75, 74, 68),
+      sample(t0 + ECOBEE_GAP_MS, 75.2, 74, 68),
+      sample(t0 + ECOBEE_GAP_MS + 15 * 60 * 1000 + 1000, 66, 74, 68),
+    ];
+    const runs = prepareEcobee(samples, t0, t0 + 3_600_000, 400);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toHaveLength(2);
+    expect(runs[1][0].band).toBe("heating");
+  });
+
+  it("does not bridge a gap when the whole window is one pixel", () => {
+    const samples = [sample(t0 + 60_000, 75, 74, 68), sample(t0 + 60_000 + 16 * 60_000, 66, 74, 68)];
+    const runs = prepareEcobee(samples, t0, t0 + 3_600_000, 1);
+    expect(runs).toHaveLength(2);
+    expect(runs.map((run) => run[0].t)).toEqual(samples.map((sample) => sample.t));
+  });
+
+  it("downsamples to the pixel columns and keeps the cooling extreme", () => {
+    const samples = Array.from({ length: 100 }, (_, index) =>
+      sample(t0 + index * 5_000, index === 40 ? 80 : 71, 74, 68)
+    );
+    const run = prepareEcobee(samples, t0, t0 + 500_000, 10)[0];
+    expect(run.length).toBeLessThanOrEqual(10);
+    expect(run.length).toBe(10);
+    expect(run.map((mark) => mark.t)).toEqual([...run.map((mark) => mark.t)].sort((a, b) => a - b));
+    const times = new Set(samples.map((sample) => sample.t));
+    expect(run.every((mark) => times.has(mark.t))).toBe(true);
+    expect(run.some((mark) => mark.band === "cooling" && mark.indoorF === 80)).toBe(true);
+  });
+
+  it("keeps cooling when a later deadband sample shares the pixel", () => {
+    const mark = downsampleEcobee(
+      [sample(t0 + 1000, 80, 74, 68), sample(t0 + 2000, 71, 74, 68)],
+      t0,
+      100_000,
+      1
+    )[0];
+    expect(mark.band).toBe("cooling");
+    expect(mark.indoorF).toBe(80);
+  });
+
+  it("scales the shared axis to outdoor and indoor together", () => {
+    const range = sharedFahrenheitRange([10, 40], [sample(t0 + 60_000, 72, 74, 68)], t0, t0 + 3_600_000, true);
+    expect(range.min).toBeLessThan(10);
+    expect(range.max).toBeGreaterThan(74);
+    expect(sharedFahrenheitRange([70], [], t0, t0 + 1000, false)).toEqual({ min: -20, max: 100 });
+  });
+});

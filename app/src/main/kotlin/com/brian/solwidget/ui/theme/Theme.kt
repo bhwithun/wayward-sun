@@ -20,13 +20,16 @@ object SolColors {
     val TouOff = Color(0x142EE6A6)
     val TouMid = Color(0x33C9A227)
     val TouPeak = Color(0x4DE07070)
-    val Temp = Color(0xFFFFFFFF)
+    val Temp = Color(0xFFFFB74D)
     val TempFreeze = Color(0xFF64B5F6)
     val TempLow = Color(0xFF4EE6E6)
     val TempHot = Color(0xFFFF8A4C)
-    val Precip = Color(0x665CA8FF)
-    val Buy = Color(0xFFC9898C)
-    val Sell = Color(0xFF8AA4C4)
+    val Precip = Color(0x664DD0C8)
+    val Buy = Color(0xFFE57FD8)
+    val Sell = Color(0xFF7BD88F)
+    val Indoor = Color(0xFFE6E1F0)
+    val CoolGap = Color(0xFF4DA3FF)
+    val HeatGap = Color(0xFFFF6A5C)
 }
 
 private val DarkColorScheme = darkColorScheme(

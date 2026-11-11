@@ -9,7 +9,7 @@ Next.js app on Vercel. It is the only Solcast client. Neon stores the latest sna
 | GET | `/` | Dashboard |
 | GET | `/health` | `{ ok, runtime, deployed }` |
 | GET | `/cache` | JSON snapshot for the Android app. Does not call Solcast. |
-| GET | `/history?from=&to=` | Stored half-hour rows. `from` and `to` are ISO instants or `YYYY-MM-DD` (Detroit midnight). Max 366 days. |
+| GET | `/history?from=&to=` | Stored half-hour rows plus Ecobee 5-minute samples when `ecobee_samples` exists. `from` and `to` are ISO instants or `YYYY-MM-DD` (Detroit midnight). Max 366 days. |
 | GET | `/cron` | Scheduled Solcast pull, and an Enphase production pull when that app is connected and the last one is an hour old. Called by Neon `solpull` every 30 minutes from 10:00 through 04:30 UTC, and by Vercel Cron once a day at 12:30 UTC. Solcast runs only when the America/Detroit clock is on a forecast slot. If `CRON_SECRET` is set, requires `Authorization: Bearer`. |
 | GET | `/enphase/connect` | Sends the homeowner to Enphase to approve the Watt-plan app. |
 | GET | `/enphase/callback` | Stores the Enphase tokens. Does not show them. |
@@ -18,7 +18,22 @@ There is no device `PUT` and no manual refresh.
 
 ## Setup
 
-1. Create a Neon database and run `db/001_init.sql`. An existing database also runs `db/002_actuals_fetched_at.sql` and `db/003_meter_actuals.sql`. Run `003` before deploying the measured-production code.
+1. Create a Neon database and run `db/001_init.sql`. An existing database also runs `db/002_actuals_fetched_at.sql`, `db/003_meter_actuals.sql`, and `db/004_ecobee.sql`. Run `003` before deploying the measured-production code. Run `004` before expecting indoor samples from `GET /history`.
+
+## Ecobee
+
+`GET /history` adds an `ecobee` array (`t`, `indoorF`, `coolF`, `heatF`) from `ecobee_samples`. If that table is missing, the array is empty and the rest of history still returns. The chart compares each 5-minute indoor temperature with the cool setpoint, then the heat setpoint. Above cool fills blue, below heat fills red, and the deadband between them is unfilled. A gap longer than 15 minutes breaks the line.
+
+Load a thermostat export only into a non-production branch until production has a backup:
+
+```bash
+cd web
+DATABASE_URL='postgres://…' ECOBEE_BRANCH_ID='br-…' npm run import:ecobee -- ../path/to/ecobee_5min_all.csv
+```
+
+The script applies `db/004_ecobee.sql` if needed and upserts on `sampled_at`, so a later export can be imported again. `Date` and `Time` are America/New_York. Blank indoor rows are skipped. A cool or heat cell that is blank or `off` is stored as null. The script reads `neon.branch_id` and refuses to write unless it matches `ECOBEE_BRANCH_ID`. The production branch `br-green-wind-b4v3k3gk` also requires `ECOBEE_CONFIRM_PRODUCTION=backup-done`.
+
+The preview branch that already holds the August 2025–November 2026 export is `ecobee-preview` (`br-curly-recipe-b41b1sp7`) on Neon project `wayward-sun` (`small-star-07106259`). Production `main` has not been migrated.
 2. Copy `.env.example` to `.env.local`. Set `DATABASE_URL`, `SOLCAST_API_KEY`, `SITE_LAT`, and `SITE_LNG` (the same place the phone uses).
 3. `npm install`, then `npm run dev`.
 4. Optional: `npm run seed` copies the current Cloudflare `/cache` into `fetch_state` so the first request does not spend Solcast quota.

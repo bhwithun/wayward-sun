@@ -1,6 +1,7 @@
 package com.brian.solwidget.work
 
 import android.content.Context
+import androidx.work.Configuration
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -46,7 +47,12 @@ object RefreshScheduler {
     private const val WEATHER_WORK = "weather_refresh"
 
     fun ensure(context: Context) {
-        val workManager = WorkManager.getInstance(context)
+        val workManager = try {
+            WorkManager.getInstance(context)
+        } catch (_: IllegalStateException) {
+            WorkManager.initialize(context, Configuration.Builder().build())
+            WorkManager.getInstance(context)
+        }
         val solcast = PeriodicWorkRequestBuilder<RefreshForecastWorker>(5, TimeUnit.HOURS)
             .setInitialDelay(30, TimeUnit.MINUTES)
             .build()

@@ -10,7 +10,13 @@ import kotlinx.coroutines.withContext
 data class StoredLivePast(
     val key: String,
     val savedAt: Instant,
-    val points: List<PowerPoint>
+    val points: List<PowerPoint>,
+    val ecobee: List<EcobeeSample> = emptyList()
+)
+
+data class LiveHistory(
+    val points: List<PowerPoint>,
+    val ecobee: List<EcobeeSample>
 )
 
 /**
@@ -37,6 +43,17 @@ object LivePastStore {
             append(if (point.kind == SeriesKind.FORECAST) "F" else "L")
             append('\n')
         }
+        for (sample in stored.ecobee) {
+            append("E,")
+            append(sample.at.toEpochMilli())
+            append(',')
+            append(sample.indoorF)
+            append(',')
+            append(sample.coolSetF?.toString().orEmpty())
+            append(',')
+            append(sample.heatSetF?.toString().orEmpty())
+            append('\n')
+        }
     }
 
     fun decode(text: String?): StoredLivePast? {
@@ -45,7 +62,12 @@ object LivePastStore {
         if (lines.size < 2) return null
         val savedAt = lines[1].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return null
         val points = mutableListOf<PowerPoint>()
+        val ecobee = mutableListOf<EcobeeSample>()
         for (line in lines.drop(2)) {
+            if (line.startsWith("E,")) {
+                parseEcobee(line)?.let { ecobee.add(it) }
+                continue
+            }
             val row = parseRow(line) ?: continue
             val kind = row.kind ?: if (
                 points.lastOrNull()?.periodEnd == row.end &&
@@ -57,7 +79,20 @@ object LivePastStore {
             }
             points.add(PowerPoint(row.end, row.kw, row.hours, kind))
         }
-        return StoredLivePast(lines[0], savedAt, points.sortedBy { it.periodEnd })
+        return StoredLivePast(
+            lines[0],
+            savedAt,
+            points.sortedBy { it.periodEnd },
+            ecobee.sortedBy { it.at }
+        )
+    }
+
+    private fun parseEcobee(line: String): EcobeeSample? {
+        val parts = line.split(',')
+        if (parts.size != 5 || parts[0] != "E") return null
+        val at = parts[1].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return null
+        val indoor = parts[2].toDoubleOrNull() ?: return null
+        return EcobeeSample(at, indoor, parts[3].toDoubleOrNull(), parts[4].toDoubleOrNull())
     }
 
     private data class ParsedRow(
@@ -83,7 +118,7 @@ object LivePastStore {
     }
 
     fun isFresh(stored: StoredLivePast, now: Instant, zone: ZoneId): Boolean {
-        if (stored.points.isEmpty()) return false
+        if (stored.points.isEmpty() && stored.ecobee.isEmpty()) return false
         val (from, to) = ForecastSnapshot.range(now, zone)
         if (stored.key != historyFetchKey(from, to)) return false
         return !stored.savedAt.isBefore(now.minus(MAX_AGE))
@@ -95,31 +130,34 @@ class LivePastRepository(context: Context) {
     private val api = HistoryApi()
 
     /** Fresh stored history, otherwise a new fetch, otherwise the last stored series. */
-    suspend fun forChart(now: Instant, zone: ZoneId): List<PowerPoint>? {
-        fresh(now, zone)?.let { return it }
-        return fetch(now, zone).getOrNull() ?: stored(now, zone)?.points
+    suspend fun forChart(now: Instant, zone: ZoneId): LiveHistory? {
+        fresh(now, zone)?.let { return it.toHistory() }
+        return fetch(now, zone).getOrNull() ?: stored(now, zone)?.toHistory()
     }
 
-    suspend fun fetch(now: Instant, zone: ZoneId): Result<List<PowerPoint>> = withContext(Dispatchers.IO) {
+    suspend fun fetch(now: Instant, zone: ZoneId): Result<LiveHistory> = withContext(Dispatchers.IO) {
         runCatching {
             val (from, to) = ForecastSnapshot.range(now, zone)
-            val points = api.fetch(storage.cacheUrlOnce(), from, to).livePastPoints(now)
+            val page = api.fetch(storage.cacheUrlOnce(), from, to)
+            val points = page.livePastPoints(now)
+            val history = LiveHistory(points, page.ecobee)
             storage.saveLivePast(
                 LivePastStore.encode(
                     StoredLivePast(
                         key = historyFetchKey(from, to),
                         savedAt = Instant.now(),
-                        points = points
+                        points = points,
+                        ecobee = page.ecobee
                     )
                 )
             )
-            points
+            history
         }
     }
 
-    private suspend fun fresh(now: Instant, zone: ZoneId): List<PowerPoint>? {
+    private suspend fun fresh(now: Instant, zone: ZoneId): StoredLivePast? {
         val stored = stored(now, zone) ?: return null
-        return stored.points.takeIf { LivePastStore.isFresh(stored, now, zone) }
+        return stored.takeIf { LivePastStore.isFresh(stored, now, zone) }
     }
 
     private suspend fun stored(now: Instant, zone: ZoneId): StoredLivePast? {
@@ -132,3 +170,5 @@ class LivePastRepository(context: Context) {
 
 private fun HistoryPage.livePastPoints(now: Instant): List<PowerPoint> =
     chartFor(from, to, now).points.filter { !it.periodEnd.isAfter(now) }
+
+private fun StoredLivePast.toHistory(): LiveHistory = LiveHistory(points, ecobee)

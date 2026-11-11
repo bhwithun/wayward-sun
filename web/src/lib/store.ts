@@ -315,7 +315,48 @@ export async function loadHistory(fromIso: string, toIso: string) {
       sunrise: new Date(String(row.sunrise)).toISOString(),
       sunset: new Date(String(row.sunset)).toISOString(),
     })),
+    ecobee: await loadEcobee(fromIso, toIso),
   };
+}
+
+export type EcobeeRow = {
+  t: string;
+  indoorF: number;
+  coolF: number | null;
+  heatF: number | null;
+};
+
+/**
+ * Missing table means this database has not run db/004_ecobee.sql yet.
+ * History still returns; the indoor layer is empty until the import.
+ */
+export async function loadEcobee(fromIso: string, toIso: string): Promise<EcobeeRow[]> {
+  try {
+    const rows = await sql()`
+      SELECT sampled_at, indoor_f, cool_set_f, heat_set_f
+      FROM ecobee_samples
+      WHERE sampled_at >= ${fromIso}::timestamptz
+        AND sampled_at < ${toIso}::timestamptz
+      ORDER BY sampled_at
+    `;
+    return (rows as Array<Record<string, unknown>>).map((row) => ({
+      t: new Date(String(row.sampled_at)).toISOString(),
+      indoorF: Number(row.indoor_f),
+      coolF: num(row.cool_set_f),
+      heatF: num(row.heat_set_f),
+    }));
+  } catch (error) {
+    if (isMissingEcobeeTable(error)) return [];
+    throw error;
+  }
+}
+
+export function isMissingEcobeeTable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code) : "";
+  if (code === "42P01") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /ecobee_samples/i.test(message) && /does not exist/i.test(message);
 }
 
 function mapPoint(row: Record<string, unknown>): HistoryPoint {

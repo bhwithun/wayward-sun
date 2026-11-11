@@ -16,13 +16,15 @@ data class HistoryPage(
     val from: Instant,
     val to: Instant,
     val points: List<HistoryInterval>,
-    val sun: List<SunTimes>
+    val sun: List<SunTimes>,
+    val ecobee: List<EcobeeSample> = emptyList()
 )
 
 data class HistoryChart(
     val points: List<PowerPoint>,
     val weather: List<WeatherPoint>,
-    val sunDays: List<SunTimes>
+    val sunDays: List<SunTimes>,
+    val ecobee: List<EcobeeSample> = emptyList()
 )
 
 /**
@@ -62,10 +64,12 @@ fun HistoryPage.chartFor(from: Instant, to: Instant, now: Instant): HistoryChart
         WeatherPoint(row.periodEnd, temp, row.precipPct)
     }
     val sunDays = sun.filter { day -> !day.sunset.isBefore(from) && day.sunrise.isBefore(to) }
+    val indoor = ecobee.filter { sample -> !sample.at.isBefore(from) && sample.at.isBefore(to) }
     return HistoryChart(
         points = rows.flatMap { it.toPowerPoints(now) },
         weather = weather,
-        sunDays = sunDays
+        sunDays = sunDays,
+        ecobee = indoor
     )
 }
 

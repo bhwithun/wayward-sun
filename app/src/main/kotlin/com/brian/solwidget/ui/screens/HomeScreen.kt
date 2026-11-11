@@ -20,14 +20,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,9 +64,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.brian.solwidget.BuildFacts
-import com.brian.solwidget.data.ChartLayer
+import com.brian.solwidget.BuildConfig
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
@@ -70,7 +78,6 @@ import com.brian.solwidget.data.liveSolarPoints
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
-import com.brian.solwidget.util.BuildLabel
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
 import com.brian.solwidget.util.presentUpdate
@@ -85,49 +92,6 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-@Composable
-private fun CheckForUpdatesButton() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var checking by remember { mutableStateOf(false) }
-    if (checking) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(14.dp),
-            strokeWidth = 2.dp,
-            color = SolColors.Muted
-        )
-        return
-    }
-    Text(
-        text = "Check",
-        color = SolColors.Ink,
-        fontSize = 11.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .border(1.dp, SolColors.TableStripe, RoundedCornerShape(4.dp))
-            .clickable(role = Role.Button) {
-                checking = true
-                scope.launch {
-                    try {
-                        presentUpdate(context, announceWhenCurrent = true)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        Toast.makeText(
-                            context,
-                            error.message ?: "Couldn't install the update.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    } finally {
-                        checking = false
-                    }
-                }
-            }
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-            .semantics { contentDescription = "Check for updates" }
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -138,11 +102,14 @@ fun HomeScreen(
     val snapshot = state.snapshot
     val zone = ZoneId.systemDefault()
     val context = LocalContext.current
-    val buildLabel = remember {
-        BuildLabel.resolve(BuildFacts.TAGS, BuildFacts.DIRTY, BuildFacts.SHORT_HASH, BuildFacts.COMMIT)
-    }
+    val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    var checkingUpdates by remember { mutableStateOf(false) }
     var expandedPanel by remember { mutableStateOf<MetaPanel?>(null) }
     val showLiveOverlay = state.tab == HomeTab.LIVE && expandedPanel != null
+    val openDrawer = {
+        scope.launch { drawerState.open() }
+    }
 
     LaunchedEffect(state.toastMessage) {
         val message = state.toastMessage ?: return@LaunchedEffect
@@ -150,40 +117,65 @@ fun HomeScreen(
         viewModel.consumeToast()
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = drawerState.isOpen,
+        scrimColor = Color.Black.copy(alpha = 0.46f),
+        drawerContent = {
+            ModalDrawerSheet(drawerContainerColor = SolColors.Panel) {
+                LayerDrawerContent(
+                    layers = state.layers,
+                    versionName = BuildConfig.VERSION_NAME,
+                    checkingUpdates = checkingUpdates,
+                    onToggle = viewModel::setLayer,
+                    onReset = viewModel::resetLayers,
+                    onWebApp = { IntentUtils.openUrl(context, "https://sun.brianandkathi.com") },
+                    onCheckUpdates = {
+                        checkingUpdates = true
+                        scope.launch {
+                            try {
+                                presentUpdate(context, announceWhenCurrent = true)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    error.message ?: "Couldn't install the update.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } finally {
+                                checkingUpdates = false
+                            }
+                        }
+                    },
+                    onSettings = {
+                        scope.launch {
+                            drawerState.close()
+                            onOpenSettings()
+                        }
+                    }
+                )
+            }
+        }
+    ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Wayward Sun",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                navigationIcon = {
+                    IconButton(onClick = { openDrawer() }) {
+                        Icon(
+                            imageVector = Icons.Filled.Menu,
+                            contentDescription = "Open navigation",
+                            tint = SolColors.Ink
                         )
-                        if (buildLabel.text.isNotBlank()) {
-                            Text(
-                                text = buildLabel.text,
-                                color = SolColors.Muted,
-                                style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1
-                            )
-                            CheckForUpdatesButton()
-                        }
                     }
                 },
-                actions = {
-                    TextButton(onClick = {
-                        IntentUtils.openUrl(context, "https://sun.brianandkathi.com")
-                    }) {
-                        Text("Web App")
-                    }
-                    TextButton(onClick = onOpenSettings) {
-                        Text("Settings")
-                    }
+                title = {
+                    Text(
+                        text = "Wayward Sun",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = SolColors.Navy,
@@ -208,32 +200,23 @@ fun HomeScreen(
                     onSelect = viewModel::showTab,
                     modifier = Modifier.padding(top = 8.dp)
                 )
-                LayerToggles(
-                    layers = state.layers,
-                    onToggle = viewModel::setLayer,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
-                )
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
                         if (state.tab == HomeTab.LIVE) {
                             LivePane(
                                 snapshot = snapshot,
                                 weather = state.weather,
                                 livePast = state.livePast,
+                                ecobee = state.liveEcobee,
                                 layers = state.layers,
                                 now = state.now,
                                 zone = zone,
                                 isLoading = state.isLoading,
+                                onOpenLayers = { openDrawer() },
                                 onOpenSettings = onOpenSettings,
                                 expandedPanel = expandedPanel,
                                 onToggleExpand = { panel ->
@@ -250,6 +233,7 @@ fun HomeScreen(
                                 historyError = state.historyError,
                                 layers = state.layers,
                                 now = state.now,
+                                onOpenLayers = { openDrawer() },
                                 onShiftMonth = viewModel::shiftHistoryMonth,
                                 onShiftWeek = viewModel::shiftHistoryWeek,
                                 onSelectWeek = viewModel::selectHistoryWeek
@@ -281,6 +265,7 @@ fun HomeScreen(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -307,17 +292,20 @@ private fun LivePane(
     snapshot: ForecastSnapshot?,
     weather: WeatherSnapshot?,
     livePast: List<PowerPoint>?,
+    ecobee: List<EcobeeSample>,
     layers: ChartLayers,
     now: Instant,
     zone: ZoneId,
     isLoading: Boolean,
+    onOpenLayers: () -> Unit,
     onOpenSettings: () -> Unit,
     expandedPanel: MetaPanel?,
-    onToggleExpand: (MetaPanel) -> Unit
+    onToggleExpand: (MetaPanel) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     if (snapshot == null) {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .height(300.dp),
             contentAlignment = Alignment.Center
@@ -326,45 +314,56 @@ private fun LivePane(
         }
         return
     }
-    snapshot.errorMessage
-        ?.takeUnless { it.isSolcastQuotaMessage() }
-        ?.let { message -> StatusBanner(message) }
-    if (snapshot.isDemo && snapshot.errorMessage == null) {
-        StatusBanner("Showing sample output until the shared cache has Solcast data.")
-    }
-    Text(
-        text = "2 days before through 2 days after",
-        style = MaterialTheme.typography.titleMedium,
-        color = SolColors.Ink
-    )
-    val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
-    ChartFrame {
-        PowerChart(
-            points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
-            now = now,
-            weather = weather?.alignedWithPower(now, zone).orEmpty(),
-            rangeFrom = rangeFrom,
-            rangeTo = rangeTo,
-            layers = layers,
-            sunDays = weather?.sunDays.orEmpty(),
-            isDemo = snapshot.isDemo && livePast.isNullOrEmpty()
+    Column(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        snapshot.errorMessage
+            ?.takeUnless { it.isSolcastQuotaMessage() }
+            ?.let { message -> StatusBanner(message) }
+        if (snapshot.isDemo && snapshot.errorMessage == null) {
+            StatusBanner("Showing sample output until the shared cache has Solcast data.")
+        }
+        Text(
+            text = "2 days before through 2 days after",
+            style = MaterialTheme.typography.titleMedium,
+            color = SolColors.Ink
         )
-    }
-    LayerMetaPanel(
-        layers = layers,
-        snapshot = snapshot,
-        weather = weather,
-        now = now,
-        onOpenSettings = onOpenSettings,
-        expandedPanel = expandedPanel,
-        onToggleExpand = onToggleExpand
-    )
-    if (isLoading) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
+        val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
+        ChartFrame {
+            PowerChart(
+                points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
+                now = now,
+                weather = weather?.alignedWithPower(now, zone).orEmpty(),
+                rangeFrom = rangeFrom,
+                rangeTo = rangeTo,
+                layers = layers,
+                sunDays = weather?.sunDays.orEmpty(),
+                isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
+                ecobee = ecobee
+            )
+        }
+        ChartLegend(layers = layers, onOpen = onOpenLayers)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            CircularProgressIndicator()
+            LayerMetaPanel(
+                layers = layers,
+                snapshot = snapshot,
+                weather = weather,
+                now = now,
+                onOpenSettings = onOpenSettings,
+                expandedPanel = expandedPanel,
+                onToggleExpand = onToggleExpand
+            )
+            if (isLoading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
         }
     }
 }
@@ -379,9 +378,11 @@ private fun HistoryPane(
     historyError: String?,
     layers: ChartLayers,
     now: Instant,
+    onOpenLayers: () -> Unit,
     onShiftMonth: (Int) -> Unit,
     onShiftWeek: (Int) -> Unit,
-    onSelectWeek: (LocalDate) -> Unit
+    onSelectWeek: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val today = DetroitCalendar.today(now)
     val shownMonth = month ?: YearMonth.from(today)
@@ -391,52 +392,66 @@ private fun HistoryPane(
         ?: weeks.firstOrNull()
     val (fetchFrom, fetchTo) = DetroitCalendar.monthFetchRange(weeks)
     val pageMatches = historyKey == historyFetchKey(fetchFrom, fetchTo)
-    historyError?.let { StatusBanner(it) }
-    if (week != null) {
-        val (from, to) = DetroitCalendar.weekRange(week.id)
-        val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
-        ChartFrame(
-            modifier = Modifier
-                .adjacentSwipe(onShiftWeek)
-                .semantics {
-                    contentDescription =
-                        "History week. Swipe left for the next week or right for the previous week."
+    Column(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        historyError?.let { StatusBanner(it) }
+        if (week != null) {
+            val (from, to) = DetroitCalendar.weekRange(week.id)
+            val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
+            ChartFrame(
+                modifier = Modifier
+                    .adjacentSwipe(onShiftWeek)
+                    .semantics {
+                        contentDescription =
+                            "History week. Swipe left for the next week or right for the previous week."
+                    }
+            ) {
+                if (chart != null) {
+                    PowerChart(
+                        points = chart.points,
+                        now = now,
+                        weather = chart.weather,
+                        rangeFrom = from,
+                        rangeTo = to,
+                        layers = layers,
+                        sunDays = chart.sunDays,
+                        zone = DetroitCalendar.ZONE,
+                        ecobee = chart.ecobee
+                    )
                 }
-        ) {
-            if (chart != null) {
-                PowerChart(
-                    points = chart.points,
-                    now = now,
-                    weather = chart.weather,
-                    rangeFrom = from,
-                    rangeTo = to,
-                    layers = layers,
-                    sunDays = chart.sunDays,
-                    zone = DetroitCalendar.ZONE
+                if (chart == null && historyLoading) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
+            }
+            ChartLegend(layers = layers, onOpen = onOpenLayers)
+            if (pageMatches && history != null && chart != null &&
+                chart.points.isEmpty() && chart.weather.isEmpty() && chart.ecobee.isEmpty() &&
+                historyError == null
+            ) {
+                Text(
+                    text = "No stored intervals in this range yet.",
+                    color = SolColors.Muted,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
-            if (chart == null && historyLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            }
         }
-        if (pageMatches && history != null && chart != null &&
-            chart.points.isEmpty() && chart.weather.isEmpty() && historyError == null
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
         ) {
-            Text(
-                text = "No stored intervals in this range yet.",
-                color = SolColors.Muted,
-                style = MaterialTheme.typography.bodyMedium
+            HistoryCalendar(
+                month = shownMonth,
+                weeks = weeks,
+                selectedWeek = week?.id,
+                today = today,
+                onShiftMonth = onShiftMonth,
+                onSelectWeek = onSelectWeek
             )
         }
     }
-    HistoryCalendar(
-        month = shownMonth,
-        weeks = weeks,
-        selectedWeek = week?.id,
-        today = today,
-        onShiftMonth = onShiftMonth,
-        onSelectWeek = onSelectWeek
-    )
 }
 
 @Composable
@@ -609,25 +624,6 @@ private fun StatusBanner(message: String) {
 }
 
 @Composable
-private fun LayerToggles(
-    layers: ChartLayers,
-    onToggle: (ChartLayer, Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        LayerChip("Solcast", layers.solcast, Modifier.weight(1f)) { onToggle(ChartLayer.SOLCAST, it) }
-        LayerChip("Enphase", layers.enphase, Modifier.weight(1f)) { onToggle(ChartLayer.ENPHASE, it) }
-        LayerChip("Temp", layers.temperature, Modifier.weight(1f)) { onToggle(ChartLayer.TEMPERATURE, it) }
-        LayerChip("Precip", layers.precipitation, Modifier.weight(1f)) { onToggle(ChartLayer.PRECIPITATION, it) }
-        LayerChip("Buy", layers.buy, Modifier.weight(1f)) { onToggle(ChartLayer.BUY, it) }
-        LayerChip("Sell", layers.sell, Modifier.weight(1f)) { onToggle(ChartLayer.SELL, it) }
-    }
-}
-
-@Composable
 private fun LayerChip(
     label: String,
     selected: Boolean,
@@ -691,7 +687,7 @@ private fun LayerMetaPanel(
             ) {
                 LegendKeys(
                     type,
-                    "– Temp °F" to SolColors.Temp,
+                    "– Outdoor °F" to SolColors.Temp,
                     "– Glow below freeze" to SolColors.TempFreeze,
                     "– Glow above 90°F" to SolColors.TempHot
                 )

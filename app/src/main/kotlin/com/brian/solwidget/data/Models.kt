@@ -6,7 +6,7 @@ import java.time.ZoneId
 
 enum class SeriesKind { LIVE, FORECAST }
 
-enum class ChartLayer { TEMPERATURE, BUY, SELL, PRECIPITATION, SOLCAST, ENPHASE }
+enum class ChartLayer { TEMPERATURE, BUY, SELL, PRECIPITATION, SOLCAST, ENPHASE, ECOBEE }
 
 data class ChartLayers(
     val temperature: Boolean = true,
@@ -14,10 +14,12 @@ data class ChartLayers(
     val sell: Boolean = true,
     val precipitation: Boolean = true,
     val solcast: Boolean = true,
-    val enphase: Boolean = true
+    val enphase: Boolean = true,
+    val ecobee: Boolean = true
 ) {
     val rates: Boolean get() = buy || sell
     val power: Boolean get() = solcast || enphase
+    val degrees: Boolean get() = temperature || ecobee
 
     fun with(layer: ChartLayer, visible: Boolean): ChartLayers = when (layer) {
         ChartLayer.TEMPERATURE -> copy(temperature = visible)
@@ -26,6 +28,7 @@ data class ChartLayers(
         ChartLayer.PRECIPITATION -> copy(precipitation = visible)
         ChartLayer.SOLCAST -> copy(solcast = visible)
         ChartLayer.ENPHASE -> copy(enphase = visible)
+        ChartLayer.ECOBEE -> copy(ecobee = visible)
     }
 }
 
