@@ -138,6 +138,53 @@ export function sharedFahrenheitRange(
   return { min: lo - pad, max: hi + pad };
 }
 
+export type TemperatureGrid = {
+  min: number;
+  max: number;
+  step: number;
+  ticks: number[];
+};
+
+/** °F grid on a 5/10/20/50 step. Ticks within 3° of 32 are omitted. */
+export function temperatureGrid(dataMin: number, dataMax: number, snapEnds: boolean): TemperatureGrid {
+  let lo = dataMin;
+  let hi = dataMax;
+  if (hi - lo < 1) {
+    lo -= 5;
+    hi += 5;
+  }
+  const step = chooseTempStep(hi - lo);
+  if (snapEnds) {
+    lo = Math.floor(lo / step) * step;
+    hi = Math.ceil(hi / step) * step;
+    if (hi <= lo) hi = lo + step;
+  }
+  const ticks: number[] = [];
+  const add = (value: number) => {
+    if (value < lo - 1e-6 || value > hi + 1e-6) return;
+    if (Math.abs(value - 32) <= 3) return;
+    if (ticks.some((tick) => Math.abs(tick - value) < 0.01)) return;
+    ticks.push(value);
+  };
+  add(lo);
+  add(hi);
+  for (let tick = Math.ceil(lo / step - 1e-9) * step; tick <= hi + 1e-6; tick += step) add(tick);
+  ticks.sort((a, b) => a - b);
+  return { min: lo, max: hi, step, ticks };
+}
+
+export function chooseTempStep(span: number): number {
+  const options = [5, 10, 20, 50, 100];
+  return options.reduce((best, step) => (stepScore(span, step) < stepScore(span, best) ? step : best));
+}
+
+function stepScore(span: number, step: number): number {
+  const intervals = span / step;
+  if (intervals < 2) return 10 + (2 - intervals);
+  if (intervals > 6) return 10 + (intervals - 6);
+  return Math.abs(intervals - 3);
+}
+
 function gapScore(mark: EcobeeMark): number {
   if (mark.band === "cooling") return mark.indoorF - (mark.setF ?? mark.indoorF);
   if (mark.band === "heating") return (mark.setF ?? mark.indoorF) - mark.indoorF;

@@ -7,6 +7,7 @@ import {
   parseEcobeeSetpoint,
   prepareEcobee,
   sharedFahrenheitRange,
+  temperatureGrid,
   type EcobeeSample,
 } from "./ecobee";
 
@@ -105,6 +106,18 @@ describe("ecobee geometry", () => {
     )[0];
     expect(mark.band).toBe("cooling");
     expect(mark.indoorF).toBe(80);
+  });
+
+  it("puts temperature gridlines on a round step and skips 32", () => {
+    const wide = temperatureGrid(-24, 86, true);
+    expect(wide.step).toBe(50);
+    expect(wide.ticks).toEqual([-50, 0, 50, 100]);
+    expect(wide.min).toBeLessThanOrEqual(-24);
+    expect(wide.max).toBeGreaterThanOrEqual(86);
+    expect(wide.ticks.every((tick) => Math.abs(tick - 32) > 3)).toBe(true);
+    const tight = temperatureGrid(68, 78, true);
+    expect(tight.step).toBe(5);
+    expect(tight.ticks).toContain(70);
   });
 
   it("stops the layer at now", () => {

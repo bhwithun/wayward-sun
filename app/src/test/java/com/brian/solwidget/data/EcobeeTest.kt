@@ -2,6 +2,7 @@ package com.brian.solwidget.data
 
 import java.time.Duration
 import java.time.Instant
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -156,6 +157,21 @@ class EcobeeTest {
         val fixed = sharedFahrenheitRange(listOf(70.0), indoor, t0, t0.plusSeconds(60), scaleToData = false)
         assertEquals(ForecastSnapshot.TEMP_MIN_F, fixed.first, 0.0)
         assertEquals(ForecastSnapshot.TEMP_MAX_F, fixed.second, 0.0)
+    }
+
+    @Test
+    fun temperatureGridUsesRoundStepsAndSkipsFreezing() {
+        val wide = temperatureGrid(-24.0, 86.0, snapEnds = true)
+        assertEquals(50.0, wide.step, 0.0)
+        assertTrue(wide.min <= -24.0 && wide.max >= 86.0)
+        assertEquals(listOf(-50.0, 0.0, 50.0, 100.0), wide.ticks)
+        assertTrue(wide.ticks.none { abs(it - 32.0) <= 3.0 })
+        val near = temperatureGrid(20.0, 45.0, snapEnds = true)
+        assertTrue(near.ticks.none { abs(it - 32.0) <= 3.0 })
+        val tight = temperatureGrid(68.0, 78.0, snapEnds = true)
+        assertEquals(5.0, tight.step, 0.0)
+        assertTrue(tight.ticks.contains(70.0))
+        assertTrue(tight.min <= 68.0 && tight.max >= 78.0)
     }
 
     @Test

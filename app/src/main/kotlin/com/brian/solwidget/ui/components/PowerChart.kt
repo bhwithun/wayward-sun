@@ -39,6 +39,7 @@ import com.brian.solwidget.data.forecastStrokes
 import com.brian.solwidget.data.formatTempBound
 import com.brian.solwidget.data.prepareEcobee
 import com.brian.solwidget.data.sharedFahrenheitRange
+import com.brian.solwidget.data.temperatureGrid
 import com.brian.solwidget.data.dayTempRanges
 import com.brian.solwidget.data.isNight
 import com.brian.solwidget.data.liveStroke
@@ -49,6 +50,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 import kotlin.math.max
 
 private val DayLabel = DateTimeFormatter.ofPattern("EEE d")
@@ -143,13 +145,16 @@ fun PowerChart(
         } else {
             emptyList()
         }
-        val (tempMin, tempMax) = sharedFahrenheitRange(
+        val rawTemps = sharedFahrenheitRange(
             outdoorForScale,
             if (layers.ecobee) ecobee.filter { !it.at.isAfter(now) } else emptyList(),
             from,
             to,
             scaleToData = layers.ecobee
         )
+        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
+        val tempMin = tempGrid.min
+        val tempMax = tempGrid.max
         val tempSpan = (tempMax - tempMin).takeIf { it > 0.0 } ?: 1.0
         fun yOfTemp(temp: Double): Float =
             bottom - (((temp - tempMin) / tempSpan).toFloat().coerceIn(0f, 1f) * height)
@@ -182,10 +187,23 @@ fun PowerChart(
             }
         }
 
-        for (step in 0..2) {
-            val kw = solarMax * step / 2.0
-            val y = yOf(kw)
-            drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
+        if (units == AxisUnits.TEMP) {
+            for (tick in tempGrid.ticks) {
+                val y = yOfTemp(tick)
+                drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
+                val labelY = when {
+                    abs(tick - tempMax) < 0.01 -> top + 16f
+                    abs(tick - tempMin) < 0.01 -> bottom + 6f
+                    else -> y + 8f
+                }
+                native.drawText(formatTempBound(tick), 6f, labelY, unitPaint)
+            }
+        } else {
+            for (step in 0..2) {
+                val kw = solarMax * step / 2.0
+                val y = yOf(kw)
+                drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
+            }
         }
         when (units) {
             AxisUnits.SOLAR -> {
@@ -193,14 +211,7 @@ fun PowerChart(
                 native.drawText("4 kW", 8f, yOf(4.0) + 8f, unitPaint)
                 native.drawText("0 kW", 8f, bottom + 6f, unitPaint)
             }
-            AxisUnits.TEMP -> {
-                val high = if (layers.ecobee) formatTempBound(tempMax) else "100°F"
-                val low = if (layers.ecobee) formatTempBound(tempMin) else "-20°F"
-                val mid = formatTempBound((tempMin + tempMax) / 2.0)
-                native.drawText(high, 6f, top + 16f, unitPaint)
-                native.drawText(mid, 6f, yOfTemp((tempMin + tempMax) / 2.0) + 8f, unitPaint)
-                native.drawText(low, 6f, bottom + 6f, unitPaint)
-            }
+            AxisUnits.TEMP -> Unit
             AxisUnits.PRECIP -> {
                 native.drawText("100%", 8f, top + 16f, unitPaint)
                 native.drawText("50%", 8f, yOfPop(50.0) + 8f, unitPaint)
@@ -656,13 +667,16 @@ object ChartBitmapRenderer {
         } else {
             emptyList()
         }
-        val (tempMin, tempMax) = sharedFahrenheitRange(
+        val rawTemps = sharedFahrenheitRange(
             outdoorForScale,
             if (layers.ecobee) ecobee.filter { !it.at.isAfter(now) } else emptyList(),
             from,
             to,
             scaleToData = layers.ecobee
         )
+        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
+        val tempMin = tempGrid.min
+        val tempMax = tempGrid.max
         val tempSpan = (tempMax - tempMin).takeIf { it > 0.0 } ?: 1.0
 
         fun yOfTemp(temp: Double) =
@@ -701,9 +715,11 @@ object ChartBitmapRenderer {
             strokeWidth = 1.5f
             isAntiAlias = true
         }
-        for (step in 0..2) {
-            val y = yOf(solarMax * step / 2.0)
-            canvas.drawLine(left, y, right, y, grid)
+        if (units != AxisUnits.TEMP) {
+            for (step in 0..2) {
+                val y = yOf(solarMax * step / 2.0)
+                canvas.drawLine(left, y, right, y, grid)
+            }
         }
 
         val unitPaint = Paint().apply {
@@ -711,20 +727,25 @@ object ChartBitmapRenderer {
             textSize = 26f
             isAntiAlias = true
         }
+        if (units == AxisUnits.TEMP) {
+            for (tick in tempGrid.ticks) {
+                val y = yOfTemp(tick)
+                canvas.drawLine(left, y, right, y, grid)
+                val labelY = when {
+                    abs(tick - tempMax) < 0.01 -> top + 16f
+                    abs(tick - tempMin) < 0.01 -> bottom
+                    else -> y + 8f
+                }
+                canvas.drawText(formatTempBound(tick), 2f, labelY, unitPaint)
+            }
+        }
         when (units) {
             AxisUnits.SOLAR -> {
                 canvas.drawText("8 kW", 2f, top + 16f, unitPaint)
                 canvas.drawText("4 kW", 2f, yOf(4.0) + 8f, unitPaint)
                 canvas.drawText("0 kW", 2f, bottom, unitPaint)
             }
-            AxisUnits.TEMP -> {
-                val high = if (layers.ecobee) formatTempBound(tempMax) else "100°F"
-                val low = if (layers.ecobee) formatTempBound(tempMin) else "-20°F"
-                val mid = formatTempBound((tempMin + tempMax) / 2.0)
-                canvas.drawText(high, 2f, top + 16f, unitPaint)
-                canvas.drawText(mid, 2f, yOfTemp((tempMin + tempMax) / 2.0) + 8f, unitPaint)
-                canvas.drawText(low, 2f, bottom, unitPaint)
-            }
+            AxisUnits.TEMP -> Unit
             AxisUnits.PRECIP -> {
                 canvas.drawText("100%", 2f, top + 16f, unitPaint)
                 canvas.drawText("50%", 2f, yOfPop(50.0) + 8f, unitPaint)

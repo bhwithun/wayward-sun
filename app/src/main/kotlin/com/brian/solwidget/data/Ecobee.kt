@@ -2,6 +2,9 @@ package com.brian.solwidget.data
 
 import java.time.Duration
 import java.time.Instant
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.round
 
 /** How an indoor sample sits relative to the setpoint that applies at that moment. */
@@ -171,3 +174,59 @@ fun sharedFahrenheitRange(
 }
 
 fun formatTempBound(value: Double): String = "${round(value).toInt()}°F"
+
+data class TemperatureGrid(
+    val min: Double,
+    val max: Double,
+    val step: Double,
+    val ticks: List<Double>
+)
+
+/**
+ * Horizontal °F lines land on a step of 5, 10, 20, or 50, whichever puts about
+ * three intervals across the span. Ends snap outward onto that step when the
+ * axis is fitted to the data. A tick within 3° of freezing is omitted so the
+ * dotted 32° line keeps that label.
+ */
+fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): TemperatureGrid {
+    var lo = dataMin
+    var hi = dataMax
+    if (hi - lo < 1.0) {
+        lo -= 5.0
+        hi += 5.0
+    }
+    val step = chooseTempStep(hi - lo)
+    if (snapEnds) {
+        lo = floor(lo / step) * step
+        hi = ceil(hi / step) * step
+        if (hi <= lo) hi = lo + step
+    }
+    val ticks = ArrayList<Double>()
+    fun add(value: Double) {
+        if (value < lo - 1e-6 || value > hi + 1e-6) return
+        if (abs(value - 32.0) <= 3.0) return
+        if (ticks.any { abs(it - value) < 0.01 }) return
+        ticks.add(value)
+    }
+    add(lo)
+    add(hi)
+    var tick = ceil(lo / step - 1e-9) * step
+    while (tick <= hi + 1e-6) {
+        add(tick)
+        tick += step
+    }
+    ticks.sort()
+    return TemperatureGrid(lo, hi, step, ticks)
+}
+
+fun chooseTempStep(span: Double): Double {
+    val options = doubleArrayOf(5.0, 10.0, 20.0, 50.0, 100.0)
+    return options.minBy { step ->
+        val intervals = span / step
+        when {
+            intervals < 2.0 -> 10.0 + (2.0 - intervals)
+            intervals > 6.0 -> 10.0 + (intervals - 6.0)
+            else -> abs(intervals - 3.0)
+        }
+    }
+}

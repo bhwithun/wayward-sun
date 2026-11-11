@@ -6,6 +6,7 @@ import {
   ecobeeFillSegments,
   prepareEcobee,
   sharedFahrenheitRange,
+  temperatureGrid,
   type EcobeeSample,
 } from "@/lib/ecobee";
 import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
@@ -98,13 +99,15 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const outdoor = props.layers.temp
     ? props.weather.filter((mark) => mark.t >= props.from && mark.t < props.to).map((mark) => mark.tempF)
     : [];
-  const tempRange = sharedFahrenheitRange(
+  const rawTemps = sharedFahrenheitRange(
     outdoor,
     props.layers.ecobee ? ecobee : [],
     props.from,
     props.to,
     props.layers.ecobee
   );
+  const tempGrid = temperatureGrid(rawTemps.min, rawTemps.max, props.layers.ecobee);
+  const tempRange = { min: tempGrid.min, max: tempGrid.max };
   const tempSpan = Math.max(0.001, tempRange.max - tempRange.min);
   const yTemp = (temp: number) => bottom - (clamp((temp - tempRange.min) / tempSpan, 0, 1) * plotH);
   const yPop = (pop: number) => bottom - (clamp(pop / PRECIP_MAX, 0, 1) * plotH);
@@ -135,28 +138,31 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   ctx.lineWidth = 1;
   ctx.fillStyle = INK;
   ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
-  for (const step of [0, 1, 2]) {
-    const y = ySolar((SOLAR_MAX * step) / 2);
-    ctx.beginPath();
-    ctx.moveTo(left, y);
-    ctx.lineTo(right, y);
-    ctx.stroke();
+  if (units === "temp") {
+    for (const tick of tempGrid.ticks) {
+      const y = yTemp(tick);
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+      const labelY = Math.abs(tick - tempRange.max) < 0.01 ? top + 12 : Math.abs(tick - tempRange.min) < 0.01 ? bottom : y + 4;
+      ctx.fillText(`${Math.round(tick)}°F`, 4, labelY);
+    }
+  } else {
+    for (const step of [0, 1, 2]) {
+      const y = ySolar((SOLAR_MAX * step) / 2);
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+    }
   }
   if (units === "solar") {
     ctx.fillText("8 kW", 6, top + 12);
     ctx.fillText("4 kW", 6, ySolar(4) + 4);
     ctx.fillText("0 kW", 6, bottom);
   } else if (units === "temp") {
-    const mid = (tempRange.min + tempRange.max) / 2;
-    if (props.layers.ecobee) {
-      ctx.fillText(`${Math.round(tempRange.max)}°F`, 4, top + 12);
-      ctx.fillText(`${Math.round(mid)}°F`, 4, yTemp(mid) + 4);
-      ctx.fillText(`${Math.round(tempRange.min)}°F`, 4, bottom);
-    } else {
-      ctx.fillText("100°F", 4, top + 12);
-      ctx.fillText("40°F", 4, yTemp(40) + 4);
-      ctx.fillText("-20°F", 4, bottom);
-    }
+    // Labeled with the round grid above.
   } else if (units === "precip") {
     ctx.fillText("100%", 6, top + 12);
     ctx.fillText("50%", 6, yPop(50) + 4);
