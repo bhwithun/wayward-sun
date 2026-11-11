@@ -18,8 +18,9 @@ data class EcobeeSample(
 )
 
 /**
- * One drawable sample. [setF] is the setpoint being compared, and it is null in
- * the deadband so the chart never draws two dashed lines at once.
+ * One drawable sample. [setF] is the cool setpoint when indoor is above it, the
+ * heat setpoint when indoor is below it, and in the deadband the setpoint closer
+ * to indoor. It is null only when both setpoints are missing.
  */
 data class EcobeeMark(
     val at: Instant,
@@ -32,9 +33,10 @@ data class EcobeeMark(
 val ECOBEE_GAP: Duration = Duration.ofMinutes(15)
 
 /**
- * Cool is checked first. Above the cool setpoint is a cooling gap. Below the
- * heat setpoint is a heating gap. Between them, or when that setpoint is missing,
- * there is no fill. "Off" arrives as null.
+ * Cool is checked first. Above the cool setpoint is too warm. Below the heat
+ * setpoint is too cool. Between them, or level with a setpoint, there is no fill.
+ * The drawn setpoint is the one that decided the band, or the closer one in the
+ * deadband. A tie uses the cool setpoint. "Off" arrives as null.
  */
 fun EcobeeSample.classify(): EcobeeMark {
     val cool = coolSetF?.takeIf { it.isFinite() }
@@ -42,8 +44,14 @@ fun EcobeeSample.classify(): EcobeeMark {
     return when {
         cool != null && indoorF > cool -> EcobeeMark(at, indoorF, cool, EcobeeBand.COOLING)
         heat != null && indoorF < heat -> EcobeeMark(at, indoorF, heat, EcobeeBand.HEATING)
-        else -> EcobeeMark(at, indoorF, null, EcobeeBand.DEADBAND)
+        else -> EcobeeMark(at, indoorF, closerSetpoint(indoorF, cool, heat), EcobeeBand.DEADBAND)
     }
+}
+
+private fun closerSetpoint(indoor: Double, cool: Double?, heat: Double?): Double? {
+    if (cool == null) return heat
+    if (heat == null) return cool
+    return if (abs(indoor - cool) <= abs(indoor - heat)) cool else heat
 }
 
 /** A setpoint cell from an Ecobee export. Blank and "off" are not a temperature. */

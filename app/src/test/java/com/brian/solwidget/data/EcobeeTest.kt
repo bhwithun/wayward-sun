@@ -26,22 +26,31 @@ class EcobeeTest {
     }
 
     @Test
-    fun betweenSetpointsIsDeadbandWithNoDashedSetpoint() {
-        val mark = sample(t0, indoor = 71.0, cool = 74.0, heat = 68.0).classify()
-        assertEquals(EcobeeBand.DEADBAND, mark.band)
-        assertNull(mark.setF)
+    fun deadbandDrawsTheCloserSetpointAndDoesNotFill() {
+        val tie = sample(t0, indoor = 71.0, cool = 74.0, heat = 68.0).classify()
+        assertEquals(EcobeeBand.DEADBAND, tie.band)
+        assertEquals(74.0, tie.setF)
+        val nearerHeat = sample(t0, indoor = 69.0, cool = 74.0, heat = 68.0).classify()
+        assertEquals(EcobeeBand.DEADBAND, nearerHeat.band)
+        assertEquals(68.0, nearerHeat.setF)
     }
 
     @Test
-    fun sittingOnEitherSetpointIsDeadband() {
-        assertEquals(EcobeeBand.DEADBAND, sample(t0, 74.0, cool = 74.0, heat = 68.0).classify().band)
-        assertEquals(EcobeeBand.DEADBAND, sample(t0, 68.0, cool = 74.0, heat = 68.0).classify().band)
+    fun sittingOnEitherSetpointIsDeadbandOnThatSetpoint() {
+        val onCool = sample(t0, 74.0, cool = 74.0, heat = 68.0).classify()
+        assertEquals(EcobeeBand.DEADBAND, onCool.band)
+        assertEquals(74.0, onCool.setF)
+        val onHeat = sample(t0, 68.0, cool = 74.0, heat = 68.0).classify()
+        assertEquals(EcobeeBand.DEADBAND, onHeat.band)
+        assertEquals(68.0, onHeat.setF)
     }
 
     @Test
     fun aMissingOrOffSetpointIsSkipped() {
         assertEquals(EcobeeBand.HEATING, sample(t0, 60.0, cool = null, heat = 68.0).classify().band)
-        assertEquals(EcobeeBand.DEADBAND, sample(t0, 80.0, cool = null, heat = 68.0).classify().band)
+        val onlyHeat = sample(t0, 80.0, cool = null, heat = 68.0).classify()
+        assertEquals(EcobeeBand.DEADBAND, onlyHeat.band)
+        assertEquals(68.0, onlyHeat.setF)
         assertEquals(EcobeeBand.COOLING, sample(t0, 80.0, cool = 74.0, heat = null).classify().band)
         val neither = sample(t0, 70.0, cool = null, heat = null).classify()
         assertEquals(EcobeeBand.DEADBAND, neither.band)

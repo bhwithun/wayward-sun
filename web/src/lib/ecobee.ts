@@ -29,7 +29,13 @@ export function classifyEcobee(sample: EcobeeSample): EcobeeMark {
   if (heat != null && sample.indoorF < heat) {
     return { t: sample.t, indoorF: sample.indoorF, setF: heat, band: "heating" };
   }
-  return { t: sample.t, indoorF: sample.indoorF, setF: null, band: "deadband" };
+  return { t: sample.t, indoorF: sample.indoorF, setF: closerSetpoint(sample.indoorF, cool, heat), band: "deadband" };
+}
+
+function closerSetpoint(indoor: number, cool: number | null, heat: number | null): number | null {
+  if (cool == null) return heat;
+  if (heat == null) return cool;
+  return Math.abs(indoor - cool) <= Math.abs(indoor - heat) ? cool : heat;
 }
 
 /** Blank and "off" are not a temperature. */

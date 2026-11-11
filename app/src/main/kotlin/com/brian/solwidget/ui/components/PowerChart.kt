@@ -590,31 +590,37 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEcobeeLines(
     xOf: (Instant) -> Float,
     yOfTemp: (Double) -> Float
 ) {
-    val indoor = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    val setpoint = Stroke(
-        width = 1.dp.toPx(),
-        cap = StrokeCap.Butt,
-        pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))
-    )
+    val edge = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+    val hairline = Stroke(width = 1f, cap = StrokeCap.Butt)
     for (run in runs) {
-        if (run.size >= 2) {
+        for (segment in ecobeeFillSegments(run)) {
+            val color = if (segment.first().band == EcobeeBand.COOLING) SolColors.CoolGap else SolColors.HeatGap
             val path = ComposePath()
-            run.forEachIndexed { index, mark ->
+            segment.forEachIndexed { index, mark ->
                 val x = xOf(mark.at)
                 val y = yOfTemp(mark.indoorF)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, SolColors.Indoor, style = indoor)
+            drawPath(path, color, style = edge)
         }
-        for (segment in ecobeeFillSegments(run)) {
-            val path = ComposePath()
-            segment.forEachIndexed { index, mark ->
-                val x = xOf(mark.at)
-                val y = yOfTemp(mark.setF ?: mark.indoorF)
-                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        val setpoint = ComposePath()
+        var drawing = false
+        for (mark in run) {
+            val set = mark.setF
+            if (set == null) {
+                drawing = false
+                continue
             }
-            drawPath(path, Color(0x80E6E1F0), style = setpoint)
+            val x = xOf(mark.at)
+            val y = yOfTemp(set)
+            if (!drawing) {
+                setpoint.moveTo(x, y)
+                drawing = true
+            } else {
+                setpoint.lineTo(x, y)
+            }
         }
+        drawPath(setpoint, SolColors.Setpoint, style = hairline)
     }
 }
 
@@ -1050,7 +1056,7 @@ object ChartBitmapRenderer {
                     path.lineTo(xOf(mark.at), yOfTemp(mark.setF ?: mark.indoorF))
                 }
                 path.close()
-                val rgb = if (segment.first().band == EcobeeBand.COOLING) 0x004DA3FF else 0x00FF6A5C
+                val rgb = if (segment.first().band == EcobeeBand.COOLING) 0x004DA3FF else 0x00FF9800
                 val alpha = (255f * ECOBEE_FILL_ALPHA).toInt().coerceIn(0, 255)
                 paint.color = rgb or (alpha shl 24)
                 canvas.drawPath(path, paint)
@@ -1064,44 +1070,53 @@ object ChartBitmapRenderer {
         xOf: (Instant) -> Float,
         yOfTemp: (Double) -> Float
     ) {
-        val indoor = Paint().apply {
+        val edge = Paint().apply {
             style = Paint.Style.STROKE
             isAntiAlias = true
-            color = SolColors.Indoor.toArgb()
-            strokeWidth = 2f * BITMAP_PX_PER_DP
+            strokeWidth = 1f * BITMAP_PX_PER_DP
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
         }
         val setpoint = Paint().apply {
             style = Paint.Style.STROKE
             isAntiAlias = true
-            color = 0x80E6E1F0.toInt()
-            strokeWidth = 1f * BITMAP_PX_PER_DP
+            color = SolColors.Setpoint.toArgb()
+            strokeWidth = 1f
             strokeCap = Paint.Cap.BUTT
-            pathEffect = DashPathEffect(
-                floatArrayOf(5f * BITMAP_PX_PER_DP, 4f * BITMAP_PX_PER_DP),
-                0f
-            )
         }
         for (run in runs) {
-            if (run.size >= 2) {
+            for (segment in ecobeeFillSegments(run)) {
+                edge.color = if (segment.first().band == EcobeeBand.COOLING) {
+                    SolColors.CoolGap.toArgb()
+                } else {
+                    SolColors.HeatGap.toArgb()
+                }
                 val path = Path()
-                run.forEachIndexed { index, mark ->
+                segment.forEachIndexed { index, mark ->
                     val x = xOf(mark.at)
                     val y = yOfTemp(mark.indoorF)
                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
-                canvas.drawPath(path, indoor)
+                canvas.drawPath(path, edge)
             }
-            for (segment in ecobeeFillSegments(run)) {
-                val path = Path()
-                segment.forEachIndexed { index, mark ->
-                    val x = xOf(mark.at)
-                    val y = yOfTemp(mark.setF ?: mark.indoorF)
-                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            val path = Path()
+            var drawing = false
+            for (mark in run) {
+                val set = mark.setF
+                if (set == null) {
+                    drawing = false
+                    continue
                 }
-                canvas.drawPath(path, setpoint)
+                val x = xOf(mark.at)
+                val y = yOfTemp(set)
+                if (!drawing) {
+                    path.moveTo(x, y)
+                    drawing = true
+                } else {
+                    path.lineTo(x, y)
+                }
             }
+            canvas.drawPath(path, setpoint)
         }
     }
 }

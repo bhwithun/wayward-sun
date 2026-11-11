@@ -120,12 +120,18 @@ class EcobeeScreenshotTest {
 
     @Test
     @Config(sdk = [33], qualifiers = "w384dp-h800dp-420dpi")
-    fun indoorAndOutdoorAtPhoneWidth() {
+    fun ecobeeRedesignAtPhoneWidth() {
         val density = 420f / 160f
         val width = (384 * density).roundToInt()
         val height = (800 * density).roundToInt()
-        captureSized(width, height, "graph-ecobee-temp-2.5.2.png") {
-            PhoneFrame(fills(), past, future, layers(temp = true, ecobee = true), drawerOpen = false)
+        captureSized(width, height, "graph-ecobee-2.5.2.png") {
+            PhoneFrame(
+                fills(),
+                past,
+                future,
+                layers(temp = true, ecobee = true, solar = true),
+                drawerOpen = false
+            )
         }
         val from = now.minus(48, ChronoUnit.HOURS)
         val to = now.plus(72, ChronoUnit.HOURS)
@@ -338,7 +344,7 @@ class EcobeeScreenshotTest {
                             .background(SolColors.Panel)
                     ) {
                         PowerChart(
-                            points = emptyList(),
+                            points = if (layers.solcast || layers.enphase) solar(from, to) else emptyList(),
                             now = now,
                             weather = if (layers.temperature) outdoor(from, to) else emptyList(),
                             rangeFrom = from,

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -68,10 +69,19 @@ fun ChartLegend(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(if (item.square) RoundedCornerShape(1.dp) else CircleShape)
-                        .background(item.color)
+                    modifier = when (item.mark) {
+                        LegendMark.HAIRLINE -> Modifier
+                            .size(width = 12.dp, height = 2.dp)
+                            .background(item.color)
+                        LegendMark.SQUARE -> Modifier
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(item.color)
+                        LegendMark.DOT -> Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(item.color)
+                    }
                 )
                 Text(
                     text = item.name,
@@ -141,7 +151,12 @@ fun LayerDrawerContent(
         LayerSwitch("Buy", SolColors.Buy, layers.buy) { onToggle(ChartLayer.BUY, it) }
         LayerSwitch("Sell", SolColors.Sell, layers.sell) { onToggle(ChartLayer.SELL, it) }
         LayerSubhead("Home")
-        LayerSwitch("Ecobee", SolColors.Indoor, layers.ecobee) { onToggle(ChartLayer.ECOBEE, it) }
+        LayerSwitch(
+            "Ecobee",
+            SolColors.Setpoint,
+            layers.ecobee,
+            swatch = { EcobeeSwatch() }
+        ) { onToggle(ChartLayer.ECOBEE, it) }
         TextButton(
             onClick = onReset,
             modifier = Modifier.padding(start = 8.dp, top = 4.dp)
@@ -178,7 +193,13 @@ fun LayerDrawerContent(
     }
 }
 
-private data class LegendItem(val name: String, val color: Color, val square: Boolean = false)
+private enum class LegendMark { DOT, SQUARE, HAIRLINE }
+
+private data class LegendItem(
+    val name: String,
+    val color: Color,
+    val mark: LegendMark = LegendMark.DOT
+)
 
 private fun legendItems(layers: ChartLayers): List<LegendItem> = buildList {
     if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
@@ -188,9 +209,9 @@ private fun legendItems(layers: ChartLayers): List<LegendItem> = buildList {
     if (layers.buy) add(LegendItem("Buy", SolColors.Buy))
     if (layers.sell) add(LegendItem("Sell", SolColors.Sell))
     if (layers.ecobee) {
-        add(LegendItem("Indoor", SolColors.Indoor))
-        add(LegendItem("Cooling gap", SolColors.CoolGap.copy(alpha = 0.40f), square = true))
-        add(LegendItem("Heating gap", SolColors.HeatGap.copy(alpha = 0.40f), square = true))
+        add(LegendItem("Setpoint", SolColors.Setpoint, LegendMark.HAIRLINE))
+        add(LegendItem("Too warm", SolColors.CoolGap.copy(alpha = 0.40f), LegendMark.SQUARE))
+        add(LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.40f), LegendMark.SQUARE))
     }
 }
 
@@ -205,10 +226,23 @@ private fun LayerSubhead(title: String) {
 }
 
 @Composable
+private fun EcobeeSwatch() {
+    Row(
+        modifier = Modifier
+            .size(14.dp)
+            .clip(CircleShape)
+    ) {
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.CoolGap))
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.HeatGap))
+    }
+}
+
+@Composable
 private fun LayerSwitch(
     name: String,
     color: Color,
     checked: Boolean,
+    swatch: (@Composable () -> Unit)? = null,
     onChecked: (Boolean) -> Unit
 ) {
     Row(
@@ -218,12 +252,16 @@ private fun LayerSwitch(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(14.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
+        if (swatch != null) {
+            swatch()
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+        }
         Text(
             text = name,
             color = SolColors.Ink,

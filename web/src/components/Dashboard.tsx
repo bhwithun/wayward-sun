@@ -229,15 +229,19 @@ export function Dashboard() {
           {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
           {layers.buy && <span style={{ color: "#E57FD8" }}>▮ Buy</span>}
           {layers.sell && <span style={{ color: "#7BD88F" }}>▮ Sell</span>}
-          {layers.ecobee && <span style={{ color: "#FF9800" }}>● Indoor</span>}
           {layers.ecobee && (
             <span>
-              <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Cooling gap
+              <i className="swatch hairline" style={{ background: "#FFF176" }} /> Setpoint
             </span>
           )}
           {layers.ecobee && (
             <span>
-              <i className="swatch" style={{ background: "rgba(255,106,92,0.40)" }} /> Heating gap
+              <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Too warm
+            </span>
+          )}
+          {layers.ecobee && (
+            <span>
+              <i className="swatch" style={{ background: "rgba(255,152,0,0.40)" }} /> Too cool
             </span>
           )}
         </div>
