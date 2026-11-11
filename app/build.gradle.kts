@@ -101,6 +101,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            versionNameSuffix = "+"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

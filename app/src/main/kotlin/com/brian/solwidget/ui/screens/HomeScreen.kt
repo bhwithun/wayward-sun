@@ -1,5 +1,6 @@
 package com.brian.solwidget.ui.screens
 
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,11 +63,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.brian.solwidget.BuildConfig
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.DetroitCalendar
@@ -78,9 +81,12 @@ import com.brian.solwidget.data.liveSolarPoints
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.ui.components.PowerChart
 import com.brian.solwidget.ui.theme.SolColors
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.brian.solwidget.util.AppUpdate
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
-import com.brian.solwidget.util.presentUpdate
+import com.brian.solwidget.util.ReleaseOffer
 import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.viewmodel.HomeViewModel
 import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
@@ -89,7 +95,6 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,11 +109,27 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    var checkingUpdates by remember { mutableStateOf(false) }
+    var updateNotice by remember { mutableStateOf<UpdateNotice?>(null) }
+    var updateCheck by remember { mutableStateOf(0) }
+    var readyOffer by remember { mutableStateOf<ReleaseOffer?>(null) }
+    val versionName = remember(context) { AppUpdate.installedVersionName(context) }
     var expandedPanel by remember { mutableStateOf<MetaPanel?>(null) }
     val showLiveOverlay = state.tab == HomeTab.LIVE && expandedPanel != null
     val openDrawer = {
         scope.launch { drawerState.open() }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_START) return@LifecycleEventObserver
+            val activity = context as? Activity ?: return@LifecycleEventObserver
+            AppUpdate.refreshAsync(activity) { offer ->
+                if (offer != null && AppUpdate.claimPrompt(activity, offer)) readyOffer = offer
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(state.toastMessage) {
@@ -125,26 +146,26 @@ fun HomeScreen(
             ModalDrawerSheet(drawerContainerColor = SolColors.Panel) {
                 LayerDrawerContent(
                     layers = state.layers,
-                    versionName = BuildConfig.VERSION_NAME,
-                    checkingUpdates = checkingUpdates,
+                    versionName = versionName,
+                    checkingUpdates = updateNotice is UpdateNotice.Checking,
                     onToggle = viewModel::setLayer,
                     onReset = viewModel::resetLayers,
                     onWebApp = { IntentUtils.openUrl(context, "https://sun.brianandkathi.com") },
                     onCheckUpdates = {
-                        checkingUpdates = true
-                        scope.launch {
-                            try {
-                                presentUpdate(context, announceWhenCurrent = true)
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (error: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    error.message ?: "Couldn't install the update.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } finally {
-                                checkingUpdates = false
+                        val generation = updateCheck + 1
+                        updateCheck = generation
+                        updateNotice = UpdateNotice.Checking
+                        val activity = context as? Activity
+                        if (activity == null) {
+                            updateNotice = UpdateNotice.Failed
+                        } else {
+                            AppUpdate.checkNow(activity) { result ->
+                                if (updateCheck != generation) return@checkNow
+                                updateNotice = when (result) {
+                                    is AppUpdate.Check.Update -> UpdateNotice.Available(result.offer)
+                                    AppUpdate.Check.Current -> UpdateNotice.Current
+                                    AppUpdate.Check.Failed -> UpdateNotice.Failed
+                                }
                             }
                         }
                     },
@@ -265,7 +286,91 @@ fun HomeScreen(
             }
         }
     }
+    UpdateDialog(
+        notice = updateNotice,
+        onDismiss = {
+            updateCheck += 1
+            updateNotice = null
+        },
+        onInstall = { offer ->
+            updateCheck += 1
+            updateNotice = null
+            (context as? Activity)?.let { AppUpdate.startInstall(it, offer) }
+        },
+    )
+    readyOffer?.let { offer ->
+        ReadyUpdateDialog(
+            versionName = offer.versionName,
+            onLater = {
+                readyOffer = null
+                AppUpdate.dismiss(context, offer.versionName)
+            },
+            onInstall = {
+                readyOffer = null
+                (context as? Activity)?.let { AppUpdate.startInstall(it, offer) }
+            },
+            onDismiss = { readyOffer = null },
+        )
     }
+    }
+}
+
+private sealed interface UpdateNotice {
+    data object Checking : UpdateNotice
+    data object Current : UpdateNotice
+    data class Available(val offer: ReleaseOffer) : UpdateNotice
+    data object Failed : UpdateNotice
+}
+
+@Composable
+private fun UpdateDialog(
+    notice: UpdateNotice?,
+    onDismiss: () -> Unit,
+    onInstall: (ReleaseOffer) -> Unit,
+) {
+    if (notice == null) return
+    val dismissible = notice !is UpdateNotice.Checking
+    AlertDialog(
+        onDismissRequest = { if (dismissible) onDismiss() },
+        title = {
+            Text(
+                when (notice) {
+                    UpdateNotice.Checking -> "Checking for updates…"
+                    UpdateNotice.Current -> "This is the latest version."
+                    is UpdateNotice.Available -> "Version ${notice.offer.versionName} is available."
+                    UpdateNotice.Failed -> "Could not check for updates."
+                }
+            )
+        },
+        text = if (notice is UpdateNotice.Checking) ({ CircularProgressIndicator() }) else null,
+        confirmButton = {
+            when (notice) {
+                is UpdateNotice.Available -> TextButton(onClick = { onInstall(notice.offer) }) { Text("Install") }
+                UpdateNotice.Checking -> Unit
+                else -> TextButton(onClick = onDismiss) { Text("OK") }
+            }
+        },
+        dismissButton = if (notice is UpdateNotice.Available) {
+            { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        } else {
+            null
+        },
+    )
+}
+
+@Composable
+private fun ReadyUpdateDialog(
+    versionName: String,
+    onLater: () -> Unit,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Version $versionName is ready") },
+        confirmButton = { TextButton(onClick = onInstall) { Text("Install") } },
+        dismissButton = { TextButton(onClick = onLater) { Text("Later") } },
+    )
 }
 
 @Composable
