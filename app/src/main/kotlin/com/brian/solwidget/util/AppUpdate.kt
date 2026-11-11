@@ -13,6 +13,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.brian.solwidget.R
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -108,11 +109,7 @@ object AppUpdate {
     fun startInstall(activity: Activity, offer: ReleaseOffer) {
         if (installInFlight) return
         if (!activity.packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(
-                activity,
-                "Allow Wayward Sun to install updates, then tap Install again.",
-                Toast.LENGTH_LONG,
-            ).show()
+            Toast.makeText(activity, R.string.update_allow, Toast.LENGTH_LONG).show()
             try {
                 activity.startActivity(
                     Intent(
@@ -121,12 +118,12 @@ object AppUpdate {
                     ),
                 )
             } catch (_: Exception) {
-                Toast.makeText(activity, "The update did not install.", Toast.LENGTH_LONG).show()
+                Toast.makeText(activity, R.string.update_install_failed, Toast.LENGTH_LONG).show()
             }
             return
         }
         installInFlight = true
-        Toast.makeText(activity, "Downloading update…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(activity, R.string.update_downloading, Toast.LENGTH_SHORT).show()
         thread(name = "wayward-sun-update") {
             val file = try {
                 ReleaseLookup.downloadApk(offer.apkUrl, activity.applicationContext.cacheDir)
@@ -137,7 +134,7 @@ object AppUpdate {
                 installInFlight = false
                 if (activity.isFinishing || activity.isDestroyed) return@onMain
                 if (file == null || !downloadedApkCanUpgrade(activity, file) || !launchInstaller(activity, file)) {
-                    Toast.makeText(activity, "The update did not install.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, R.string.update_install_failed, Toast.LENGTH_LONG).show()
                 }
             }
         }

@@ -63,11 +63,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.brian.solwidget.R
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.DetroitCalendar
@@ -329,31 +331,25 @@ private fun UpdateDialog(
     onInstall: (ReleaseOffer) -> Unit,
 ) {
     if (notice == null) return
-    val dismissible = notice !is UpdateNotice.Checking
+    val message = when (notice) {
+        UpdateNotice.Checking -> stringResource(R.string.update_checking)
+        UpdateNotice.Current -> stringResource(R.string.update_current)
+        is UpdateNotice.Available -> stringResource(R.string.update_available, notice.offer.versionName)
+        UpdateNotice.Failed -> stringResource(R.string.update_failed)
+    }
     AlertDialog(
-        onDismissRequest = { if (dismissible) onDismiss() },
-        title = {
-            Text(
-                when (notice) {
-                    UpdateNotice.Checking -> "Checking for updates…"
-                    UpdateNotice.Current -> "This is the latest version."
-                    is UpdateNotice.Available -> "Version ${notice.offer.versionName} is available."
-                    UpdateNotice.Failed -> "Could not check for updates."
-                }
-            )
-        },
-        text = if (notice is UpdateNotice.Checking) ({ CircularProgressIndicator() }) else null,
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.check_for_updates)) },
+        text = { Text(message) },
         confirmButton = {
-            when (notice) {
-                is UpdateNotice.Available -> TextButton(onClick = { onInstall(notice.offer) }) { Text("Install") }
-                UpdateNotice.Checking -> Unit
-                else -> TextButton(onClick = onDismiss) { Text("OK") }
+            if (notice is UpdateNotice.Available) {
+                TextButton(onClick = { onInstall(notice.offer) }) {
+                    Text(stringResource(R.string.update_install))
+                }
             }
         },
-        dismissButton = if (notice is UpdateNotice.Available) {
-            { TextButton(onClick = onDismiss) { Text("Cancel") } }
-        } else {
-            null
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
     )
 }
@@ -367,9 +363,13 @@ private fun ReadyUpdateDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Version $versionName is ready") },
-        confirmButton = { TextButton(onClick = onInstall) { Text("Install") } },
-        dismissButton = { TextButton(onClick = onLater) { Text("Later") } },
+        text = { Text(stringResource(R.string.update_ready, versionName)) },
+        confirmButton = {
+            TextButton(onClick = onInstall) { Text(stringResource(R.string.update_install)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onLater) { Text(stringResource(R.string.update_later)) }
+        },
     )
 }
 
