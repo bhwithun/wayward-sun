@@ -113,11 +113,12 @@ describe("ecobee geometry", () => {
 
   it("puts temperature gridlines on a round step and skips 32", () => {
     const wide = temperatureGrid(-24, 86, true);
-    expect(wide.step).toBe(50);
-    expect(wide.ticks).toEqual([-50, 0, 50, 100]);
-    expect(wide.min).toBeLessThanOrEqual(-24);
-    expect(wide.max).toBeGreaterThanOrEqual(86);
+    expect(wide.step).toBe(25);
+    expect(wide.min).toBe(-25);
+    expect(wide.max).toBe(100);
     expect(wide.ticks.every((tick) => Math.abs(tick - 32) > 3)).toBe(true);
+    const covered = temperatureGrid(-16, 80, true);
+    expect(covered).toMatchObject({ step: 20, min: -20, max: 80 });
     const tight = temperatureGrid(68, 78, true);
     expect(tight.step).toBe(5);
     expect(tight.ticks).toContain(70);

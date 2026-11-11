@@ -60,7 +60,8 @@ private const val NIGHT_ALPHA = 0.3f
 private const val NIGHT_DASH_ON_DP = 9f
 private const val NIGHT_DASH_OFF_DP = 7f
 private const val BITMAP_PX_PER_DP = 2.75f
-private const val ECOBEE_FILL_ALPHA = 0.40f
+private const val TOO_WARM_ALPHA = 0.40f
+private const val TOO_COOL_ALPHA = 0.50f
 private const val FREEZE_F = 32.0
 
 private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP, RATES }
@@ -94,7 +95,8 @@ fun PowerChart(
         if (points.size < 2 && weather.size < 2 && !layers.rates && ecobee.size < 2) return@Canvas
 
         val units = axisUnits(layers, labelRates = true)
-        val left = if (units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
+        val showTempLabels = layers.degrees
+        val left = if (showTempLabels || units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
         val right = size.width - 12.dp.toPx()
         val dayBaseline = 16.dp.toPx()
         val tempBaseline = 38.dp.toPx()
@@ -150,7 +152,8 @@ fun PowerChart(
             if (layers.ecobee) ecobee.filter { !it.at.isAfter(now) } else emptyList(),
             from,
             to,
-            scaleToData = layers.ecobee
+            scaleToData = layers.ecobee,
+            pad = !layers.ecobee
         )
         val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
         val tempMin = tempGrid.min
@@ -187,7 +190,7 @@ fun PowerChart(
             }
         }
 
-        if (units == AxisUnits.TEMP) {
+        if (showTempLabels) {
             for (tick in tempGrid.ticks) {
                 val y = yOfTemp(tick)
                 drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
@@ -579,8 +582,9 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEcobeeFills(
                 path.lineTo(xOf(mark.at), yOfTemp(mark.setF ?: mark.indoorF))
             }
             path.close()
-            val color = if (segment.first().band == EcobeeBand.COOLING) SolColors.CoolGap else SolColors.HeatGap
-            drawPath(path, color.copy(alpha = ECOBEE_FILL_ALPHA))
+            val warm = segment.first().band == EcobeeBand.COOLING
+            val color = if (warm) SolColors.CoolGap else SolColors.HeatGap
+            drawPath(path, color.copy(alpha = if (warm) TOO_WARM_ALPHA else TOO_COOL_ALPHA))
         }
     }
 }
@@ -591,7 +595,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEcobeeLines(
     yOfTemp: (Double) -> Float
 ) {
     val edge = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    val hairline = Stroke(width = 1f, cap = StrokeCap.Butt)
+    val hairline = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Butt)
     for (run in runs) {
         for (segment in ecobeeFillSegments(run)) {
             val color = if (segment.first().band == EcobeeBand.COOLING) SolColors.CoolGap else SolColors.HeatGap
@@ -645,7 +649,8 @@ object ChartBitmapRenderer {
         canvas.drawColor(0x00152136)
 
         val units = axisUnits(layers, labelRates = false)
-        val left = if (units != AxisUnits.NONE) 52f else 8f
+        val showTempLabels = layers.degrees
+        val left = if (showTempLabels || units != AxisUnits.NONE) 52f else 8f
         val right = width - 8f
         val dayBaseline = 36f
         val tempBaseline = 84f
@@ -678,7 +683,8 @@ object ChartBitmapRenderer {
             if (layers.ecobee) ecobee.filter { !it.at.isAfter(now) } else emptyList(),
             from,
             to,
-            scaleToData = layers.ecobee
+            scaleToData = layers.ecobee,
+            pad = !layers.ecobee
         )
         val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
         val tempMin = tempGrid.min
@@ -721,7 +727,7 @@ object ChartBitmapRenderer {
             strokeWidth = 1.5f
             isAntiAlias = true
         }
-        if (units != AxisUnits.TEMP) {
+        if (!showTempLabels) {
             for (step in 0..2) {
                 val y = yOf(solarMax * step / 2.0)
                 canvas.drawLine(left, y, right, y, grid)
@@ -733,7 +739,7 @@ object ChartBitmapRenderer {
             textSize = 26f
             isAntiAlias = true
         }
-        if (units == AxisUnits.TEMP) {
+        if (showTempLabels) {
             for (tick in tempGrid.ticks) {
                 val y = yOfTemp(tick)
                 canvas.drawLine(left, y, right, y, grid)
@@ -1056,8 +1062,9 @@ object ChartBitmapRenderer {
                     path.lineTo(xOf(mark.at), yOfTemp(mark.setF ?: mark.indoorF))
                 }
                 path.close()
-                val rgb = if (segment.first().band == EcobeeBand.COOLING) 0x004DA3FF else 0x00FF9800
-                val alpha = (255f * ECOBEE_FILL_ALPHA).toInt().coerceIn(0, 255)
+                val warm = segment.first().band == EcobeeBand.COOLING
+                val rgb = if (warm) 0x004DA3FF else 0x00FF9800
+                val alpha = (255f * (if (warm) TOO_WARM_ALPHA else TOO_COOL_ALPHA)).toInt().coerceIn(0, 255)
                 paint.color = rgb or (alpha shl 24)
                 canvas.drawPath(path, paint)
             }
@@ -1081,7 +1088,7 @@ object ChartBitmapRenderer {
             style = Paint.Style.STROKE
             isAntiAlias = true
             color = SolColors.Setpoint.toArgb()
-            strokeWidth = 1f
+            strokeWidth = 1f * BITMAP_PX_PER_DP
             strokeCap = Paint.Cap.BUTT
         }
         for (run in runs) {

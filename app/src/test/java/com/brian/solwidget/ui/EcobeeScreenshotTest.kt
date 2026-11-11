@@ -124,30 +124,55 @@ class EcobeeScreenshotTest {
         val density = 420f / 160f
         val width = (384 * density).roundToInt()
         val height = (800 * density).roundToInt()
-        captureSized(width, height, "graph-ecobee-2.5.2.png") {
+        captureSized(width, height, "graph-ecobee-2.5.2b.png") {
             PhoneFrame(
                 fills(),
                 past,
                 future,
-                layers(temp = true, ecobee = true, solar = true),
+                ChartLayers(
+                    temperature = true,
+                    solcast = true,
+                    enphase = false,
+                    ecobee = true,
+                    precipitation = false,
+                    buy = false,
+                    sell = false
+                ),
+                drawerOpen = false
+            )
+        }
+        captureSized(width, height, "graph-ecobee-temp-2.5.2b.png") {
+            PhoneFrame(
+                fills(),
+                past,
+                future,
+                layers(temp = true, ecobee = true),
                 drawerOpen = false
             )
         }
         val from = now.minus(48, ChronoUnit.HOURS)
         val to = now.plus(72, ChronoUnit.HOURS)
         val chart = ChartBitmapRenderer.render(
-            points = emptyList(),
+            points = solar(from, now.plus(24, ChronoUnit.HOURS)),
             now = now,
             width = width,
             height = 640,
             rangeFrom = from,
             rangeTo = to,
             weather = outdoor(from, to),
-            layers = layers(temp = true, ecobee = true),
+            layers = ChartLayers(
+                temperature = true,
+                solcast = true,
+                enphase = false,
+                ecobee = true,
+                precipitation = false,
+                buy = false,
+                sell = false
+            ),
             ecobee = fills()
         )
         val widgetHeight = (280 * density).roundToInt()
-        captureSized(width, widgetHeight, "widget-2.5.2.png") {
+        captureSized(width, widgetHeight, "widget-2.5.2b.png") {
             Box(
                 Modifier
                     .fillMaxSize()

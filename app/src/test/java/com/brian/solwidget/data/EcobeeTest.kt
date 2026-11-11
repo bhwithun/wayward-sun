@@ -171,10 +171,14 @@ class EcobeeTest {
     @Test
     fun temperatureGridUsesRoundStepsAndSkipsFreezing() {
         val wide = temperatureGrid(-24.0, 86.0, snapEnds = true)
-        assertEquals(50.0, wide.step, 0.0)
-        assertTrue(wide.min <= -24.0 && wide.max >= 86.0)
-        assertEquals(listOf(-50.0, 0.0, 50.0, 100.0), wide.ticks)
+        assertEquals(25.0, wide.step, 0.0)
+        assertEquals(-25.0, wide.min, 0.0)
+        assertEquals(100.0, wide.max, 0.0)
         assertTrue(wide.ticks.none { abs(it - 32.0) <= 3.0 })
+        val covered = temperatureGrid(-16.0, 80.0, snapEnds = true)
+        assertEquals(20.0, covered.step, 0.0)
+        assertEquals(-20.0, covered.min, 0.0)
+        assertEquals(80.0, covered.max, 0.0)
         val near = temperatureGrid(20.0, 45.0, snapEnds = true)
         assertTrue(near.ticks.none { abs(it - 32.0) <= 3.0 })
         val tight = temperatureGrid(68.0, 78.0, snapEnds = true)

@@ -6,8 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,14 +43,14 @@ import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.ui.theme.SolColors
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChartLegend(
     layers: ChartLayers,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    FlowRow(
+    val groups = legendGroups(layers)
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 32.dp)
@@ -60,37 +58,46 @@ fun ChartLegend(
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = 4.dp, vertical = 4.dp)
             .semantics { contentDescription = "Chart legend. Opens layers." },
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        legendItems(layers).forEach { item ->
+        groups.forEach { group ->
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = when (item.mark) {
-                        LegendMark.HAIRLINE -> Modifier
-                            .size(width = 12.dp, height = 2.dp)
-                            .background(item.color)
-                        LegendMark.SQUARE -> Modifier
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(1.dp))
-                            .background(item.color)
-                        LegendMark.DOT -> Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(item.color)
-                    }
-                )
-                Text(
-                    text = item.name,
-                    color = SolColors.Ink,
-                    fontSize = 11.sp,
-                    maxLines = 1
-                )
+                group.forEach { item -> LegendChip(item) }
             }
         }
+    }
+}
+
+@Composable
+private fun LegendChip(item: LegendItem) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            modifier = when (item.mark) {
+                LegendMark.HAIRLINE -> Modifier
+                    .size(width = 12.dp, height = 2.dp)
+                    .background(item.color)
+                LegendMark.SQUARE -> Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(item.color)
+                LegendMark.DOT -> Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(item.color)
+            }
+        )
+        Text(
+            text = item.name,
+            color = SolColors.Ink,
+            fontSize = 11.sp,
+            maxLines = 1
+        )
     }
 }
 
@@ -201,18 +208,28 @@ private data class LegendItem(
     val mark: LegendMark = LegendMark.DOT
 )
 
-private fun legendItems(layers: ChartLayers): List<LegendItem> = buildList {
-    if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
-    if (layers.enphase) add(LegendItem("Enphase", SolColors.Live))
-    if (layers.temperature) add(LegendItem("Outdoor", SolColors.Temp))
-    if (layers.precipitation) add(LegendItem("Precip", SolColors.Precip.copy(alpha = 1f)))
-    if (layers.buy) add(LegendItem("Buy", SolColors.Buy))
-    if (layers.sell) add(LegendItem("Sell", SolColors.Sell))
-    if (layers.ecobee) {
-        add(LegendItem("Setpoint", SolColors.Setpoint, LegendMark.HAIRLINE))
-        add(LegendItem("Too warm", SolColors.CoolGap.copy(alpha = 0.40f), LegendMark.SQUARE))
-        add(LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.40f), LegendMark.SQUARE))
+private fun legendGroups(layers: ChartLayers): List<List<LegendItem>> = buildList {
+    val trace = buildList {
+        if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
+        if (layers.enphase) add(LegendItem("Enphase", SolColors.Live))
+        if (layers.temperature) add(LegendItem("Outdoor", SolColors.Temp))
     }
+    if (trace.isNotEmpty()) add(trace)
+    if (layers.ecobee) {
+        add(
+            listOf(
+                LegendItem("Setpoint", SolColors.Setpoint, LegendMark.HAIRLINE),
+                LegendItem("Too warm", SolColors.CoolGap.copy(alpha = 0.40f), LegendMark.SQUARE),
+                LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.50f), LegendMark.SQUARE)
+            )
+        )
+    }
+    val other = buildList {
+        if (layers.precipitation) add(LegendItem("Precip", SolColors.Precip.copy(alpha = 1f)))
+        if (layers.buy) add(LegendItem("Buy", SolColors.Buy))
+        if (layers.sell) add(LegendItem("Sell", SolColors.Sell))
+    }
+    if (other.isNotEmpty()) add(other)
 }
 
 @Composable

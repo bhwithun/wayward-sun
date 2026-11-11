@@ -85,7 +85,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   ctx.clearRect(0, 0, width, height);
 
   const units = axisUnits(props.layers);
-  const left = units === "none" ? 12 : 52;
+  const showTempLabels = props.layers.temp || props.layers.ecobee;
+  const left = showTempLabels || units !== "none" ? 52 : 12;
   const right = width - 12;
   const showPower = props.layers.solcast || props.layers.enphase;
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
@@ -106,7 +107,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     props.layers.ecobee ? ecobee : [],
     props.from,
     props.to,
-    props.layers.ecobee
+    props.layers.ecobee,
+    !props.layers.ecobee
   );
   const tempGrid = temperatureGrid(rawTemps.min, rawTemps.max, props.layers.ecobee);
   const tempRange = { min: tempGrid.min, max: tempGrid.max };
@@ -140,7 +142,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   ctx.lineWidth = 1;
   ctx.fillStyle = INK;
   ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
-  if (units === "temp") {
+  if (showTempLabels) {
     for (const tick of tempGrid.ticks) {
       const y = yTemp(tick);
       ctx.beginPath();
@@ -377,7 +379,7 @@ function drawEcobee(
           ctx.lineTo(xOf(mark.t), yOf(mark.setF ?? mark.indoorF));
         }
         ctx.closePath();
-        ctx.fillStyle = segment[0].band === "cooling" ? "rgba(77, 163, 255, 0.40)" : "rgba(255, 152, 0, 0.40)";
+        ctx.fillStyle = segment[0].band === "cooling" ? "rgba(77, 163, 255, 0.40)" : "rgba(255, 152, 0, 0.50)";
         ctx.fill();
       }
       continue;
@@ -399,7 +401,7 @@ function drawEcobee(
       ctx.stroke();
     }
     ctx.strokeStyle = SETPOINT;
-    ctx.lineWidth = 1 / dpr;
+    ctx.lineWidth = 1.5;
     ctx.lineCap = "butt";
     ctx.lineJoin = "miter";
     ctx.beginPath();
