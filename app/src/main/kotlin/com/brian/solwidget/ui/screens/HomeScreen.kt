@@ -2,6 +2,7 @@ package com.brian.solwidget.ui.screens
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -140,20 +142,31 @@ fun HomeScreen(
         viewModel.consumeToast()
     }
 
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen,
         scrimColor = Color.Black.copy(alpha = 0.46f),
         drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = SolColors.Panel) {
+            ModalDrawerSheet(
+                modifier = Modifier.width(280.dp),
+                drawerContainerColor = SolColors.Panel
+            ) {
                 LayerDrawerContent(
                     layers = state.layers,
                     versionName = versionName,
                     checkingUpdates = updateNotice is UpdateNotice.Checking,
                     onToggle = viewModel::setLayer,
                     onReset = viewModel::resetLayers,
-                    onWebApp = { IntentUtils.openUrl(context, "https://sun.brianandkathi.com") },
+                    onClose = { scope.launch { drawerState.close() } },
+                    onWebApp = {
+                        scope.launch { drawerState.close() }
+                        IntentUtils.openUrl(context, "https://sun.brianandkathi.com")
+                    },
                     onCheckUpdates = {
+                        scope.launch { drawerState.close() }
                         val generation = updateCheck + 1
                         updateCheck = generation
                         updateNotice = UpdateNotice.Checking

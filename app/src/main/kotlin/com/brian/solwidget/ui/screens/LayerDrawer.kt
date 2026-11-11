@@ -17,8 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -87,6 +91,7 @@ fun LayerDrawerContent(
     checkingUpdates: Boolean,
     onToggle: (ChartLayer, Boolean) -> Unit,
     onReset: () -> Unit,
+    onClose: () -> Unit,
     onWebApp: () -> Unit,
     onCheckUpdates: () -> Unit,
     onSettings: () -> Unit,
@@ -98,14 +103,32 @@ fun LayerDrawerContent(
             .verticalScroll(rememberScrollState())
             .padding(bottom = 24.dp)
     ) {
-        Text(
-            text = "LAYERS",
-            color = SolColors.Muted,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.sp,
-            modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 4.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "LAYERS",
+                color = SolColors.Muted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Close menu",
+                    tint = SolColors.Ink,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
         LayerSubhead("Solar")
         LayerSwitch("Solcast", SolColors.Forecast, layers.solcast) { onToggle(ChartLayer.SOLCAST, it) }
         LayerSwitch("Enphase", SolColors.Live, layers.enphase) { onToggle(ChartLayer.ENPHASE, it) }
