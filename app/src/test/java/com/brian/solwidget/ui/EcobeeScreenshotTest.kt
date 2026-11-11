@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.DrawerValue
@@ -28,6 +29,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
@@ -42,6 +44,14 @@ import com.brian.solwidget.ui.screens.ChartLegend
 import com.brian.solwidget.ui.screens.LayerDrawerContent
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.ui.theme.SolWidgetTheme
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -67,6 +77,44 @@ class EcobeeScreenshotTest {
     fun drawerOpen() {
         capture("drawer-open.png") {
             PhoneFrame(fills(), past, future, layers(temp = true, ecobee = true), drawerOpen = true)
+        }
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w384dp-h800dp-420dpi")
+    fun drawerClosesFromTheButton() {
+        val activity = Robolectric.buildActivity(ScreenshotActivity::class.java).setup().get()
+        val composeView = ComposeView(activity)
+        val density = 420f / 160f
+        val width = (384 * density).roundToInt()
+        val height = (800 * density).roundToInt()
+        activity.setContentView(composeView, FrameLayout.LayoutParams(width, height))
+        composeView.setContent {
+            PhoneFrame(fills(), past, future, layers(temp = true, ecobee = true), drawerOpen = true)
+        }
+        composeView.measure(
+            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+        )
+        composeView.layout(0, 0, width, height)
+        val looper = Shadows.shadowOf(Looper.getMainLooper())
+        looper.idle()
+        val open = draw(composeView, width, height, "drawer-open-2.5.1.png")
+        clickContentDescription(composeView, "Close menu")
+        repeat(45) {
+            looper.idle()
+            Robolectric.getForegroundThreadScheduler().advanceBy(16, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+        looper.idle()
+        val closed = draw(composeView, width, height, "drawer-closed-2.5.1.png")
+        val drawerX = (8 * density).roundToInt()
+        val scrimX = (340 * density).roundToInt()
+        val sampleY = (220 * density).roundToInt()
+        check(open.getPixel(drawerX, sampleY) != closed.getPixel(drawerX, sampleY)) {
+            "Closing the menu left the drawer in place."
+        }
+        check(open.getPixel(scrimX, sampleY) != open.getPixel(drawerX, sampleY)) {
+            "The open drawer covers the scrim."
         }
     }
 
@@ -188,22 +236,29 @@ class EcobeeScreenshotTest {
         drawerOpen: Boolean
     ) {
         val drawerState = rememberDrawerState(if (drawerOpen) DrawerValue.Open else DrawerValue.Closed)
+        val scope = rememberCoroutineScope()
+        val closeDrawer: () -> Unit = { scope.launch { drawerState.close() } }
         SolWidgetTheme {
+            BackHandler(enabled = drawerState.isOpen, onBack = closeDrawer)
             ModalNavigationDrawer(
                 drawerState = drawerState,
-                gesturesEnabled = false,
+                gesturesEnabled = drawerState.isOpen,
                 scrimColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.46f),
                 drawerContent = {
-                    ModalDrawerSheet(drawerContainerColor = SolColors.Panel) {
+                    ModalDrawerSheet(
+                        modifier = Modifier.width(280.dp),
+                        drawerContainerColor = SolColors.Panel
+                    ) {
                         LayerDrawerContent(
                             layers = layers,
-                            versionName = "2.5.0",
+                            versionName = "2.5.1",
                             checkingUpdates = false,
                             onToggle = { _, _ -> },
                             onReset = {},
-                            onWebApp = {},
-                            onCheckUpdates = {},
-                            onSettings = {}
+                            onClose = closeDrawer,
+                            onWebApp = closeDrawer,
+                            onCheckUpdates = closeDrawer,
+                            onSettings = closeDrawer
                         )
                     }
                 }
@@ -263,10 +318,31 @@ class EcobeeScreenshotTest {
         )
         composeView.layout(0, 0, 1080, 2400)
         Shadows.shadowOf(Looper.getMainLooper()).idle()
-        val bitmap = Bitmap.createBitmap(1080, 2400, Bitmap.Config.ARGB_8888)
+        draw(composeView, 1080, 2400, name)
+    }
+
+    private fun draw(composeView: ComposeView, width: Int, height: Int, name: String): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         composeView.draw(android.graphics.Canvas(bitmap))
         val dir = File("/opt/cursor/artifacts").apply { mkdirs() }
         File(dir, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return bitmap
+    }
+
+    private fun clickContentDescription(composeView: ComposeView, description: String) {
+        val root = (composeView.getChildAt(0) as ViewRootForTest).semanticsOwner.rootSemanticsNode
+        val node = findNode(root, description) ?: error("Missing $description")
+        val action = node.config.getOrNull(SemanticsActions.OnClick) ?: error("No click on $description")
+        check(action.action?.invoke() == true)
+    }
+
+    private fun findNode(node: SemanticsNode, description: String): SemanticsNode? {
+        val labels = node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+        if (description in labels) return node
+        node.children.forEach { child ->
+            findNode(child, description)?.let { return it }
+        }
+        return null
     }
 
     /** Heating, a deadband, then cooling. The last sample is the one at now. */
