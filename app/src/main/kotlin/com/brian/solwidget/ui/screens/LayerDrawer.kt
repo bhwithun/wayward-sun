@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -65,7 +66,7 @@ fun ChartLegend(
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .clip(CircleShape)
+                        .clip(if (item.square) RoundedCornerShape(1.dp) else CircleShape)
                         .background(item.color)
                 )
                 Text(
@@ -154,7 +155,7 @@ fun LayerDrawerContent(
     }
 }
 
-private data class LegendItem(val name: String, val color: Color)
+private data class LegendItem(val name: String, val color: Color, val square: Boolean = false)
 
 private fun legendItems(layers: ChartLayers): List<LegendItem> = buildList {
     if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
@@ -165,8 +166,8 @@ private fun legendItems(layers: ChartLayers): List<LegendItem> = buildList {
     if (layers.sell) add(LegendItem("Sell", SolColors.Sell))
     if (layers.ecobee) {
         add(LegendItem("Indoor", SolColors.Indoor))
-        add(LegendItem("Cooling gap", SolColors.CoolGap))
-        add(LegendItem("Heating gap", SolColors.HeatGap))
+        add(LegendItem("Cooling gap", SolColors.CoolGap.copy(alpha = 0.40f), square = true))
+        add(LegendItem("Heating gap", SolColors.HeatGap.copy(alpha = 0.40f), square = true))
     }
 }
 

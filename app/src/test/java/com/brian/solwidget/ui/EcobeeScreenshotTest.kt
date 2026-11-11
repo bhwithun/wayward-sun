@@ -60,35 +60,29 @@ import org.robolectric.annotation.GraphicsMode
 class EcobeeScreenshotTest {
     private val zone: ZoneId = ZoneId.of("America/Detroit")
     private val now: Instant = Instant.parse("2026-11-11T17:00:00Z")
+    private val past: Instant = now.minus(18, ChronoUnit.HOURS)
+    private val future: Instant = now.plus(6, ChronoUnit.HOURS)
 
     @Test
     fun drawerOpen() {
-        val from = now.minus(18, ChronoUnit.HOURS)
-        val to = now.plus(6, ChronoUnit.HOURS)
         capture("drawer-open.png") {
-            PhoneFrame(fills(), from, to, layers(temp = true, ecobee = true), drawerOpen = true)
+            PhoneFrame(fills(), past, future, layers(temp = true, ecobee = true), drawerOpen = true)
         }
     }
 
     @Test
     fun coolingAndHeatingFills() {
-        val from = now.minus(18, ChronoUnit.HOURS)
-        val to = now.plus(6, ChronoUnit.HOURS)
-        saveChart("ecobee-temp-fills.png", fills(), from, to, layers(temp = true, ecobee = true))
+        saveChart("ecobee-temp-fills.png", fills(), past, future, layers(temp = true, ecobee = true))
     }
 
     @Test
     fun deadbandStretch() {
-        val from = now.minus(12, ChronoUnit.HOURS)
-        val to = now.plus(12, ChronoUnit.HOURS)
-        saveChart("ecobee-deadband.png", deadband(), from, to, layers(temp = true, ecobee = true))
+        saveChart("ecobee-deadband.png", deadband(), past, future, layers(temp = true, ecobee = true))
     }
 
     @Test
     fun dataGap() {
-        val from = now.minus(16, ChronoUnit.HOURS)
-        val to = now.plus(4, ChronoUnit.HOURS)
-        saveChart("ecobee-gap.png", gap(), from, to, layers(temp = false, ecobee = true))
+        saveChart("ecobee-gap.png", gap(), past, future, layers(temp = false, ecobee = true))
     }
 
     @Test
@@ -122,6 +116,51 @@ class EcobeeScreenshotTest {
                     Image(
                         bitmap = chart.asImageBitmap(),
                         contentDescription = "Widget chart with Ecobee",
+                        modifier = Modifier.fillMaxWidth().height(180.dp)
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun widgetPrecipBuySell() {
+        val from = now.minus(48, ChronoUnit.HOURS)
+        val to = now.plus(72, ChronoUnit.HOURS)
+        val chart = ChartBitmapRenderer.render(
+            points = emptyList(),
+            now = now,
+            width = 1080,
+            height = 520,
+            rangeFrom = from,
+            rangeTo = to,
+            weather = outdoor(from, to, precip = true),
+            layers = ChartLayers(
+                temperature = false,
+                buy = true,
+                sell = true,
+                precipitation = true,
+                solcast = false,
+                enphase = false,
+                ecobee = false
+            )
+        )
+        capture("widget-precip-buy-sell.png") {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(SolColors.Navy)
+                    .padding(24.dp)
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(SolColors.Panel)
+                        .padding(14.dp)
+                ) {
+                    Image(
+                        bitmap = chart.asImageBitmap(),
+                        contentDescription = "Widget chart with precipitation, buy, and sell",
                         modifier = Modifier.fillMaxWidth().height(180.dp)
                     )
                 }
@@ -230,36 +269,34 @@ class EcobeeScreenshotTest {
         File(dir, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    /** Heating overnight, a deadband afternoon, then cooling. Outdoor swings through the same day. */
+    /** Heating, a deadband, then cooling. The last sample is the one at now. */
     private fun fills(): List<EcobeeSample> {
-        val start = now.minus(36, ChronoUnit.HOURS)
-        return samples(start, hours = 40) { hour ->
+        return samples(past, hours = 18) { hour ->
             when {
-                hour < 10 || (hour in 24.0..34.0) -> 64.0 to (68.0 to 75.0)
-                hour < 16 || hour >= 34.0 -> 71.0 to (68.0 to 75.0)
+                hour < 6 -> 64.0 to (68.0 to 75.0)
+                hour < 12 -> 71.0 to (68.0 to 75.0)
                 else -> 78.0 to (68.0 to 74.0)
             }
-        }
+        }.filter { !it.at.isAfter(now) }
     }
 
-    /** A long stretch inside the setpoints, with cooling on either side so the empty band is visible. */
+    /** Cooling, a long deadband, then heating, all ending at now. */
     private fun deadband(): List<EcobeeSample> {
-        val start = now.minus(20, ChronoUnit.HOURS)
-        return samples(start, hours = 28) { hour ->
+        return samples(past, hours = 18) { hour ->
             when {
-                hour < 4 -> 78.0 to (68.0 to 74.0)
-                hour < 24 -> 71.0 to (68.0 to 75.0)
+                hour < 2 -> 78.0 to (68.0 to 74.0)
+                hour < 14 -> 71.0 to (68.0 to 75.0)
                 else -> 63.0 to (68.0 to 75.0)
             }
-        }
+        }.filter { !it.at.isAfter(now) }
     }
 
-    /** Two stretches with a three-hour hole between them. */
+    /** Two stretches with a three-hour hole between them, both before now. */
     private fun gap(): List<EcobeeSample> {
         val start = now.minus(16, ChronoUnit.HOURS)
         val first = samples(start, hours = 6) { _ -> 78.0 to (68.0 to 74.0) }
         val second = samples(start.plus(9, ChronoUnit.HOURS), hours = 6) { _ -> 63.0 to (68.0 to 74.0) }
-        return first + second
+        return (first + second).filter { !it.at.isAfter(now) }
     }
 
     private fun samples(
@@ -267,7 +304,7 @@ class EcobeeScreenshotTest {
         hours: Int,
         value: (Double) -> Pair<Double, Pair<Double, Double>>
     ): List<EcobeeSample> {
-        val count = hours * 12
+        val count = hours * 12 + 1
         return List(count) { index ->
             val at = start.plusSeconds(index * 5L * 60L)
             val hour = index / 12.0
@@ -276,13 +313,14 @@ class EcobeeScreenshotTest {
         }
     }
 
-    private fun outdoor(from: Instant, to: Instant): List<WeatherPoint> {
+    private fun outdoor(from: Instant, to: Instant, precip: Boolean = false): List<WeatherPoint> {
         val hours = ChronoUnit.HOURS.between(from, to).toInt().coerceAtLeast(1)
         return List(hours + 1) { index ->
             val time = from.plus(index.toLong(), ChronoUnit.HOURS)
             val localHour = time.atZone(zone).hour
-            val temp = 42.0 + 28.0 * kotlin.math.sin((localHour - 9) / 24.0 * Math.PI * 2)
-            WeatherPoint(time, temp, popPercent = null)
+            val temp = 20.0 + 36.0 * kotlin.math.sin((localHour - 9) / 24.0 * Math.PI * 2)
+            val pop = if (!precip) null else if (localHour in 13..20) 55.0 else 8.0
+            WeatherPoint(time, temp, popPercent = pop)
         }
     }
 

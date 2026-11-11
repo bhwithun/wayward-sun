@@ -77,15 +77,22 @@ fun prepareEcobee(
     from: Instant,
     to: Instant,
     plotWidthPx: Int,
-    gap: Duration = ECOBEE_GAP
+    gap: Duration = ECOBEE_GAP,
+    now: Instant? = null
 ): List<List<EcobeeMark>> {
-    if (plotWidthPx < 1 || !to.isAfter(from)) return emptyList()
+    val end = if (now != null && now.isBefore(to)) now else to
+    if (plotWidthPx < 1 || !end.isAfter(from)) return emptyList()
     val window = samples.asSequence()
-        .filter { it.indoorF.isFinite() && !it.at.isBefore(from) && it.at.isBefore(to) }
+        .filter { sample ->
+            sample.indoorF.isFinite() &&
+                !sample.at.isBefore(from) &&
+                sample.at.isBefore(to) &&
+                (now == null || !sample.at.isAfter(now))
+        }
         .sortedBy { it.at }
         .toList()
     if (window.isEmpty()) return emptyList()
-    val span = to.toEpochMilli() - from.toEpochMilli()
+    val span = end.toEpochMilli() - from.toEpochMilli()
     val runs = ArrayList<List<EcobeeSample>>()
     val current = ArrayList<EcobeeSample>()
     for (sample in window) {

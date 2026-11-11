@@ -107,6 +107,14 @@ describe("ecobee geometry", () => {
     expect(mark.indoorF).toBe(80);
   });
 
+  it("stops the layer at now", () => {
+    const samples = [sample(t0, 75, 74, 68), sample(t0 + 300_000, 76, 74, 68), sample(t0 + 900_000, 80, 74, 68)];
+    const now = t0 + 300_000;
+    const run = prepareEcobee(samples, t0, t0 + 3_600_000, 80, ECOBEE_GAP_MS, now)[0];
+    expect(run.map((mark) => mark.t)).toEqual([t0, now]);
+    expect(run.every((mark) => mark.t <= now)).toBe(true);
+  });
+
   it("scales the shared axis to outdoor and indoor together", () => {
     const range = sharedFahrenheitRange([10, 40], [sample(t0 + 60_000, 72, 74, 68)], t0, t0 + 3_600_000, true);
     expect(range.min).toBeLessThan(10);

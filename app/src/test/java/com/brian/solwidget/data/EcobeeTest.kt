@@ -159,6 +159,19 @@ class EcobeeTest {
     }
 
     @Test
+    fun samplesAfterNowAreNotDrawn() {
+        val samples = listOf(
+            sample(t0, 75.0, 74.0, 68.0),
+            sample(t0.plusSeconds(300), 76.0, 74.0, 68.0),
+            sample(t0.plusSeconds(900), 80.0, 74.0, 68.0)
+        )
+        val now = t0.plusSeconds(300)
+        val run = prepareEcobee(samples, t0, t0.plusSeconds(3600), plotWidthPx = 80, now = now).single()
+        assertEquals(listOf(t0, t0.plusSeconds(300)), run.map { it.at })
+        assertTrue(run.all { !it.at.isAfter(now) })
+    }
+
+    @Test
     fun samplesOutsideTheWindowAreDropped() {
         val samples = listOf(
             sample(t0.minusSeconds(1), 80.0, 74.0, 68.0),

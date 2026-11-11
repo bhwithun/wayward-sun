@@ -12,16 +12,14 @@ import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSp
 
 const LIVE = "#2EE6A6";
 const FORECAST = "#F5C542";
-const NOW = "#FF8A4C";
+const NOW = "rgba(255, 255, 255, 0.60)";
 const GRID = "rgba(74, 98, 136, 0.45)";
 const INK = "#E8EEF7";
 const PRECIP = "rgba(77, 208, 200, 0.40)";
 const BUY = { r: 229, g: 127, b: 216 };
 const SELL = { r: 123, g: 216, b: 143 };
-const TEMP = "#FFB74D";
+const TEMP = "#FF9800";
 const INDOOR = "#E6E1F0";
-const FREEZE = "#64B5F6";
-const HOT = "#FF8A4C";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;
@@ -87,7 +85,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const left = units === "none" ? 12 : 52;
   const right = width - 12;
   const showPower = props.layers.solcast || props.layers.enphase;
-  const ecobee = props.ecobee ?? [];
+  const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
   const showDegrees = props.layers.temp || props.layers.ecobee;
   const top = showDegrees ? 28 : 16;
   const bottom = height - (showPower ? 36 : 28);
@@ -146,17 +144,22 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   }
   if (units === "solar") {
     ctx.fillText("8 kW", 6, top + 12);
+    ctx.fillText("4 kW", 6, ySolar(4) + 4);
     ctx.fillText("0 kW", 6, bottom);
   } else if (units === "temp") {
+    const mid = (tempRange.min + tempRange.max) / 2;
     if (props.layers.ecobee) {
       ctx.fillText(`${Math.round(tempRange.max)}°F`, 4, top + 12);
+      ctx.fillText(`${Math.round(mid)}°F`, 4, yTemp(mid) + 4);
       ctx.fillText(`${Math.round(tempRange.min)}°F`, 4, bottom);
     } else {
       ctx.fillText("100°F", 4, top + 12);
+      ctx.fillText("40°F", 4, yTemp(40) + 4);
       ctx.fillText("-20°F", 4, bottom);
     }
   } else if (units === "precip") {
     ctx.fillText("100%", 6, top + 12);
+    ctx.fillText("50%", 6, yPop(50) + 4);
     ctx.fillText("0%", 6, bottom);
   } else if (units === "rates") {
     for (let cents = 0; cents <= RATE_MAX; cents += 10) {
@@ -165,7 +168,10 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     }
   }
 
-  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, props.to, plotW, xOf, yTemp, "fill");
+  if (showDegrees) drawFreezeReference(ctx, yTemp, left, right, tempRange.min, tempRange.max);
+
+  const ecobeeEnd = Math.min(props.to, props.now);
+  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "fill", props.now);
 
   if (props.layers.solcast) {
     const gold = forecastStrokes(props.points, props.now);
@@ -179,7 +185,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   if (props.layers.temp && props.weather.length >= 2) {
     strokeTemp(ctx, props.weather, xOf, yTemp, props.sun);
   }
-  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, props.to, plotW, xOf, yTemp, "line");
+  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "line", props.now);
 
   if (props.now >= props.from && props.now < props.to) {
     const nowX = xOf(props.now);
@@ -260,6 +266,32 @@ function fillSteps(
   ctx.restore();
 }
 
+function drawFreezeReference(
+  ctx: CanvasRenderingContext2D,
+  yOf: (temp: number) => number,
+  left: number,
+  right: number,
+  tempMin: number,
+  tempMax: number
+) {
+  if (!(tempMin < 32 && tempMax > 32)) return;
+  const y = yOf(32);
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath();
+  ctx.moveTo(left, y);
+  ctx.lineTo(right, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText("32°", right - 2, y - 4);
+  ctx.restore();
+}
+
 function strokeTemp(
   ctx: CanvasRenderingContext2D,
   weather: WeatherMark[],
@@ -267,15 +299,14 @@ function strokeTemp(
   yOf: (temp: number) => number,
   sun: SunSpan[]
 ) {
-  type Seg = { pts: WeatherMark[]; night: boolean; glow: string | null };
+  type Seg = { pts: WeatherMark[]; night: boolean };
   const segments: Seg[] = [];
   for (const mark of weather) {
     const night = isNight(mark.t, sun);
-    const glow = mark.tempF < 32 ? FREEZE : mark.tempF > 90 ? HOT : null;
     const last = segments[segments.length - 1];
-    if (!last || last.night !== night || last.glow !== glow) {
+    if (!last || last.night !== night) {
       const seed = last ? [last.pts[last.pts.length - 1], mark] : [mark];
-      segments.push({ pts: seed, night, glow });
+      segments.push({ pts: seed, night });
     } else {
       last.pts.push(mark);
     }
@@ -287,14 +318,6 @@ function strokeTemp(
     ctx.lineCap = "round";
     ctx.setLineDash(segment.night ? [9, 7] : []);
     ctx.globalAlpha = segment.night ? 0.3 : 1;
-    if (segment.glow) {
-      ctx.strokeStyle = segment.glow;
-      ctx.lineWidth = 7;
-      ctx.shadowColor = segment.glow;
-      ctx.shadowBlur = 8;
-      trace(ctx, segment.pts, xOf, yOf);
-      ctx.shadowBlur = 0;
-    }
     ctx.strokeStyle = TEMP;
     ctx.lineWidth = 1.6;
     trace(ctx, segment.pts, xOf, yOf);
@@ -326,9 +349,10 @@ function drawEcobee(
   plotW: number,
   xOf: (t: number) => number,
   yOf: (temp: number) => number,
-  phase: "fill" | "line"
+  phase: "fill" | "line",
+  now?: number
 ) {
-  const runs = prepareEcobee(samples, from, to, Math.max(1, Math.round(plotW)));
+  const runs = prepareEcobee(samples, from, to, Math.max(1, Math.round(plotW)), undefined, now);
   for (const run of runs) {
     if (phase === "fill") {
       for (const segment of ecobeeFillSegments(run)) {
@@ -344,7 +368,7 @@ function drawEcobee(
           ctx.lineTo(xOf(mark.t), yOf(mark.setF ?? mark.indoorF));
         }
         ctx.closePath();
-        ctx.fillStyle = segment[0].band === "cooling" ? "rgba(77, 163, 255, 0.32)" : "rgba(255, 106, 92, 0.32)";
+        ctx.fillStyle = segment[0].band === "cooling" ? "rgba(77, 163, 255, 0.40)" : "rgba(255, 106, 92, 0.40)";
         ctx.fill();
       }
       continue;

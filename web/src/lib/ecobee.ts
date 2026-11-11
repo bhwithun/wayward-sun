@@ -63,14 +63,22 @@ export function prepareEcobee(
   from: number,
   to: number,
   plotWidthPx: number,
-  gapMs = ECOBEE_GAP_MS
+  gapMs = ECOBEE_GAP_MS,
+  now?: number
 ): EcobeeMark[][] {
-  if (plotWidthPx < 1 || to <= from) return [];
+  const end = now != null && now < to ? now : to;
+  if (plotWidthPx < 1 || end <= from) return [];
   const window = samples
-    .filter((sample) => Number.isFinite(sample.indoorF) && sample.t >= from && sample.t < to)
+    .filter(
+      (sample) =>
+        Number.isFinite(sample.indoorF) &&
+        sample.t >= from &&
+        sample.t < to &&
+        (now == null || sample.t <= now)
+    )
     .sort((a, b) => a.t - b.t);
   if (window.length === 0) return [];
-  const span = to - from;
+  const span = end - from;
   const runs: EcobeeSample[][] = [];
   let current: EcobeeSample[] = [];
   for (const sample of window) {

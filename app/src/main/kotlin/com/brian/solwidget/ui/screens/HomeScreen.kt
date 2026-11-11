@@ -688,8 +688,7 @@ private fun LayerMetaPanel(
                 LegendKeys(
                     type,
                     "– Outdoor °F" to SolColors.Temp,
-                    "– Glow below freeze" to SolColors.TempFreeze,
-                    "– Glow above 90°F" to SolColors.TempHot
+                    "·· 32°F" to Color.White.copy(alpha = 0.25f)
                 )
             }
         }
