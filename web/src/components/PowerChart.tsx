@@ -19,8 +19,8 @@ const INK = "#E8EEF7";
 const PRECIP = "rgba(77, 208, 200, 0.40)";
 const BUY = { r: 229, g: 127, b: 216 };
 const SELL = { r: 123, g: 216, b: 143 };
-const TEMP = "#FF9800";
-const INDOOR = "#E6E1F0";
+const TEMP = "#E6E1F0";
+const INDOOR = "#FF9800";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;

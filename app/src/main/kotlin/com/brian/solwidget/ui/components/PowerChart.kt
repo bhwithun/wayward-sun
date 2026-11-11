@@ -453,7 +453,7 @@ private fun coreTempColor(night: Boolean): Color =
 
 private fun coreTempArgb(night: Boolean): Int {
     val a = if (night) (0xFF * NIGHT_ALPHA).toInt().coerceIn(0, 0xFF) else 0xFF
-    return 0x00FF9800 or (a shl 24)
+    return (SolColors.Temp.toArgb() and 0x00FFFFFF) or (a shl 24)
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFreezeReference(
@@ -613,7 +613,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEcobeeLines(
                 val y = yOfTemp(mark.setF ?: mark.indoorF)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, SolColors.Indoor.copy(alpha = 0.5f), style = setpoint)
+            drawPath(path, Color(0x80E6E1F0), style = setpoint)
         }
     }
 }
@@ -1067,7 +1067,7 @@ object ChartBitmapRenderer {
         val indoor = Paint().apply {
             style = Paint.Style.STROKE
             isAntiAlias = true
-            color = 0xFFE6E1F0.toInt()
+            color = SolColors.Indoor.toArgb()
             strokeWidth = 2f * BITMAP_PX_PER_DP
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND

@@ -119,6 +119,52 @@ class EcobeeScreenshotTest {
     }
 
     @Test
+    @Config(sdk = [33], qualifiers = "w384dp-h800dp-420dpi")
+    fun indoorAndOutdoorAtPhoneWidth() {
+        val density = 420f / 160f
+        val width = (384 * density).roundToInt()
+        val height = (800 * density).roundToInt()
+        captureSized(width, height, "graph-ecobee-temp-2.5.2.png") {
+            PhoneFrame(fills(), past, future, layers(temp = true, ecobee = true), drawerOpen = false)
+        }
+        val from = now.minus(48, ChronoUnit.HOURS)
+        val to = now.plus(72, ChronoUnit.HOURS)
+        val chart = ChartBitmapRenderer.render(
+            points = emptyList(),
+            now = now,
+            width = width,
+            height = 640,
+            rangeFrom = from,
+            rangeTo = to,
+            weather = outdoor(from, to),
+            layers = layers(temp = true, ecobee = true),
+            ecobee = fills()
+        )
+        val widgetHeight = (280 * density).roundToInt()
+        captureSized(width, widgetHeight, "widget-2.5.2.png") {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(SolColors.Navy)
+                    .padding(12.dp)
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(SolColors.Panel)
+                        .padding(10.dp)
+                ) {
+                    Image(
+                        bitmap = chart.asImageBitmap(),
+                        contentDescription = "Widget chart with indoor and outdoor",
+                        modifier = Modifier.fillMaxWidth().height(220.dp)
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
     fun coolingAndHeatingFills() {
         saveChart("ecobee-temp-fills.png", fills(), past, future, layers(temp = true, ecobee = true))
     }
@@ -251,7 +297,7 @@ class EcobeeScreenshotTest {
                     ) {
                         LayerDrawerContent(
                             layers = layers,
-                            versionName = "2.5.1",
+                            versionName = "2.5.2",
                             checkingUpdates = false,
                             onToggle = { _, _ -> },
                             onReset = {},
@@ -308,17 +354,21 @@ class EcobeeScreenshotTest {
     }
 
     private fun capture(name: String, content: @Composable () -> Unit) {
+        captureSized(1080, 2400, name, content)
+    }
+
+    private fun captureSized(width: Int, height: Int, name: String, content: @Composable () -> Unit) {
         val activity = Robolectric.buildActivity(ScreenshotActivity::class.java).setup().get()
         val composeView = ComposeView(activity)
-        activity.setContentView(composeView, FrameLayout.LayoutParams(1080, 2400))
+        activity.setContentView(composeView, FrameLayout.LayoutParams(width, height))
         composeView.setContent { content() }
         composeView.measure(
-            MeasureSpec.makeMeasureSpec(1080, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(2400, MeasureSpec.EXACTLY)
+            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
         )
-        composeView.layout(0, 0, 1080, 2400)
+        composeView.layout(0, 0, width, height)
         Shadows.shadowOf(Looper.getMainLooper()).idle()
-        draw(composeView, 1080, 2400, name)
+        draw(composeView, width, height, name)
     }
 
     private fun draw(composeView: ComposeView, width: Int, height: Int, name: String): Bitmap {

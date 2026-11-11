@@ -225,11 +225,11 @@ export function Dashboard() {
           <span style={{ color: "#F5C542" }}>● Solcast</span>
           <span style={{ color: "#2EE6A6" }}>● Enphase</span>
           <span style={{ color: "rgba(255,255,255,0.60)" }}>● Now</span>
-          {layers.temp && <span style={{ color: "#FF9800" }}>● Outdoor</span>}
+          {layers.temp && <span style={{ color: "#E6E1F0" }}>● Outdoor</span>}
           {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
           {layers.buy && <span style={{ color: "#E57FD8" }}>▮ Buy</span>}
           {layers.sell && <span style={{ color: "#7BD88F" }}>▮ Sell</span>}
-          {layers.ecobee && <span style={{ color: "#E6E1F0" }}>● Indoor</span>}
+          {layers.ecobee && <span style={{ color: "#FF9800" }}>● Indoor</span>}
           {layers.ecobee && (
             <span>
               <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Cooling gap
