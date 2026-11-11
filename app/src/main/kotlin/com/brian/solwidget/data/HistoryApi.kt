@@ -52,7 +52,27 @@ class HistoryApi {
                 }
             }
         }
-        return HistoryPage(from = from, to = to, points = points, sun = sun)
+        val ecobeeJson = root.optJSONArray("ecobee")
+        val ecobee = buildList {
+            if (ecobeeJson != null) {
+                for (index in 0 until ecobeeJson.length()) {
+                    val row = ecobeeJson.optJSONObject(index) ?: continue
+                    val at = row.optString("t").takeIf { it.isNotBlank() }
+                        ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                        ?: continue
+                    val indoor = row.optionalDouble("indoorF") ?: continue
+                    add(
+                        EcobeeSample(
+                            at = at,
+                            indoorF = indoor,
+                            coolSetF = row.optionalDouble("coolF"),
+                            heatSetF = row.optionalDouble("heatF")
+                        )
+                    )
+                }
+            }
+        }
+        return HistoryPage(from = from, to = to, points = points, sun = sun, ecobee = ecobee)
     }
 
     private fun get(url: String): String {

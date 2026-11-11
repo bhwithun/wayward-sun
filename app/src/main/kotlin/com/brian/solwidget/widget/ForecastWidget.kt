@@ -38,6 +38,7 @@ import androidx.glance.unit.ColorProvider
 import com.brian.solwidget.MainActivity
 import com.brian.solwidget.data.AppStorage
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.ForecastRepository
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.LivePastRepository
@@ -64,7 +65,8 @@ class ForecastWidget : GlanceAppWidget() {
         val (from, to) = widgetChartRange(now)
         val weatherPoints = weather.inRange(from, to)
         val past = LivePastRepository(context).forChart(now, zone)
-        val chartPoints = liveSolarPoints(past, snapshot.points, from, to, now)
+        val chartPoints = liveSolarPoints(past?.points, snapshot.points, from, to, now)
+        val ecobee = past?.ecobee.orEmpty()
         val openApp = actionStartActivity(
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -76,13 +78,14 @@ class ForecastWidget : GlanceAppWidget() {
                 WidgetContent(
                     snapshot = snapshot,
                     chartPoints = chartPoints,
-                    chartDemo = snapshot.isDemo && past.isNullOrEmpty(),
+                    chartDemo = snapshot.isDemo && past?.points.isNullOrEmpty(),
                     rangeFrom = from,
                     rangeTo = to,
                     now = now,
                     weather = weatherPoints,
                     sunDays = weather.sunDays,
                     layers = glanceLayers,
+                    ecobee = ecobee,
                     openApp = openApp
                 )
             }
@@ -101,6 +104,7 @@ private fun WidgetContent(
     weather: List<WeatherPoint>,
     sunDays: List<SunTimes>,
     layers: ChartLayers,
+    ecobee: List<EcobeeSample>,
     openApp: Action
 ) {
     val size = LocalSize.current
@@ -119,7 +123,8 @@ private fun WidgetContent(
         weather = weather,
         layers = layers,
         sunDays = sunDays,
-        isDemo = chartDemo
+        isDemo = chartDemo,
+        ecobee = ecobee
     )
 
     val muted = ColorProvider(Color(0xFF9AA8BF))

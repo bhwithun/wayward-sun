@@ -7,6 +7,7 @@ import com.brian.solwidget.data.AppStorage
 import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DetroitCalendar
+import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.ForecastRepository
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryApi
@@ -54,6 +55,7 @@ data class HomeUiState(
     val historyLoading: Boolean = false,
     val historyError: String? = null,
     val livePast: List<PowerPoint>? = null,
+    val liveEcobee: List<EcobeeSample> = emptyList(),
     val livePastKey: String? = null
 )
 
@@ -144,7 +146,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val result = livePastRepository.fetch(now, zone)
         if (generation != liveGeneration) return false
         result.onSuccess { past ->
-            _uiState.update { it.copy(livePast = past, livePastKey = key) }
+            _uiState.update { it.copy(livePast = past.points, liveEcobee = past.ecobee, livePastKey = key) }
         }
         return result.isSuccess
     }
@@ -238,6 +240,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             storage.setChartLayer(layer, visible)
             _uiState.update { it.copy(layers = it.layers.with(layer, visible)) }
+            WidgetUpdater.updateAll(getApplication())
+        }
+    }
+
+    fun resetLayers() {
+        viewModelScope.launch {
+            ChartLayer.entries.forEach { storage.setChartLayer(it, true) }
+            _uiState.update { it.copy(layers = ChartLayers()) }
             WidgetUpdater.updateAll(getApplication())
         }
     }

@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -25,12 +26,20 @@ import androidx.compose.ui.unit.dp
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DayTempRange
 import com.brian.solwidget.data.DteTou
+import com.brian.solwidget.data.EcobeeBand
+import com.brian.solwidget.data.EcobeeMark
+import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
+import com.brian.solwidget.data.ecobeeFillSegments
 import com.brian.solwidget.data.forecastStrokes
+import com.brian.solwidget.data.formatTempBound
+import com.brian.solwidget.data.prepareEcobee
+import com.brian.solwidget.data.sharedFahrenheitRange
+import com.brian.solwidget.data.temperatureGrid
 import com.brian.solwidget.data.dayTempRanges
 import com.brian.solwidget.data.isNight
 import com.brian.solwidget.data.liveStroke
@@ -41,6 +50,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 import kotlin.math.max
 
 private val DayLabel = DateTimeFormatter.ofPattern("EEE d")
@@ -49,18 +59,16 @@ private const val TEMP_STROKE_DP = 1.6f
 private const val NIGHT_ALPHA = 0.3f
 private const val NIGHT_DASH_ON_DP = 9f
 private const val NIGHT_DASH_OFF_DP = 7f
-private const val GLOW_INNER_DP = 5f
-private const val GLOW_OUTER_DP = 9f
-private const val GLOW_INNER_ALPHA = 0.5f
-private const val GLOW_OUTER_ALPHA = 0.2f
 private const val BITMAP_PX_PER_DP = 2.75f
+private const val ECOBEE_FILL_ALPHA = 0.40f
+private const val FREEZE_F = 32.0
 
 private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP, RATES }
 
 private fun axisUnits(layers: ChartLayers, labelRates: Boolean): AxisUnits {
     val labeled = buildList {
         if (layers.power) add(AxisUnits.SOLAR)
-        if (layers.temperature) add(AxisUnits.TEMP)
+        if (layers.degrees) add(AxisUnits.TEMP)
         if (layers.precipitation) add(AxisUnits.PRECIP)
         if (labelRates && layers.rates) add(AxisUnits.RATES)
     }
@@ -79,10 +87,11 @@ fun PowerChart(
     layers: ChartLayers = ChartLayers(),
     sunDays: List<SunTimes> = emptyList(),
     isDemo: Boolean = false,
-    zone: ZoneId = ZoneId.systemDefault()
+    zone: ZoneId = ZoneId.systemDefault(),
+    ecobee: List<EcobeeSample> = emptyList()
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        if (points.size < 2 && weather.size < 2 && !layers.rates) return@Canvas
+        if (points.size < 2 && weather.size < 2 && !layers.rates && ecobee.size < 2) return@Canvas
 
         val units = axisUnits(layers, labelRates = true)
         val left = if (units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
@@ -94,15 +103,15 @@ fun PowerChart(
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
-        val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.firstOrNull()?.time
-        val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd ?: weather.lastOrNull()?.time
+        val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd
+            ?: weather.firstOrNull()?.time ?: ecobee.firstOrNull()?.at
+        val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd
+            ?: weather.lastOrNull()?.time ?: ecobee.lastOrNull()?.at
         if (startInstant == null || endInstant == null) return@Canvas
         val minTime = startInstant.toEpochMilli().toFloat()
         val maxTime = endInstant.toEpochMilli().toFloat()
         val span = max(1f, maxTime - minTime)
         val solarMax = ForecastSnapshot.SOLAR_MAX_KW
-        val tempMin = ForecastSnapshot.TEMP_MIN_F
-        val tempMax = ForecastSnapshot.TEMP_MAX_F
 
         fun xOf(time: Instant): Float =
             left + ((time.toEpochMilli() - minTime) / span) * width
@@ -131,8 +140,24 @@ fun PowerChart(
         val native = drawContext.canvas.nativeCanvas
         val from = Instant.ofEpochMilli(minTime.toLong())
         val to = Instant.ofEpochMilli(maxTime.toLong())
+        val outdoorForScale = if (layers.temperature) {
+            weather.filter { !it.time.isBefore(from) && it.time.isBefore(to) }.map { it.tempF }
+        } else {
+            emptyList()
+        }
+        val rawTemps = sharedFahrenheitRange(
+            outdoorForScale,
+            if (layers.ecobee) ecobee.filter { !it.at.isAfter(now) } else emptyList(),
+            from,
+            to,
+            scaleToData = layers.ecobee
+        )
+        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
+        val tempMin = tempGrid.min
+        val tempMax = tempGrid.max
+        val tempSpan = (tempMax - tempMin).takeIf { it > 0.0 } ?: 1.0
         fun yOfTemp(temp: Double): Float =
-            bottom - (((temp - tempMin) / (tempMax - tempMin)).toFloat().coerceIn(0f, 1f) * height)
+            bottom - (((temp - tempMin) / tempSpan).toFloat().coerceIn(0f, 1f) * height)
         fun yOfPop(pop: Double): Float =
             bottom - ((pop / ForecastSnapshot.PRECIP_MAX).toFloat().coerceIn(0f, 1f) * height)
         fun yOfRate(cents: Double): Float =
@@ -162,22 +187,34 @@ fun PowerChart(
             }
         }
 
-        for (step in 0..2) {
-            val kw = solarMax * step / 2.0
-            val y = yOf(kw)
-            drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
+        if (units == AxisUnits.TEMP) {
+            for (tick in tempGrid.ticks) {
+                val y = yOfTemp(tick)
+                drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
+                val labelY = when {
+                    abs(tick - tempMax) < 0.01 -> top + 16f
+                    abs(tick - tempMin) < 0.01 -> bottom + 6f
+                    else -> y + 8f
+                }
+                native.drawText(formatTempBound(tick), 6f, labelY, unitPaint)
+            }
+        } else {
+            for (step in 0..2) {
+                val kw = solarMax * step / 2.0
+                val y = yOf(kw)
+                drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
+            }
         }
         when (units) {
             AxisUnits.SOLAR -> {
                 native.drawText("8 kW", 8f, top + 16f, unitPaint)
+                native.drawText("4 kW", 8f, yOf(4.0) + 8f, unitPaint)
                 native.drawText("0 kW", 8f, bottom + 6f, unitPaint)
             }
-            AxisUnits.TEMP -> {
-                native.drawText("100°F", 6f, top + 16f, unitPaint)
-                native.drawText("-20°F", 6f, bottom + 6f, unitPaint)
-            }
+            AxisUnits.TEMP -> Unit
             AxisUnits.PRECIP -> {
                 native.drawText("100%", 8f, top + 16f, unitPaint)
+                native.drawText("50%", 8f, yOfPop(50.0) + 8f, unitPaint)
                 native.drawText("0%", 8f, bottom + 6f, unitPaint)
             }
             AxisUnits.RATES -> {
@@ -193,6 +230,19 @@ fun PowerChart(
             AxisUnits.NONE -> Unit
         }
 
+        if (layers.degrees) {
+            drawFreezeReference(native, ::yOfTemp, left, right, tempMin, tempMax)
+        }
+
+        val ecobeeRuns = if (layers.ecobee) {
+            prepareEcobee(ecobee, from, to, width.toInt().coerceAtLeast(1), now = now)
+        } else {
+            emptyList()
+        }
+        if (ecobeeRuns.isNotEmpty()) {
+            drawEcobeeFills(ecobeeRuns, ::xOf, ::yOfTemp)
+        }
+
         if (layers.solcast) {
             val (past, future) = forecastStrokes(points, now)
             drawSeries(past, ::xOf, ::yOf, SolColors.Forecast, dotted = isDemo, alpha = 0.5f, breakGaps = true)
@@ -204,6 +254,9 @@ fun PowerChart(
 
         if (layers.temperature && weather.size >= 2) {
             drawTempLine(weather, ::xOf, ::yOfTemp, sunDays)
+        }
+        if (ecobeeRuns.isNotEmpty()) {
+            drawEcobeeLines(ecobeeRuns, ::xOf, ::yOfTemp)
         }
 
         if (!now.isBefore(startInstant) && now.isBefore(endInstant)) {
@@ -395,52 +448,39 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
     )
 }
 
-private const val FREEZE_F = 32.0
-private const val HOT_F = 90.0
-
-private enum class TempGlow { NONE, FREEZE, HOT }
-
-private fun tempGlow(tempF: Double): TempGlow = when {
-    tempF < FREEZE_F -> TempGlow.FREEZE
-    tempF > HOT_F -> TempGlow.HOT
-    else -> TempGlow.NONE
-}
-
-private fun glowColor(kind: TempGlow): Color = when (kind) {
-    TempGlow.FREEZE -> SolColors.TempFreeze
-    TempGlow.HOT -> SolColors.TempHot
-    TempGlow.NONE -> Color.Transparent
-}
-
-private fun glowArgb(kind: TempGlow, alpha: Float): Int {
-    val rgb = when (kind) {
-        TempGlow.FREEZE -> 0x0064B5F6
-        TempGlow.HOT -> 0x00FF8A4C
-        TempGlow.NONE -> 0
-    }
-    val a = (0xFF * alpha).toInt().coerceIn(0, 0xFF)
-    return rgb or (a shl 24)
-}
-
 private fun coreTempColor(night: Boolean): Color =
     if (night) SolColors.Temp.copy(alpha = NIGHT_ALPHA) else SolColors.Temp
 
 private fun coreTempArgb(night: Boolean): Int {
-    if (!night) return 0xFFFFFFFF.toInt()
-    val a = (0xFF * NIGHT_ALPHA).toInt().coerceIn(0, 0xFF)
-    return 0x00FFFFFF or (a shl 24)
+    val a = if (night) (0xFF * NIGHT_ALPHA).toInt().coerceIn(0, 0xFF) else 0xFF
+    return 0x00FF9800 or (a shl 24)
 }
 
-private fun tempSplitTs(t0: Double, t1: Double): List<Float> {
-    val marks = mutableListOf(0f, 1f)
-    val delta = t1 - t0
-    if (delta != 0.0) {
-        for (threshold in listOf(FREEZE_F, HOT_F)) {
-            val t = ((threshold - t0) / delta).toFloat()
-            if (t > 0f && t < 1f) marks += t
-        }
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFreezeReference(
+    native: android.graphics.Canvas,
+    yOfTemp: (Double) -> Float,
+    left: Float,
+    right: Float,
+    tempMin: Double,
+    tempMax: Double
+) {
+    if (!(tempMin < FREEZE_F && tempMax > FREEZE_F)) return
+    val y = yOfTemp(FREEZE_F)
+    drawLine(
+        color = Color.White.copy(alpha = 0.25f),
+        start = Offset(left, y),
+        end = Offset(right, y),
+        strokeWidth = 1.dp.toPx(),
+        cap = StrokeCap.Round,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(1.5.dp.toPx(), 3.dp.toPx()))
+    )
+    val label = android.graphics.Paint().apply {
+        color = 0x40FFFFFF
+        textSize = 22f
+        isAntiAlias = true
+        textAlign = android.graphics.Paint.Align.RIGHT
     }
-    return marks.distinct().sorted()
+    native.drawText("32°", right - 4f, y - 6f, label)
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
@@ -450,8 +490,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     sunDays: List<SunTimes>
 ) {
     val stroke = TEMP_STROKE_DP.dp.toPx()
-    val glowInner = GLOW_INNER_DP.dp.toPx()
-    val glowOuter = GLOW_OUTER_DP.dp.toPx()
     val nightDash = PathEffect.dashPathEffect(
         floatArrayOf(NIGHT_DASH_ON_DP.dp.toPx(), NIGHT_DASH_OFF_DP.dp.toPx()),
         0f
@@ -463,48 +501,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
         val y1 = yOfTemp(a.tempF)
         val x2 = xOf(b.time)
         val y2 = yOfTemp(b.tempF)
-        val splits = (tempSplitTs(a.tempF, b.tempF) + sunEventFractions(a.time, b.time, sunDays))
-            .distinct()
-            .sorted()
+        val splits = (listOf(0f, 1f) + sunEventFractions(a.time, b.time, sunDays)).distinct().sorted()
         for (s in 0 until splits.lastIndex) {
             val t0 = splits[s]
             val t1 = splits[s + 1]
             val midT = (t0 + t1) / 2f
-            val midTemp = a.tempF + (b.tempF - a.tempF) * midT
             val midMillis = a.time.toEpochMilli() +
                 ((b.time.toEpochMilli() - a.time.toEpochMilli()) * midT).toLong()
             val night = isNight(Instant.ofEpochMilli(midMillis), sunDays)
             val start = Offset(x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0)
             val end = Offset(x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1)
-            val dash = if (night) nightDash else null
-            val nightScale = if (night) NIGHT_ALPHA else 1f
-            val glow = tempGlow(midTemp)
-            if (glow != TempGlow.NONE) {
-                val tint = glowColor(glow)
-                drawLine(
-                    color = tint.copy(alpha = GLOW_OUTER_ALPHA * nightScale),
-                    start = start,
-                    end = end,
-                    strokeWidth = glowOuter,
-                    cap = StrokeCap.Round,
-                    pathEffect = dash
-                )
-                drawLine(
-                    color = tint.copy(alpha = GLOW_INNER_ALPHA * nightScale),
-                    start = start,
-                    end = end,
-                    strokeWidth = glowInner,
-                    cap = StrokeCap.Round,
-                    pathEffect = dash
-                )
-            }
             drawLine(
                 color = coreTempColor(night),
                 start = start,
                 end = end,
                 strokeWidth = stroke,
                 cap = if (night) StrokeCap.Butt else StrokeCap.Round,
-                pathEffect = dash
+                pathEffect = if (night) nightDash else null
             )
         }
     }
@@ -549,6 +562,62 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateArea(
     )
 }
 
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEcobeeFills(
+    runs: List<List<EcobeeMark>>,
+    xOf: (Instant) -> Float,
+    yOfTemp: (Double) -> Float
+) {
+    for (run in runs) {
+        for (segment in ecobeeFillSegments(run)) {
+            val path = ComposePath()
+            segment.forEachIndexed { index, mark ->
+                val x = xOf(mark.at)
+                val y = yOfTemp(mark.indoorF)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            for (mark in segment.asReversed()) {
+                path.lineTo(xOf(mark.at), yOfTemp(mark.setF ?: mark.indoorF))
+            }
+            path.close()
+            val color = if (segment.first().band == EcobeeBand.COOLING) SolColors.CoolGap else SolColors.HeatGap
+            drawPath(path, color.copy(alpha = ECOBEE_FILL_ALPHA))
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEcobeeLines(
+    runs: List<List<EcobeeMark>>,
+    xOf: (Instant) -> Float,
+    yOfTemp: (Double) -> Float
+) {
+    val indoor = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+    val setpoint = Stroke(
+        width = 1.dp.toPx(),
+        cap = StrokeCap.Butt,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))
+    )
+    for (run in runs) {
+        if (run.size >= 2) {
+            val path = ComposePath()
+            run.forEachIndexed { index, mark ->
+                val x = xOf(mark.at)
+                val y = yOfTemp(mark.indoorF)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, SolColors.Indoor, style = indoor)
+        }
+        for (segment in ecobeeFillSegments(run)) {
+            val path = ComposePath()
+            segment.forEachIndexed { index, mark ->
+                val x = xOf(mark.at)
+                val y = yOfTemp(mark.setF ?: mark.indoorF)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, SolColors.Indoor.copy(alpha = 0.5f), style = setpoint)
+        }
+    }
+}
+
 object ChartBitmapRenderer {
     fun render(
         points: List<PowerPoint>,
@@ -561,10 +630,11 @@ object ChartBitmapRenderer {
         weather: List<WeatherPoint> = emptyList(),
         layers: ChartLayers = ChartLayers(),
         sunDays: List<SunTimes> = emptyList(),
-        isDemo: Boolean = false
+        isDemo: Boolean = false,
+        ecobee: List<EcobeeSample> = emptyList()
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(width.coerceAtLeast(8), height.coerceAtLeast(8), Bitmap.Config.ARGB_8888)
-        if (points.size < 2 && weather.size < 2 && !layers.rates) return bitmap
+        if (points.size < 2 && weather.size < 2 && !layers.rates && ecobee.size < 2) return bitmap
         val canvas = AndroidCanvas(bitmap)
         canvas.drawColor(0x00152136)
 
@@ -577,24 +647,40 @@ object ChartBitmapRenderer {
         val bottom = height - if (layers.power) 52f else 8f
         val chartW = (right - left).coerceAtLeast(1f)
         val chartH = (bottom - top).coerceAtLeast(1f)
-        val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd ?: weather.firstOrNull()?.time
-        val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd ?: weather.lastOrNull()?.time
+        val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd
+            ?: weather.firstOrNull()?.time ?: ecobee.firstOrNull()?.at
+        val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd
+            ?: weather.lastOrNull()?.time ?: ecobee.lastOrNull()?.at
         if (startInstant == null || endInstant == null) return bitmap
         val minTime = startInstant.toEpochMilli().toFloat()
         val maxTime = endInstant.toEpochMilli().toFloat()
         val span = max(1f, maxTime - minTime)
         val solarMax = ForecastSnapshot.SOLAR_MAX_KW
-        val tempMin = ForecastSnapshot.TEMP_MIN_F
-        val tempMax = ForecastSnapshot.TEMP_MAX_F
 
         fun xOf(time: Instant) = left + ((time.toEpochMilli() - minTime) / span) * chartW
         fun yOf(kw: Double) = bottom - ((kw / solarMax).toFloat().coerceIn(0f, 1f) * chartH)
 
         val from = Instant.ofEpochMilli(minTime.toLong())
         val to = Instant.ofEpochMilli(maxTime.toLong())
+        val outdoorForScale = if (layers.temperature) {
+            weather.filter { !it.time.isBefore(from) && it.time.isBefore(to) }.map { it.tempF }
+        } else {
+            emptyList()
+        }
+        val rawTemps = sharedFahrenheitRange(
+            outdoorForScale,
+            if (layers.ecobee) ecobee.filter { !it.at.isAfter(now) } else emptyList(),
+            from,
+            to,
+            scaleToData = layers.ecobee
+        )
+        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
+        val tempMin = tempGrid.min
+        val tempMax = tempGrid.max
+        val tempSpan = (tempMax - tempMin).takeIf { it > 0.0 } ?: 1.0
 
         fun yOfTemp(temp: Double) =
-            bottom - (((temp - tempMin) / (tempMax - tempMin)).toFloat().coerceIn(0f, 1f) * chartH)
+            bottom - (((temp - tempMin) / tempSpan).toFloat().coerceIn(0f, 1f) * chartH)
         fun yOfPop(pop: Double) =
             bottom - ((pop / ForecastSnapshot.PRECIP_MAX).toFloat().coerceIn(0f, 1f) * chartH)
         fun yOfRate(cents: Double) =
@@ -604,14 +690,14 @@ object ChartBitmapRenderer {
 
         if (layers.rates) {
             val bands = DteTou.bands(from, to)
-            if (layers.buy) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFFC9898C.toInt()) { it.cents }
-            if (layers.sell) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFF8AA4C4.toInt()) { it.sellCents }
+            if (layers.buy) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFFE57FD8.toInt()) { it.cents }
+            if (layers.sell) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFF7BD88F.toInt()) { it.sellCents }
         }
 
         if (layers.precipitation && weather.size >= 2) {
             val barWidth = (chartW / weather.size.toFloat()) * 0.65f
             val precipPaint = Paint().apply {
-                color = 0x665CA8FF
+                color = 0x664DD0C8
                 isAntiAlias = false
             }
             weather.forEach { point ->
@@ -629,9 +715,11 @@ object ChartBitmapRenderer {
             strokeWidth = 1.5f
             isAntiAlias = true
         }
-        for (step in 0..2) {
-            val y = yOf(solarMax * step / 2.0)
-            canvas.drawLine(left, y, right, y, grid)
+        if (units != AxisUnits.TEMP) {
+            for (step in 0..2) {
+                val y = yOf(solarMax * step / 2.0)
+                canvas.drawLine(left, y, right, y, grid)
+            }
         }
 
         val unitPaint = Paint().apply {
@@ -639,17 +727,28 @@ object ChartBitmapRenderer {
             textSize = 26f
             isAntiAlias = true
         }
+        if (units == AxisUnits.TEMP) {
+            for (tick in tempGrid.ticks) {
+                val y = yOfTemp(tick)
+                canvas.drawLine(left, y, right, y, grid)
+                val labelY = when {
+                    abs(tick - tempMax) < 0.01 -> top + 16f
+                    abs(tick - tempMin) < 0.01 -> bottom
+                    else -> y + 8f
+                }
+                canvas.drawText(formatTempBound(tick), 2f, labelY, unitPaint)
+            }
+        }
         when (units) {
             AxisUnits.SOLAR -> {
                 canvas.drawText("8 kW", 2f, top + 16f, unitPaint)
+                canvas.drawText("4 kW", 2f, yOf(4.0) + 8f, unitPaint)
                 canvas.drawText("0 kW", 2f, bottom, unitPaint)
             }
-            AxisUnits.TEMP -> {
-                canvas.drawText("100°F", 2f, top + 16f, unitPaint)
-                canvas.drawText("-20°F", 2f, bottom, unitPaint)
-            }
+            AxisUnits.TEMP -> Unit
             AxisUnits.PRECIP -> {
                 canvas.drawText("100%", 2f, top + 16f, unitPaint)
+                canvas.drawText("50%", 2f, yOfPop(50.0) + 8f, unitPaint)
                 canvas.drawText("0%", 2f, bottom, unitPaint)
             }
             AxisUnits.RATES, AxisUnits.NONE -> Unit
@@ -699,6 +798,19 @@ object ChartBitmapRenderer {
             day = day.plusDays(1)
         }
 
+        if (layers.degrees) {
+            drawAndroidFreezeReference(canvas, ::yOfTemp, left, right, tempMin, tempMax)
+        }
+
+        val ecobeeRuns = if (layers.ecobee) {
+            prepareEcobee(ecobee, from, to, chartW.toInt().coerceAtLeast(1), now = now)
+        } else {
+            emptyList()
+        }
+        if (ecobeeRuns.isNotEmpty()) {
+            drawAndroidEcobeeFills(canvas, ecobeeRuns, ::xOf, ::yOfTemp)
+        }
+
         if (layers.solcast) {
             val (past, future) = forecastStrokes(points, now)
             drawAndroidSeries(canvas, past, ::xOf, ::yOf, 0xFFF5C542.toInt(), bottom, dotted = isDemo, alpha = 0.5f, breakGaps = true)
@@ -711,9 +823,12 @@ object ChartBitmapRenderer {
         if (layers.temperature && weather.size >= 2) {
             drawAndroidTempLine(canvas, weather, ::xOf, ::yOfTemp, sunDays)
         }
+        if (ecobeeRuns.isNotEmpty()) {
+            drawAndroidEcobeeLines(canvas, ecobeeRuns, ::xOf, ::yOfTemp)
+        }
 
         val nowPaint = Paint().apply {
-            color = 0xFFFF8A4C.toInt()
+            color = 0x99FFFFFF.toInt()
             strokeWidth = 3f
             isAntiAlias = true
         }
@@ -848,8 +963,6 @@ object ChartBitmapRenderer {
         sunDays: List<SunTimes>
     ) {
         val stroke = TEMP_STROKE_DP * BITMAP_PX_PER_DP
-        val glowInner = GLOW_INNER_DP * BITMAP_PX_PER_DP
-        val glowOuter = GLOW_OUTER_DP * BITMAP_PX_PER_DP
         val paint = Paint().apply {
             strokeWidth = stroke
             isAntiAlias = true
@@ -867,14 +980,11 @@ object ChartBitmapRenderer {
             val y1 = yOfTemp(a.tempF)
             val x2 = xOf(b.time)
             val y2 = yOfTemp(b.tempF)
-            val splits = (tempSplitTs(a.tempF, b.tempF) + sunEventFractions(a.time, b.time, sunDays))
-                .distinct()
-                .sorted()
+            val splits = (listOf(0f, 1f) + sunEventFractions(a.time, b.time, sunDays)).distinct().sorted()
             for (s in 0 until splits.lastIndex) {
                 val t0 = splits[s]
                 val t1 = splits[s + 1]
                 val midT = (t0 + t1) / 2f
-                val midTemp = a.tempF + (b.tempF - a.tempF) * midT
                 val midMillis = a.time.toEpochMilli() +
                     ((b.time.toEpochMilli() - a.time.toEpochMilli()) * midT).toLong()
                 val night = isNight(Instant.ofEpochMilli(midMillis), sunDays)
@@ -882,24 +992,115 @@ object ChartBitmapRenderer {
                 val yStart = y1 + (y2 - y1) * t0
                 val xEnd = x1 + (x2 - x1) * t1
                 val yEnd = y1 + (y2 - y1) * t1
-                val dash = if (night) nightDash else null
-                val nightScale = if (night) NIGHT_ALPHA else 1f
-                val glow = tempGlow(midTemp)
-                if (glow != TempGlow.NONE) {
-                    paint.pathEffect = dash
-                    paint.strokeCap = Paint.Cap.ROUND
-                    paint.color = glowArgb(glow, GLOW_OUTER_ALPHA * nightScale)
-                    paint.strokeWidth = glowOuter
-                    canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
-                    paint.color = glowArgb(glow, GLOW_INNER_ALPHA * nightScale)
-                    paint.strokeWidth = glowInner
-                    canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
-                }
                 paint.color = coreTempArgb(night)
                 paint.strokeWidth = stroke
                 paint.strokeCap = if (night) Paint.Cap.BUTT else Paint.Cap.ROUND
-                paint.pathEffect = dash
+                paint.pathEffect = if (night) nightDash else null
                 canvas.drawLine(xStart, yStart, xEnd, yEnd, paint)
+            }
+        }
+    }
+
+    private fun drawAndroidFreezeReference(
+        canvas: AndroidCanvas,
+        yOfTemp: (Double) -> Float,
+        left: Float,
+        right: Float,
+        tempMin: Double,
+        tempMax: Double
+    ) {
+        if (!(tempMin < FREEZE_F && tempMax > FREEZE_F)) return
+        val y = yOfTemp(FREEZE_F)
+        val line = Paint().apply {
+            color = 0x40FFFFFF
+            strokeWidth = BITMAP_PX_PER_DP
+            isAntiAlias = true
+            strokeCap = Paint.Cap.ROUND
+            pathEffect = DashPathEffect(floatArrayOf(1.5f * BITMAP_PX_PER_DP, 3f * BITMAP_PX_PER_DP), 0f)
+        }
+        canvas.drawLine(left, y, right, y, line)
+        val label = Paint().apply {
+            color = 0x40FFFFFF
+            textSize = 22f
+            isAntiAlias = true
+            textAlign = Paint.Align.RIGHT
+        }
+        canvas.drawText("32°", right - 4f, y - 6f, label)
+    }
+
+    private fun drawAndroidEcobeeFills(
+        canvas: AndroidCanvas,
+        runs: List<List<EcobeeMark>>,
+        xOf: (Instant) -> Float,
+        yOfTemp: (Double) -> Float
+    ) {
+        val paint = Paint().apply {
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        for (run in runs) {
+            for (segment in ecobeeFillSegments(run)) {
+                val path = Path()
+                segment.forEachIndexed { index, mark ->
+                    val x = xOf(mark.at)
+                    val y = yOfTemp(mark.indoorF)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                for (mark in segment.asReversed()) {
+                    path.lineTo(xOf(mark.at), yOfTemp(mark.setF ?: mark.indoorF))
+                }
+                path.close()
+                val rgb = if (segment.first().band == EcobeeBand.COOLING) 0x004DA3FF else 0x00FF6A5C
+                val alpha = (255f * ECOBEE_FILL_ALPHA).toInt().coerceIn(0, 255)
+                paint.color = rgb or (alpha shl 24)
+                canvas.drawPath(path, paint)
+            }
+        }
+    }
+
+    private fun drawAndroidEcobeeLines(
+        canvas: AndroidCanvas,
+        runs: List<List<EcobeeMark>>,
+        xOf: (Instant) -> Float,
+        yOfTemp: (Double) -> Float
+    ) {
+        val indoor = Paint().apply {
+            style = Paint.Style.STROKE
+            isAntiAlias = true
+            color = 0xFFE6E1F0.toInt()
+            strokeWidth = 2f * BITMAP_PX_PER_DP
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        val setpoint = Paint().apply {
+            style = Paint.Style.STROKE
+            isAntiAlias = true
+            color = 0x80E6E1F0.toInt()
+            strokeWidth = 1f * BITMAP_PX_PER_DP
+            strokeCap = Paint.Cap.BUTT
+            pathEffect = DashPathEffect(
+                floatArrayOf(5f * BITMAP_PX_PER_DP, 4f * BITMAP_PX_PER_DP),
+                0f
+            )
+        }
+        for (run in runs) {
+            if (run.size >= 2) {
+                val path = Path()
+                run.forEachIndexed { index, mark ->
+                    val x = xOf(mark.at)
+                    val y = yOfTemp(mark.indoorF)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                canvas.drawPath(path, indoor)
+            }
+            for (segment in ecobeeFillSegments(run)) {
+                val path = Path()
+                segment.forEachIndexed { index, mark ->
+                    val x = xOf(mark.at)
+                    val y = yOfTemp(mark.setF ?: mark.indoorF)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                canvas.drawPath(path, setpoint)
             }
         }
     }

@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "seed": "node scripts/seed-from-worker.mjs"
+    "seed": "node scripts/seed-from-worker.mjs",
+    "import:ecobee": "node scripts/import-ecobee.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",

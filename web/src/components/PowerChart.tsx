@@ -2,23 +2,27 @@
 
 import { useEffect, useRef } from "react";
 import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
+import {
+  ecobeeFillSegments,
+  prepareEcobee,
+  sharedFahrenheitRange,
+  temperatureGrid,
+  type EcobeeSample,
+} from "@/lib/ecobee";
 import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 
 const LIVE = "#2EE6A6";
 const FORECAST = "#F5C542";
-const NOW = "#FF8A4C";
+const NOW = "rgba(255, 255, 255, 0.60)";
 const GRID = "rgba(74, 98, 136, 0.45)";
 const INK = "#E8EEF7";
-const PRECIP = "rgba(92, 168, 255, 0.40)";
-const BUY = { r: 201, g: 137, b: 140 };
-const SELL = { r: 138, g: 164, b: 196 };
-const TEMP = "#FFFFFF";
-const FREEZE = "#64B5F6";
-const HOT = "#FF8A4C";
+const PRECIP = "rgba(77, 208, 200, 0.40)";
+const BUY = { r: 229, g: 127, b: 216 };
+const SELL = { r: 123, g: 216, b: 143 };
+const TEMP = "#FF9800";
+const INDOOR = "#E6E1F0";
 
 const SOLAR_MAX = 8;
-const TEMP_MIN = -20;
-const TEMP_MAX = 100;
 const PRECIP_MAX = 100;
 const RATE_MIN = 0;
 const RATE_MAX = 40;
@@ -30,6 +34,7 @@ export type ChartLayers = {
   precip: boolean;
   buy: boolean;
   sell: boolean;
+  ecobee: boolean;
 };
 
 export type WeatherMark = { t: number; tempF: number; precipPct: number | null };
@@ -44,6 +49,7 @@ type Props = {
   sun: SunSpan[];
   rates: RateSample[];
   demo: boolean;
+  ecobee?: EcobeeSample[];
 };
 
 export function PowerChart(props: Props) {
@@ -59,7 +65,7 @@ export function PowerChart(props: Props) {
     return () => observer.disconnect();
   }, [props]);
 
-  return <canvas ref={ref} className="chart" aria-label="Solcast, Enphase, weather, and buy and sell rate chart" />;
+  return <canvas ref={ref} className="chart" aria-label="Solcast, Enphase, weather, rates, and indoor temperature chart" />;
 }
 
 function paint(canvas: HTMLCanvasElement, props: Props) {
@@ -80,7 +86,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const left = units === "none" ? 12 : 52;
   const right = width - 12;
   const showPower = props.layers.solcast || props.layers.enphase;
-  const top = props.layers.temp ? 28 : 16;
+  const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
+  const showDegrees = props.layers.temp || props.layers.ecobee;
+  const top = showDegrees ? 28 : 16;
   const bottom = height - (showPower ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
@@ -88,8 +96,20 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
 
   const xOf = (t: number) => left + ((t - props.from) / span) * plotW;
   const ySolar = (kw: number) => bottom - (clamp(kw / SOLAR_MAX, 0, 1) * plotH);
-  const yTemp = (temp: number) =>
-    bottom - (clamp((temp - TEMP_MIN) / (TEMP_MAX - TEMP_MIN), 0, 1) * plotH);
+  const outdoor = props.layers.temp
+    ? props.weather.filter((mark) => mark.t >= props.from && mark.t < props.to).map((mark) => mark.tempF)
+    : [];
+  const rawTemps = sharedFahrenheitRange(
+    outdoor,
+    props.layers.ecobee ? ecobee : [],
+    props.from,
+    props.to,
+    props.layers.ecobee
+  );
+  const tempGrid = temperatureGrid(rawTemps.min, rawTemps.max, props.layers.ecobee);
+  const tempRange = { min: tempGrid.min, max: tempGrid.max };
+  const tempSpan = Math.max(0.001, tempRange.max - tempRange.min);
+  const yTemp = (temp: number) => bottom - (clamp((temp - tempRange.min) / tempSpan, 0, 1) * plotH);
   const yPop = (pop: number) => bottom - (clamp(pop / PRECIP_MAX, 0, 1) * plotH);
   const yRate = (cents: number) =>
     bottom - (clamp((cents - RATE_MIN) / (RATE_MAX - RATE_MIN), 0, 1) * plotH);
@@ -118,21 +138,34 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   ctx.lineWidth = 1;
   ctx.fillStyle = INK;
   ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
-  for (const step of [0, 1, 2]) {
-    const y = ySolar((SOLAR_MAX * step) / 2);
-    ctx.beginPath();
-    ctx.moveTo(left, y);
-    ctx.lineTo(right, y);
-    ctx.stroke();
+  if (units === "temp") {
+    for (const tick of tempGrid.ticks) {
+      const y = yTemp(tick);
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+      const labelY = Math.abs(tick - tempRange.max) < 0.01 ? top + 12 : Math.abs(tick - tempRange.min) < 0.01 ? bottom : y + 4;
+      ctx.fillText(`${Math.round(tick)}°F`, 4, labelY);
+    }
+  } else {
+    for (const step of [0, 1, 2]) {
+      const y = ySolar((SOLAR_MAX * step) / 2);
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+    }
   }
   if (units === "solar") {
     ctx.fillText("8 kW", 6, top + 12);
+    ctx.fillText("4 kW", 6, ySolar(4) + 4);
     ctx.fillText("0 kW", 6, bottom);
   } else if (units === "temp") {
-    ctx.fillText("100°F", 4, top + 12);
-    ctx.fillText("-20°F", 4, bottom);
+    // Labeled with the round grid above.
   } else if (units === "precip") {
     ctx.fillText("100%", 6, top + 12);
+    ctx.fillText("50%", 6, yPop(50) + 4);
     ctx.fillText("0%", 6, bottom);
   } else if (units === "rates") {
     for (let cents = 0; cents <= RATE_MAX; cents += 10) {
@@ -140,6 +173,11 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
       ctx.fillText(`${cents}¢`, 6, y);
     }
   }
+
+  if (showDegrees) drawFreezeReference(ctx, yTemp, left, right, tempRange.min, tempRange.max);
+
+  const ecobeeEnd = Math.min(props.to, props.now);
+  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "fill", props.now);
 
   if (props.layers.solcast) {
     const gold = forecastStrokes(props.points, props.now);
@@ -153,6 +191,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   if (props.layers.temp && props.weather.length >= 2) {
     strokeTemp(ctx, props.weather, xOf, yTemp, props.sun);
   }
+  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "line", props.now);
 
   if (props.now >= props.from && props.now < props.to) {
     const nowX = xOf(props.now);
@@ -233,6 +272,32 @@ function fillSteps(
   ctx.restore();
 }
 
+function drawFreezeReference(
+  ctx: CanvasRenderingContext2D,
+  yOf: (temp: number) => number,
+  left: number,
+  right: number,
+  tempMin: number,
+  tempMax: number
+) {
+  if (!(tempMin < 32 && tempMax > 32)) return;
+  const y = yOf(32);
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath();
+  ctx.moveTo(left, y);
+  ctx.lineTo(right, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText("32°", right - 2, y - 4);
+  ctx.restore();
+}
+
 function strokeTemp(
   ctx: CanvasRenderingContext2D,
   weather: WeatherMark[],
@@ -240,15 +305,14 @@ function strokeTemp(
   yOf: (temp: number) => number,
   sun: SunSpan[]
 ) {
-  type Seg = { pts: WeatherMark[]; night: boolean; glow: string | null };
+  type Seg = { pts: WeatherMark[]; night: boolean };
   const segments: Seg[] = [];
   for (const mark of weather) {
     const night = isNight(mark.t, sun);
-    const glow = mark.tempF < 32 ? FREEZE : mark.tempF > 90 ? HOT : null;
     const last = segments[segments.length - 1];
-    if (!last || last.night !== night || last.glow !== glow) {
+    if (!last || last.night !== night) {
       const seed = last ? [last.pts[last.pts.length - 1], mark] : [mark];
-      segments.push({ pts: seed, night, glow });
+      segments.push({ pts: seed, night });
     } else {
       last.pts.push(mark);
     }
@@ -260,14 +324,6 @@ function strokeTemp(
     ctx.lineCap = "round";
     ctx.setLineDash(segment.night ? [9, 7] : []);
     ctx.globalAlpha = segment.night ? 0.3 : 1;
-    if (segment.glow) {
-      ctx.strokeStyle = segment.glow;
-      ctx.lineWidth = 7;
-      ctx.shadowColor = segment.glow;
-      ctx.shadowBlur = 8;
-      trace(ctx, segment.pts, xOf, yOf);
-      ctx.shadowBlur = 0;
-    }
     ctx.strokeStyle = TEMP;
     ctx.lineWidth = 1.6;
     trace(ctx, segment.pts, xOf, yOf);
@@ -291,10 +347,76 @@ function trace(
   ctx.stroke();
 }
 
+function drawEcobee(
+  ctx: CanvasRenderingContext2D,
+  samples: EcobeeSample[],
+  from: number,
+  to: number,
+  plotW: number,
+  xOf: (t: number) => number,
+  yOf: (temp: number) => number,
+  phase: "fill" | "line",
+  now?: number
+) {
+  const runs = prepareEcobee(samples, from, to, Math.max(1, Math.round(plotW)), undefined, now);
+  for (const run of runs) {
+    if (phase === "fill") {
+      for (const segment of ecobeeFillSegments(run)) {
+        ctx.beginPath();
+        segment.forEach((mark, index) => {
+          const x = xOf(mark.t);
+          const y = yOf(mark.indoorF);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        for (let index = segment.length - 1; index >= 0; index -= 1) {
+          const mark = segment[index];
+          ctx.lineTo(xOf(mark.t), yOf(mark.setF ?? mark.indoorF));
+        }
+        ctx.closePath();
+        ctx.fillStyle = segment[0].band === "cooling" ? "rgba(77, 163, 255, 0.40)" : "rgba(255, 106, 92, 0.40)";
+        ctx.fill();
+      }
+      continue;
+    }
+    if (run.length >= 2) {
+      ctx.beginPath();
+      ctx.strokeStyle = INDOOR;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.setLineDash([]);
+      run.forEach((mark, index) => {
+        const x = xOf(mark.t);
+        const y = yOf(mark.indoorF);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    ctx.save();
+    ctx.strokeStyle = "rgba(230, 225, 240, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.lineCap = "butt";
+    ctx.setLineDash([5, 4]);
+    for (const segment of ecobeeFillSegments(run)) {
+      ctx.beginPath();
+      segment.forEach((mark, index) => {
+        const x = xOf(mark.t);
+        const y = yOf(mark.setF ?? mark.indoorF);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | "rates" {
   const labeled: Array<"solar" | "temp" | "precip" | "rates"> = [];
   if (layers.solcast || layers.enphase) labeled.push("solar");
-  if (layers.temp) labeled.push("temp");
+  if (layers.temp || layers.ecobee) labeled.push("temp");
   if (layers.precip) labeled.push("precip");
   if (layers.buy || layers.sell) labeled.push("rates");
   return labeled.length === 1 ? labeled[0] : "none";

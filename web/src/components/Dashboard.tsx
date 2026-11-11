@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PowerChart, type ChartLayers } from "@/components/PowerChart";
+import type { EcobeeSample } from "@/lib/ecobee";
 import {
   BASE_MID_PEAK_CENTS,
   BASE_OFF_PEAK_CENTS,
@@ -42,6 +43,7 @@ const DEFAULT_LAYERS: ChartLayers = {
   precip: true,
   buy: true,
   sell: true,
+  ecobee: true,
 };
 
 function readLayers(): ChartLayers {
@@ -57,6 +59,7 @@ function readLayers(): ChartLayers {
       precip: parsed.precip !== false,
       buy: parsed.buy !== false,
       sell: parsed.sell !== false,
+      ecobee: parsed.ecobee !== false,
     };
   } catch {
     return DEFAULT_LAYERS;
@@ -86,9 +89,12 @@ type HistoryPoint = {
   outflowCents: number | null;
 };
 
+type EcobeeBody = { t: string; indoorF: number; coolF: number | null; heatF: number | null };
+
 type HistoryBody = {
   points?: HistoryPoint[];
   sun?: Array<{ date: string; sunrise: string; sunset: string }>;
+  ecobee?: EcobeeBody[];
   error?: string;
 };
 
@@ -205,10 +211,11 @@ export function Dashboard() {
       <div className="toolbar">
         <Chip label="Solcast" on={layers.solcast} onClick={() => setLayers({ ...layers, solcast: !layers.solcast })} />
         <Chip label="Enphase" on={layers.enphase} onClick={() => setLayers({ ...layers, enphase: !layers.enphase })} />
-        <Chip label="Temp" on={layers.temp} onClick={() => setLayers({ ...layers, temp: !layers.temp })} />
+        <Chip label="Outdoor" on={layers.temp} onClick={() => setLayers({ ...layers, temp: !layers.temp })} />
         <Chip label="Precip" on={layers.precip} onClick={() => setLayers({ ...layers, precip: !layers.precip })} />
         <Chip label="Buy" on={layers.buy} onClick={() => setLayers({ ...layers, buy: !layers.buy })} />
         <Chip label="Sell" on={layers.sell} onClick={() => setLayers({ ...layers, sell: !layers.sell })} />
+        <Chip label="Ecobee" on={layers.ecobee} onClick={() => setLayers({ ...layers, ecobee: !layers.ecobee })} />
       </div>
 
       {status && <p className="banner">{status}</p>}
@@ -217,9 +224,22 @@ export function Dashboard() {
         <div className="legend">
           <span style={{ color: "#F5C542" }}>● Solcast</span>
           <span style={{ color: "#2EE6A6" }}>● Enphase</span>
-          <span style={{ color: "#FF8A4C" }}>● Now</span>
-          {layers.buy && <span style={{ color: "#C9898C" }}>▮ Buy</span>}
-          {layers.sell && <span style={{ color: "#8AA4C4" }}>▮ Sell</span>}
+          <span style={{ color: "rgba(255,255,255,0.60)" }}>● Now</span>
+          {layers.temp && <span style={{ color: "#FF9800" }}>● Outdoor</span>}
+          {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
+          {layers.buy && <span style={{ color: "#E57FD8" }}>▮ Buy</span>}
+          {layers.sell && <span style={{ color: "#7BD88F" }}>▮ Sell</span>}
+          {layers.ecobee && <span style={{ color: "#E6E1F0" }}>● Indoor</span>}
+          {layers.ecobee && (
+            <span>
+              <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Cooling gap
+            </span>
+          )}
+          {layers.ecobee && (
+            <span>
+              <i className="swatch" style={{ background: "rgba(255,106,92,0.40)" }} /> Heating gap
+            </span>
+          )}
         </div>
         <PowerChart
           points={chart.points}
@@ -231,6 +251,7 @@ export function Dashboard() {
           sun={chart.sun}
           rates={chart.rates}
           demo={cache?.source === "demo"}
+          ecobee={chart.ecobee}
         />
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
@@ -361,6 +382,14 @@ function chartModel(
       tempF: point.tempF as number,
       precipPct: point.precipPct,
     }));
+  const ecobee: EcobeeSample[] = (history?.ecobee ?? [])
+    .map((sample) => ({
+      t: Date.parse(sample.t),
+      indoorF: sample.indoorF,
+      coolF: sample.coolF,
+      heatF: sample.heatF,
+    }))
+    .filter((sample) => Number.isFinite(sample.t) && sample.t >= fromMs && sample.t < toMs);
   const sun: SunSpan[] = (history?.sun ?? [])
     .map((day) => ({ sunrise: Date.parse(day.sunrise), sunset: Date.parse(day.sunset) }))
     .filter((day) => day.sunset >= fromMs && day.sunrise < toMs);
@@ -372,6 +401,7 @@ function chartModel(
     fromMs,
     toMs,
     rates: rows,
+    ecobee,
     totals: filledTotals(start ?? today, 7, points, clock),
     empty: history != null && rows.length === 0 && !history.error,
   };

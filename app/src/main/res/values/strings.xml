@@ -3,4 +3,16 @@
     <string name="app_name">Wayward Sun</string>
     <string name="widget_name">Wayward Sun</string>
     <string name="widget_description">Live estimated output and Solcast forecast for your home PV system</string>
+    <string name="check_for_updates">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_current">This is the latest version.</string>
+    <string name="update_available">Version %1$s is available.</string>
+    <string name="update_failed">Could not check for updates.</string>
+    <string name="update_ready">Version %1$s is ready</string>
+    <string name="update_later">Later</string>
+    <string name="update_install">Install</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_install_failed">The update did not install.</string>
+    <string name="update_allow">Allow Wayward Sun to install updates, then tap Install again.</string>
+    <string name="close">Close</string>
 </resources>
