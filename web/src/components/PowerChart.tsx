@@ -19,8 +19,10 @@ const INK = "#E8EEF7";
 const PRECIP = "rgba(77, 208, 200, 0.40)";
 const BUY = { r: 229, g: 127, b: 216 };
 const SELL = { r: 123, g: 216, b: 143 };
-const TEMP = "#FF9800";
-const INDOOR = "#E6E1F0";
+const TEMP = "#E6E1F0";
+const SETPOINT = "#FFF176";
+const TOO_WARM = "#4DA3FF";
+const TOO_COOL = "#FF9800";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;
@@ -83,7 +85,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   ctx.clearRect(0, 0, width, height);
 
   const units = axisUnits(props.layers);
-  const left = units === "none" ? 12 : 52;
+  const showTempLabels = props.layers.temp || props.layers.ecobee;
+  const left = showTempLabels || units !== "none" ? 52 : 12;
   const right = width - 12;
   const showPower = props.layers.solcast || props.layers.enphase;
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
@@ -104,7 +107,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     props.layers.ecobee ? ecobee : [],
     props.from,
     props.to,
-    props.layers.ecobee
+    props.layers.ecobee,
+    !props.layers.ecobee
   );
   const tempGrid = temperatureGrid(rawTemps.min, rawTemps.max, props.layers.ecobee);
   const tempRange = { min: tempGrid.min, max: tempGrid.max };
@@ -138,7 +142,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   ctx.lineWidth = 1;
   ctx.fillStyle = INK;
   ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
-  if (units === "temp") {
+  if (showTempLabels) {
     for (const tick of tempGrid.ticks) {
       const y = yTemp(tick);
       ctx.beginPath();
@@ -191,7 +195,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   if (props.layers.temp && props.weather.length >= 2) {
     strokeTemp(ctx, props.weather, xOf, yTemp, props.sun);
   }
-  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "line", props.now);
+  if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "line", props.now, dpr);
 
   if (props.now >= props.from && props.now < props.to) {
     const nowX = xOf(props.now);
@@ -356,7 +360,8 @@ function drawEcobee(
   xOf: (t: number) => number,
   yOf: (temp: number) => number,
   phase: "fill" | "line",
-  now?: number
+  now?: number,
+  dpr = 1
 ) {
   const runs = prepareEcobee(samples, from, to, Math.max(1, Math.round(plotW)), undefined, now);
   for (const run of runs) {
@@ -374,19 +379,20 @@ function drawEcobee(
           ctx.lineTo(xOf(mark.t), yOf(mark.setF ?? mark.indoorF));
         }
         ctx.closePath();
-        ctx.fillStyle = segment[0].band === "cooling" ? "rgba(77, 163, 255, 0.40)" : "rgba(255, 106, 92, 0.40)";
+        ctx.fillStyle = segment[0].band === "cooling" ? "rgba(77, 163, 255, 0.40)" : "rgba(255, 152, 0, 0.50)";
         ctx.fill();
       }
       continue;
     }
-    if (run.length >= 2) {
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.lineWidth = 1;
+    for (const segment of ecobeeFillSegments(run)) {
       ctx.beginPath();
-      ctx.strokeStyle = INDOOR;
-      ctx.lineWidth = 2;
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.setLineDash([]);
-      run.forEach((mark, index) => {
+      ctx.strokeStyle = segment[0].band === "cooling" ? TOO_WARM : TOO_COOL;
+      segment.forEach((mark, index) => {
         const x = xOf(mark.t);
         const y = yOf(mark.indoorF);
         if (index === 0) ctx.moveTo(x, y);
@@ -394,21 +400,27 @@ function drawEcobee(
       });
       ctx.stroke();
     }
-    ctx.save();
-    ctx.strokeStyle = "rgba(230, 225, 240, 0.5)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = SETPOINT;
+    ctx.lineWidth = 1.5;
     ctx.lineCap = "butt";
-    ctx.setLineDash([5, 4]);
-    for (const segment of ecobeeFillSegments(run)) {
-      ctx.beginPath();
-      segment.forEach((mark, index) => {
-        const x = xOf(mark.t);
-        const y = yOf(mark.setF ?? mark.indoorF);
-        if (index === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
+    ctx.lineJoin = "miter";
+    ctx.beginPath();
+    let drawing = false;
+    for (const mark of run) {
+      if (mark.setF == null) {
+        drawing = false;
+        continue;
+      }
+      const x = xOf(mark.t);
+      const y = yOf(mark.setF);
+      if (!drawing) {
+        ctx.moveTo(x, y);
+        drawing = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
     }
+    ctx.stroke();
     ctx.restore();
   }
 }

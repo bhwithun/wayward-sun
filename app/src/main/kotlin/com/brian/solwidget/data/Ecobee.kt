@@ -18,8 +18,9 @@ data class EcobeeSample(
 )
 
 /**
- * One drawable sample. [setF] is the setpoint being compared, and it is null in
- * the deadband so the chart never draws two dashed lines at once.
+ * One drawable sample. [setF] is the cool setpoint when indoor is above it, the
+ * heat setpoint when indoor is below it, and in the deadband the setpoint closer
+ * to indoor. It is null only when both setpoints are missing.
  */
 data class EcobeeMark(
     val at: Instant,
@@ -32,9 +33,10 @@ data class EcobeeMark(
 val ECOBEE_GAP: Duration = Duration.ofMinutes(15)
 
 /**
- * Cool is checked first. Above the cool setpoint is a cooling gap. Below the
- * heat setpoint is a heating gap. Between them, or when that setpoint is missing,
- * there is no fill. "Off" arrives as null.
+ * Cool is checked first. Above the cool setpoint is too warm. Below the heat
+ * setpoint is too cool. Between them, or level with a setpoint, there is no fill.
+ * The drawn setpoint is the one that decided the band, or the closer one in the
+ * deadband. A tie uses the cool setpoint. "Off" arrives as null.
  */
 fun EcobeeSample.classify(): EcobeeMark {
     val cool = coolSetF?.takeIf { it.isFinite() }
@@ -42,8 +44,14 @@ fun EcobeeSample.classify(): EcobeeMark {
     return when {
         cool != null && indoorF > cool -> EcobeeMark(at, indoorF, cool, EcobeeBand.COOLING)
         heat != null && indoorF < heat -> EcobeeMark(at, indoorF, heat, EcobeeBand.HEATING)
-        else -> EcobeeMark(at, indoorF, null, EcobeeBand.DEADBAND)
+        else -> EcobeeMark(at, indoorF, closerSetpoint(indoorF, cool, heat), EcobeeBand.DEADBAND)
     }
+}
+
+private fun closerSetpoint(indoor: Double, cool: Double?, heat: Double?): Double? {
+    if (cool == null) return heat
+    if (heat == null) return cool
+    return if (abs(indoor - cool) <= abs(indoor - heat)) cool else heat
 }
 
 /** A setpoint cell from an Ecobee export. Blank and "off" are not a temperature. */
@@ -150,7 +158,8 @@ fun sharedFahrenheitRange(
     indoor: List<EcobeeSample>,
     from: Instant,
     to: Instant,
-    scaleToData: Boolean
+    scaleToData: Boolean,
+    pad: Boolean = true
 ): Pair<Double, Double> {
     if (!scaleToData) return ForecastSnapshot.TEMP_MIN_F to ForecastSnapshot.TEMP_MAX_F
     val values = ArrayList<Double>()
@@ -169,8 +178,9 @@ fun sharedFahrenheitRange(
         lo = mid - 3.0
         hi = mid + 3.0
     }
-    val pad = ((hi - lo) * 0.08).coerceAtLeast(0.5)
-    return (lo - pad) to (hi + pad)
+    if (!pad) return lo to hi
+    val margin = ((hi - lo) * 0.08).coerceAtLeast(0.5)
+    return (lo - margin) to (hi + margin)
 }
 
 fun formatTempBound(value: Double): String = "${round(value).toInt()}°F"
@@ -183,10 +193,10 @@ data class TemperatureGrid(
 )
 
 /**
- * Horizontal °F lines land on a step of 5, 10, 20, or 50, whichever puts about
- * three intervals across the span. Ends snap outward onto that step when the
- * axis is fitted to the data. A tick within 3° of freezing is omitted so the
- * dotted 32° line keeps that label.
+ * Horizontal °F lines land on a round step. When the axis is fitted to the data,
+ * the step is the one whose snapped range just covers the values without jumping
+ * to a much wider scale. A tick within 3° of freezing is omitted so the dotted
+ * 32° line keeps that label.
  */
 fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): TemperatureGrid {
     var lo = dataMin
@@ -195,11 +205,13 @@ fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): Temper
         lo -= 5.0
         hi += 5.0
     }
-    val step = chooseTempStep(hi - lo)
-    if (snapEnds) {
-        lo = floor(lo / step) * step
-        hi = ceil(hi / step) * step
-        if (hi <= lo) hi = lo + step
+    val step = if (snapEnds) {
+        val fit = tightestTempFit(lo, hi)
+        lo = fit.min
+        hi = fit.max
+        fit.step
+    } else {
+        chooseTempStep(hi - lo)
     }
     val ticks = ArrayList<Double>()
     fun add(value: Double) {
@@ -217,6 +229,24 @@ fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): Temper
     }
     ticks.sort()
     return TemperatureGrid(lo, hi, step, ticks)
+}
+
+private data class TempFit(val step: Double, val min: Double, val max: Double)
+
+/** Smallest snapped range whose step still leaves a readable number of intervals. */
+private fun tightestTempFit(dataMin: Double, dataMax: Double): TempFit {
+    val steps = doubleArrayOf(5.0, 10.0, 20.0, 25.0, 50.0, 100.0)
+    val fits = steps.map { step ->
+        val lo = floor(dataMin / step) * step
+        var hi = ceil(dataMax / step) * step
+        if (hi <= lo) hi = lo + step
+        TempFit(step, lo, hi)
+    }
+    val readable = fits.filter { fit ->
+        val intervals = (fit.max - fit.min) / fit.step
+        intervals in 2.0..6.0
+    }
+    return (readable.ifEmpty { fits }).minWith(compareBy({ it.max - it.min }, { -it.step }))
 }
 
 fun chooseTempStep(span: Double): Double {

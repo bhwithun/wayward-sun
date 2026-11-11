@@ -66,8 +66,10 @@ button.gold { background: #F5C542; color: #1A1403; }
 }
 .chart-wrap { margin-top: 8px; }
 .chart { width: 100%; height: 320px; display: block; }
-.legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 0.85rem; margin-bottom: 6px; }
+.legend { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; font-size: 0.85rem; margin-bottom: 6px; }
+.legend-row { display: flex; gap: 14px; flex-wrap: nowrap; align-items: center; white-space: nowrap; }
 .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: middle; }
+.swatch.hairline { width: 12px; height: 2px; border-radius: 1px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 8px; margin-top: 12px; }
 .stat { font-size: 1.3rem; font-weight: 650; }

@@ -29,7 +29,13 @@ export function classifyEcobee(sample: EcobeeSample): EcobeeMark {
   if (heat != null && sample.indoorF < heat) {
     return { t: sample.t, indoorF: sample.indoorF, setF: heat, band: "heating" };
   }
-  return { t: sample.t, indoorF: sample.indoorF, setF: null, band: "deadband" };
+  return { t: sample.t, indoorF: sample.indoorF, setF: closerSetpoint(sample.indoorF, cool, heat), band: "deadband" };
+}
+
+function closerSetpoint(indoor: number, cool: number | null, heat: number | null): number | null {
+  if (cool == null) return heat;
+  if (heat == null) return cool;
+  return Math.abs(indoor - cool) <= Math.abs(indoor - heat) ? cool : heat;
 }
 
 /** Blank and "off" are not a temperature. */
@@ -115,7 +121,8 @@ export function sharedFahrenheitRange(
   indoor: EcobeeSample[],
   from: number,
   to: number,
-  scaleToData: boolean
+  scaleToData: boolean,
+  pad = true
 ): { min: number; max: number } {
   if (!scaleToData) return { min: TEMP_MIN, max: TEMP_MAX };
   const values: number[] = [];
@@ -134,8 +141,9 @@ export function sharedFahrenheitRange(
     lo = mid - 3;
     hi = mid + 3;
   }
-  const pad = Math.max((hi - lo) * 0.08, 0.5);
-  return { min: lo - pad, max: hi + pad };
+  if (!pad) return { min: lo, max: hi };
+  const margin = Math.max((hi - lo) * 0.08, 0.5);
+  return { min: lo - margin, max: hi + margin };
 }
 
 export type TemperatureGrid = {
@@ -145,7 +153,7 @@ export type TemperatureGrid = {
   ticks: number[];
 };
 
-/** °F grid on a 5/10/20/50 step. Ticks within 3° of 32 are omitted. */
+/** °F grid on a round step. Fitted ends use the tightest readable snap. Ticks within 3° of 32 are omitted. */
 export function temperatureGrid(dataMin: number, dataMax: number, snapEnds: boolean): TemperatureGrid {
   let lo = dataMin;
   let hi = dataMax;
@@ -153,11 +161,12 @@ export function temperatureGrid(dataMin: number, dataMax: number, snapEnds: bool
     lo -= 5;
     hi += 5;
   }
-  const step = chooseTempStep(hi - lo);
+  let step = chooseTempStep(hi - lo);
   if (snapEnds) {
-    lo = Math.floor(lo / step) * step;
-    hi = Math.ceil(hi / step) * step;
-    if (hi <= lo) hi = lo + step;
+    const fit = tightestTempFit(lo, hi);
+    lo = fit.min;
+    hi = fit.max;
+    step = fit.step;
   }
   const ticks: number[] = [];
   const add = (value: number) => {
@@ -171,6 +180,28 @@ export function temperatureGrid(dataMin: number, dataMax: number, snapEnds: bool
   for (let tick = Math.ceil(lo / step - 1e-9) * step; tick <= hi + 1e-6; tick += step) add(tick);
   ticks.sort((a, b) => a - b);
   return { min: lo, max: hi, step, ticks };
+}
+
+export function tightestTempFit(dataMin: number, dataMax: number): { step: number; min: number; max: number } {
+  const steps = [5, 10, 20, 25, 50, 100];
+  const fits = steps.map((step) => {
+    const min = Math.floor(dataMin / step) * step;
+    let max = Math.ceil(dataMax / step) * step;
+    if (max <= min) max = min + step;
+    return { step, min, max };
+  });
+  const readable = fits.filter((fit) => {
+    const intervals = (fit.max - fit.min) / fit.step;
+    return intervals >= 2 && intervals <= 6;
+  });
+  const pool = readable.length > 0 ? readable : fits;
+  return pool.reduce((best, fit) => {
+    const span = fit.max - fit.min;
+    const bestSpan = best.max - best.min;
+    if (span < bestSpan - 1e-6) return fit;
+    if (Math.abs(span - bestSpan) <= 1e-6 && fit.step > best.step) return fit;
+    return best;
+  });
 }
 
 export function chooseTempStep(span: number): number {

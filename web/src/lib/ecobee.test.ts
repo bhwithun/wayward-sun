@@ -30,17 +30,20 @@ describe("ecobee bands", () => {
     expect(mark.setF).toBe(68);
   });
 
-  it("leaves the deadband empty and draws no setpoint", () => {
-    const mark = classifyEcobee(sample(t0, 71, 74, 68));
-    expect(mark.band).toBe("deadband");
-    expect(mark.setF).toBeNull();
-    expect(classifyEcobee(sample(t0, 74, 74, 68)).band).toBe("deadband");
-    expect(classifyEcobee(sample(t0, 68, 74, 68)).band).toBe("deadband");
+  it("draws the closer setpoint in the deadband and does not fill", () => {
+    const tie = classifyEcobee(sample(t0, 71, 74, 68));
+    expect(tie.band).toBe("deadband");
+    expect(tie.setF).toBe(74);
+    const nearerHeat = classifyEcobee(sample(t0, 69, 74, 68));
+    expect(nearerHeat.band).toBe("deadband");
+    expect(nearerHeat.setF).toBe(68);
+    expect(classifyEcobee(sample(t0, 74, 74, 68))).toMatchObject({ band: "deadband", setF: 74 });
+    expect(classifyEcobee(sample(t0, 68, 74, 68))).toMatchObject({ band: "deadband", setF: 68 });
   });
 
   it("skips a null or off setpoint", () => {
     expect(classifyEcobee(sample(t0, 60, null, 68)).band).toBe("heating");
-    expect(classifyEcobee(sample(t0, 80, null, 68)).band).toBe("deadband");
+    expect(classifyEcobee(sample(t0, 80, null, 68))).toMatchObject({ band: "deadband", setF: 68 });
     expect(classifyEcobee(sample(t0, 80, 74, null)).band).toBe("cooling");
     expect(classifyEcobee(sample(t0, 70, null, null)).setF).toBeNull();
     expect(parseEcobeeSetpoint("off")).toBeNull();
@@ -110,11 +113,12 @@ describe("ecobee geometry", () => {
 
   it("puts temperature gridlines on a round step and skips 32", () => {
     const wide = temperatureGrid(-24, 86, true);
-    expect(wide.step).toBe(50);
-    expect(wide.ticks).toEqual([-50, 0, 50, 100]);
-    expect(wide.min).toBeLessThanOrEqual(-24);
-    expect(wide.max).toBeGreaterThanOrEqual(86);
+    expect(wide.step).toBe(25);
+    expect(wide.min).toBe(-25);
+    expect(wide.max).toBe(100);
     expect(wide.ticks.every((tick) => Math.abs(tick - 32) > 3)).toBe(true);
+    const covered = temperatureGrid(-16, 80, true);
+    expect(covered).toMatchObject({ step: 20, min: -20, max: 80 });
     const tight = temperatureGrid(68, 78, true);
     expect(tight.step).toBe(5);
     expect(tight.ticks).toContain(70);

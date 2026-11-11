@@ -222,23 +222,31 @@ export function Dashboard() {
 
       <section className="panel chart-wrap">
         <div className="legend">
-          <span style={{ color: "#F5C542" }}>● Solcast</span>
-          <span style={{ color: "#2EE6A6" }}>● Enphase</span>
-          <span style={{ color: "rgba(255,255,255,0.60)" }}>● Now</span>
-          {layers.temp && <span style={{ color: "#FF9800" }}>● Outdoor</span>}
-          {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
-          {layers.buy && <span style={{ color: "#E57FD8" }}>▮ Buy</span>}
-          {layers.sell && <span style={{ color: "#7BD88F" }}>▮ Sell</span>}
-          {layers.ecobee && <span style={{ color: "#E6E1F0" }}>● Indoor</span>}
+          <div className="legend-row">
+            {layers.solcast && <span style={{ color: "#F5C542" }}>● Solcast</span>}
+            {layers.enphase && <span style={{ color: "#2EE6A6" }}>● Enphase</span>}
+            {layers.temp && <span style={{ color: "#E6E1F0" }}>● Outdoor</span>}
+            <span style={{ color: "rgba(255,255,255,0.60)" }}>● Now</span>
+          </div>
           {layers.ecobee && (
-            <span>
-              <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Cooling gap
-            </span>
+            <div className="legend-row">
+              <span>
+                <i className="swatch hairline" style={{ background: "#FFF176" }} /> Setpoint
+              </span>
+              <span>
+                <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Too warm
+              </span>
+              <span>
+                <i className="swatch" style={{ background: "rgba(255,152,0,0.50)" }} /> Too cool
+              </span>
+            </div>
           )}
-          {layers.ecobee && (
-            <span>
-              <i className="swatch" style={{ background: "rgba(255,106,92,0.40)" }} /> Heating gap
-            </span>
+          {(layers.precip || layers.buy || layers.sell) && (
+            <div className="legend-row">
+              {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
+              {layers.buy && <span style={{ color: "#E57FD8" }}>▮ Buy</span>}
+              {layers.sell && <span style={{ color: "#7BD88F" }}>▮ Sell</span>}
+            </div>
           )}
         </div>
         <PowerChart
