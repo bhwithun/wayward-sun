@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
 import {
   ecobeeFillSegments,
+  hvacBars,
   prepareEcobee,
   sharedFahrenheitRange,
   temperatureGrid,
@@ -23,6 +24,9 @@ const TEMP = "#E6E1F0";
 const SETPOINT = "#FFF176";
 const TOO_WARM = "#4DA3FF";
 const TOO_COOL = "#FF9800";
+const HEAT_PUMP = "rgba(0, 137, 123, 0.78)";
+const AUX_HEAT = "rgba(255, 110, 64, 0.78)";
+const COOL_RUN = "rgba(144, 202, 249, 0.78)";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;
@@ -37,6 +41,7 @@ export type ChartLayers = {
   buy: boolean;
   sell: boolean;
   ecobee: boolean;
+  hvac: boolean;
 };
 
 export type WeatherMark = { t: number; tempF: number; precipPct: number | null };
@@ -124,6 +129,17 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     const ceiling = yRate(RATE_MAX);
     if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, ceiling, BUY);
     if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, ceiling, SELL);
+  }
+
+  if (props.layers.hvac) {
+    const hvacEnd = Math.min(props.to, props.now);
+    drawHvacBars(
+      ctx,
+      hvacBars(ecobee, props.from, hvacEnd, Math.max(1, Math.round(plotW)), props.now),
+      xOf,
+      bottom,
+      plotH
+    );
   }
 
   if (props.layers.precip && props.weather.length >= 2) {
@@ -422,6 +438,34 @@ function drawEcobee(
     }
     ctx.stroke();
     ctx.restore();
+  }
+}
+
+function drawHvacBars(
+  ctx: CanvasRenderingContext2D,
+  bars: ReturnType<typeof hvacBars>,
+  xOf: (t: number) => number,
+  bottom: number,
+  plotH: number
+) {
+  if (bars.length === 0) return;
+  const span = bars.length >= 2 ? Math.abs(xOf(bars[bars.length - 1].t) - xOf(bars[0].t)) : 8;
+  const barW = Math.max(2, (bars.length >= 2 ? span / (bars.length - 1) : 8) * 1.08);
+  for (const bar of bars) {
+    const total = bar.heatPumpMin + bar.auxMin + bar.coolMin;
+    if (total <= 0 || bar.bucketMin <= 0) continue;
+    const scale = total > bar.bucketMin ? bar.bucketMin / total : 1;
+    let cursor = bottom;
+    const band = (minutes: number, color: string) => {
+      const bandH = (minutes * scale / bar.bucketMin) * plotH;
+      if (bandH <= 0.4) return;
+      cursor -= bandH;
+      ctx.fillStyle = color;
+      ctx.fillRect(xOf(bar.t) - barW / 2, cursor, barW, bandH);
+    };
+    band(bar.heatPumpMin, HEAT_PUMP);
+    band(bar.auxMin, AUX_HEAT);
+    band(bar.coolMin, COOL_RUN);
   }
 }
 

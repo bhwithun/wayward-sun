@@ -43,6 +43,7 @@ class AppStorage(private val context: Context) {
         val SHOW_SOLCAST = booleanPreferencesKey("show_solcast")
         val SHOW_ENPHASE = booleanPreferencesKey("show_enphase")
         val SHOW_ECOBEE = booleanPreferencesKey("show_ecobee")
+        val SHOW_HVAC = booleanPreferencesKey("show_hvac")
         val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
         val UPDATE_CHECK_AT = longPreferencesKey("update_check_at")
     }
@@ -210,7 +211,8 @@ class AppStorage(private val context: Context) {
             precipitation = prefs[Keys.SHOW_PRECIPITATION] ?: true,
             solcast = solcast,
             enphase = prefs[Keys.SHOW_ENPHASE] ?: solcast,
-            ecobee = prefs[Keys.SHOW_ECOBEE] ?: true
+            ecobee = prefs[Keys.SHOW_ECOBEE] ?: true,
+            hvac = prefs[Keys.SHOW_HVAC] ?: false
         )
     }
 
@@ -232,6 +234,7 @@ class AppStorage(private val context: Context) {
             ChartLayer.SOLCAST -> Keys.SHOW_SOLCAST
             ChartLayer.ENPHASE -> Keys.SHOW_ENPHASE
             ChartLayer.ECOBEE -> Keys.SHOW_ECOBEE
+            ChartLayer.HVAC -> Keys.SHOW_HVAC
         }
         setBoolean(key, visible)
     }

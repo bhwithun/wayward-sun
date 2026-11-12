@@ -14,7 +14,12 @@ data class EcobeeSample(
     val at: Instant,
     val indoorF: Double,
     val coolSetF: Double?,
-    val heatSetF: Double?
+    val heatSetF: Double?,
+    val heatPumpSec: Int? = null,
+    val auxHeatSec: Int? = null,
+    val coolSec: Int? = null,
+    val fanSec: Int? = null,
+    val outdoorF: Double? = null
 )
 
 /**
@@ -184,6 +189,82 @@ fun sharedFahrenheitRange(
 }
 
 fun formatTempBound(value: Double): String = "${round(value).toInt()}°F"
+
+/** Consumers Energy gas furnace, about 60 cents per runtime hour. */
+const val GAS_AUX_DOLLARS_PER_HOUR = 0.60
+
+data class HvacBar(
+    val at: Instant,
+    val heatPumpMin: Double,
+    val auxMin: Double,
+    val coolMin: Double,
+    val bucketMin: Double
+)
+
+data class HvacSummary(
+    val heatPumpHours: Double,
+    val auxHours: Double,
+    val coolHours: Double,
+    val fanHours: Double
+) {
+    val gasCostDollars: Double get() = auxHours * GAS_AUX_DOLLARS_PER_HOUR
+}
+
+fun hvacSummary(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Instant? = null): HvacSummary {
+    var heat = 0.0
+    var aux = 0.0
+    var cool = 0.0
+    var fan = 0.0
+    for (sample in samples) {
+        if (sample.at.isBefore(from) || !sample.at.isBefore(to)) continue
+        if (now != null && sample.at.isAfter(now)) continue
+        heat += sample.heatPumpSec ?: 0
+        aux += sample.auxHeatSec ?: 0
+        cool += sample.coolSec ?: 0
+        fan += sample.fanSec ?: 0
+    }
+    return HvacSummary(heat / 3600.0, aux / 3600.0, cool / 3600.0, fan / 3600.0)
+}
+
+fun hvacSummaryLabel(summary: HvacSummary): String {
+    return "Heat pump ${hours(summary.heatPumpHours)} · Gas ${hours(summary.auxHours)} · " +
+        "Cool ${hours(summary.coolHours)} · Gas ${money(summary.gasCostDollars)}"
+}
+
+private fun hours(value: Double): String = String.format("%.1f h", value)
+
+private fun money(value: Double): String = String.format("$%.2f", value)
+
+/** One stacked bar per horizontal pixel. Heights are minutes inside that pixel's time span. */
+fun hvacBars(
+    samples: List<EcobeeSample>,
+    from: Instant,
+    to: Instant,
+    plotWidthPx: Int,
+    now: Instant? = null
+): List<HvacBar> {
+    val end = if (now != null && now.isBefore(to)) now else to
+    if (plotWidthPx < 1 || !end.isAfter(from)) return emptyList()
+    val span = end.toEpochMilli() - from.toEpochMilli()
+    if (span <= 0L) return emptyList()
+    val bucketMin = span.toDouble() / plotWidthPx / 60_000.0
+    val seconds = HashMap<Int, DoubleArray>()
+    for (sample in samples) {
+        if (sample.at.isBefore(from) || !sample.at.isBefore(to)) continue
+        if (now != null && sample.at.isAfter(now)) continue
+        val px = (((sample.at.toEpochMilli() - from.toEpochMilli()).toDouble() / span) * plotWidthPx)
+            .toInt()
+            .coerceIn(0, plotWidthPx - 1)
+        val slot = seconds.getOrPut(px) { DoubleArray(3) }
+        slot[0] += (sample.heatPumpSec ?: 0).toDouble()
+        slot[1] += (sample.auxHeatSec ?: 0).toDouble()
+        slot[2] += (sample.coolSec ?: 0).toDouble()
+    }
+    return seconds.entries.sortedBy { it.key }.map { (px, slot) ->
+        val at = Instant.ofEpochMilli(from.toEpochMilli() + ((px + 0.5) / plotWidthPx * span).toLong())
+        HvacBar(at, slot[0] / 60.0, slot[1] / 60.0, slot[2] / 60.0, bucketMin)
+    }
+}
 
 data class TemperatureGrid(
     val min: Double,

@@ -164,6 +164,12 @@ fun LayerDrawerContent(
             layers.ecobee,
             swatch = { EcobeeSwatch() }
         ) { onToggle(ChartLayer.ECOBEE, it) }
+        LayerSwitch(
+            "HVAC",
+            SolColors.HeatPump,
+            layers.hvac,
+            swatch = { HvacSwatch() }
+        ) { onToggle(ChartLayer.HVAC, it) }
         TextButton(
             onClick = onReset,
             modifier = Modifier.padding(start = 8.dp, top = 4.dp)
@@ -230,6 +236,15 @@ private fun legendGroups(layers: ChartLayers): List<List<LegendItem>> = buildLis
         if (layers.sell) add(LegendItem("Sell", SolColors.Sell))
     }
     if (other.isNotEmpty()) add(other)
+    if (layers.hvac) {
+        add(
+            listOf(
+                LegendItem("Heat pump", SolColors.HeatPump, LegendMark.SQUARE),
+                LegendItem("Gas aux", SolColors.AuxHeat, LegendMark.SQUARE),
+                LegendItem("Cool", SolColors.CoolRun, LegendMark.SQUARE)
+            )
+        )
+    }
 }
 
 @Composable
@@ -240,6 +255,15 @@ private fun LayerSubhead(title: String) {
         style = MaterialTheme.typography.labelSmall,
         modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp)
     )
+}
+
+@Composable
+private fun HvacSwatch() {
+    Row(horizontalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.size(14.dp)) {
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.HeatPump))
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.AuxHeat))
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.CoolRun))
+    }
 }
 
 @Composable

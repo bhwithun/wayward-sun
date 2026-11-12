@@ -52,6 +52,16 @@ object LivePastStore {
             append(sample.coolSetF?.toString().orEmpty())
             append(',')
             append(sample.heatSetF?.toString().orEmpty())
+            append(',')
+            append(sample.heatPumpSec?.toString().orEmpty())
+            append(',')
+            append(sample.auxHeatSec?.toString().orEmpty())
+            append(',')
+            append(sample.coolSec?.toString().orEmpty())
+            append(',')
+            append(sample.fanSec?.toString().orEmpty())
+            append(',')
+            append(sample.outdoorF?.toString().orEmpty())
             append('\n')
         }
     }
@@ -89,10 +99,20 @@ object LivePastStore {
 
     private fun parseEcobee(line: String): EcobeeSample? {
         val parts = line.split(',')
-        if (parts.size != 5 || parts[0] != "E") return null
+        if (parts.size < 5 || parts[0] != "E") return null
         val at = parts[1].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return null
         val indoor = parts[2].toDoubleOrNull() ?: return null
-        return EcobeeSample(at, indoor, parts[3].toDoubleOrNull(), parts[4].toDoubleOrNull())
+        return EcobeeSample(
+            at = at,
+            indoorF = indoor,
+            coolSetF = parts[3].toDoubleOrNull(),
+            heatSetF = parts[4].toDoubleOrNull(),
+            heatPumpSec = parts.getOrNull(5)?.toIntOrNull(),
+            auxHeatSec = parts.getOrNull(6)?.toIntOrNull(),
+            coolSec = parts.getOrNull(7)?.toIntOrNull(),
+            fanSec = parts.getOrNull(8)?.toIntOrNull(),
+            outdoorF = parts.getOrNull(9)?.toDoubleOrNull()
+        )
     }
 
     private data class ParsedRow(

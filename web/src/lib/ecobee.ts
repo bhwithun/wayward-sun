@@ -3,6 +3,29 @@ export type EcobeeSample = {
   indoorF: number;
   coolF: number | null;
   heatF: number | null;
+  heatPumpSec?: number | null;
+  auxHeatSec?: number | null;
+  coolSec?: number | null;
+  fanSec?: number | null;
+  outdoorF?: number | null;
+};
+
+export const GAS_AUX_DOLLARS_PER_HOUR = 0.6;
+
+export type HvacBar = {
+  t: number;
+  heatPumpMin: number;
+  auxMin: number;
+  coolMin: number;
+  bucketMin: number;
+};
+
+export type HvacSummary = {
+  heatPumpHours: number;
+  auxHours: number;
+  coolHours: number;
+  fanHours: number;
+  gasCostDollars: number;
 };
 
 export type EcobeeBand = "deadband" | "cooling" | "heating";
@@ -45,6 +68,61 @@ export function parseEcobeeSetpoint(raw: string | null | undefined): number | nu
   if (text === "" || text === "off" || text === "null" || text === "nan") return null;
   const value = Number(text);
   return Number.isFinite(value) ? value : null;
+}
+
+export function hvacSummary(samples: EcobeeSample[], from: number, to: number, now?: number): HvacSummary {
+  let heat = 0;
+  let aux = 0;
+  let cool = 0;
+  let fan = 0;
+  for (const sample of samples) {
+    if (sample.t < from || sample.t >= to) continue;
+    if (now != null && sample.t > now) continue;
+    heat += sample.heatPumpSec ?? 0;
+    aux += sample.auxHeatSec ?? 0;
+    cool += sample.coolSec ?? 0;
+    fan += sample.fanSec ?? 0;
+  }
+  const auxHours = aux / 3600;
+  return {
+    heatPumpHours: heat / 3600,
+    auxHours,
+    coolHours: cool / 3600,
+    fanHours: fan / 3600,
+    gasCostDollars: auxHours * GAS_AUX_DOLLARS_PER_HOUR,
+  };
+}
+
+export function hvacSummaryLabel(summary: HvacSummary): string {
+  const hours = (value: number) => `${value.toFixed(1)} h`;
+  return `Heat pump ${hours(summary.heatPumpHours)} · Gas ${hours(summary.auxHours)} · Cool ${hours(summary.coolHours)} · Gas $${summary.gasCostDollars.toFixed(2)}`;
+}
+
+export function hvacBars(samples: EcobeeSample[], from: number, to: number, plotWidthPx: number, now?: number): HvacBar[] {
+  const end = now != null && now < to ? now : to;
+  if (plotWidthPx < 1 || end <= from) return [];
+  const span = end - from;
+  const bucketMin = span / plotWidthPx / 60_000;
+  const seconds = new Map<number, [number, number, number]>();
+  for (const sample of samples) {
+    if (sample.t < from || sample.t >= to) continue;
+    if (now != null && sample.t > now) continue;
+    const px = Math.min(plotWidthPx - 1, Math.max(0, Math.floor(((sample.t - from) / span) * plotWidthPx)));
+    const slot = seconds.get(px) ?? [0, 0, 0];
+    slot[0] += sample.heatPumpSec ?? 0;
+    slot[1] += sample.auxHeatSec ?? 0;
+    slot[2] += sample.coolSec ?? 0;
+    seconds.set(px, slot);
+  }
+  return [...seconds.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([px, slot]) => ({
+      t: from + ((px + 0.5) / plotWidthPx) * span,
+      heatPumpMin: slot[0] / 60,
+      auxMin: slot[1] / 60,
+      coolMin: slot[2] / 60,
+      bucketMin,
+    }));
 }
 
 export function ecobeeFillSegments(run: EcobeeMark[]): EcobeeMark[][] {

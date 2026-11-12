@@ -33,7 +33,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.hvacSummary
+import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SeriesKind
@@ -115,6 +118,30 @@ class EcobeeScreenshotTest {
         }
         check(open.getPixel(scrimX, sampleY) != open.getPixel(drawerX, sampleY)) {
             "The open drawer covers the scrim."
+        }
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w384dp-h800dp-420dpi")
+    fun hvacRuntimeOnAColdDayAndAMildDay() {
+        val density = 420f / 160f
+        val width = (384 * density).roundToInt()
+        val height = (800 * density).roundToInt()
+        val hvacLayers = ChartLayers(
+            temperature = true,
+            solcast = true,
+            enphase = false,
+            ecobee = true,
+            hvac = true,
+            precipitation = false,
+            buy = false,
+            sell = false
+        )
+        captureSized(width, height, "hvac-cold-2.6.0.png") {
+            PhoneFrame(runtimeDay(aux = true), past, future, hvacLayers, drawerOpen = false)
+        }
+        captureSized(width, height, "hvac-mild-2.6.0.png") {
+            PhoneFrame(runtimeDay(aux = false), past, future, hvacLayers, drawerOpen = false)
         }
     }
 
@@ -379,6 +406,13 @@ class EcobeeScreenshotTest {
                         )
                     }
                     ChartLegend(layers = layers, onOpen = {}, modifier = Modifier.padding(horizontal = 16.dp))
+                    if (layers.hvac) {
+                        Text(
+                            text = hvacSummaryLabel(hvacSummary(indoor, from, to, now)),
+                            color = SolColors.Muted,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
         }
@@ -454,6 +488,30 @@ class EcobeeScreenshotTest {
         val first = samples(start, hours = 6) { _ -> 78.0 to (68.0 to 74.0) }
         val second = samples(start.plus(9, ChronoUnit.HOURS), hours = 6) { _ -> 63.0 to (68.0 to 74.0) }
         return (first + second).filter { !it.at.isAfter(now) }
+    }
+
+    private fun runtimeDay(aux: Boolean): List<EcobeeSample> {
+        return samples(past, hours = 18) { hour ->
+            if (aux) {
+                when {
+                    hour < 8 -> 64.0 to (66.0 to 75.0)
+                    hour < 12 -> 70.0 to (66.0 to 75.0)
+                    else -> 78.0 to (68.0 to 74.0)
+                }
+            } else {
+                when {
+                    hour < 8 -> 67.5 to (66.0 to 75.0)
+                    else -> 71.0 to (68.0 to 75.0)
+                }
+            }
+        }.filter { !it.at.isAfter(now) }.map { sample ->
+            val hour = sample.at.atZone(zone).hour
+            when {
+                aux && hour < 8 -> sample.copy(heatPumpSec = 160, auxHeatSec = 240, coolSec = 0, fanSec = 280, outdoorF = 22.0)
+                !aux && hour in 5..10 -> sample.copy(heatPumpSec = 220, auxHeatSec = 0, coolSec = 0, fanSec = 240, outdoorF = 46.0)
+                else -> sample.copy(heatPumpSec = 0, auxHeatSec = 0, coolSec = 0, fanSec = 20, outdoorF = if (aux) 26.0 else 50.0)
+            }
+        }
     }
 
     private fun samples(

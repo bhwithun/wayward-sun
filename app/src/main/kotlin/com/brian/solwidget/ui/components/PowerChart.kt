@@ -34,7 +34,9 @@ import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
+import com.brian.solwidget.data.HvacBar
 import com.brian.solwidget.data.ecobeeFillSegments
+import com.brian.solwidget.data.hvacBars
 import com.brian.solwidget.data.forecastStrokes
 import com.brian.solwidget.data.formatTempBound
 import com.brian.solwidget.data.prepareEcobee
@@ -172,6 +174,16 @@ fun PowerChart(
             val bands = DteTou.bands(from, to)
             if (layers.buy) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
             if (layers.sell) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
+        }
+
+        if (layers.hvac) {
+            drawHvacBars(
+                hvacBars(ecobee, from, to, width.toInt().coerceAtLeast(1), now),
+                ::xOf,
+                bottom,
+                height,
+                width
+            )
         }
 
         if (layers.precipitation && weather.size >= 2) {
@@ -521,6 +533,39 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
                 strokeWidth = stroke,
                 cap = if (night) StrokeCap.Butt else StrokeCap.Round,
                 pathEffect = if (night) nightDash else null
+            )
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHvacBars(
+    bars: List<HvacBar>,
+    xOf: (Instant) -> Float,
+    bottom: Float,
+    plotH: Float,
+    plotW: Float
+) {
+    val columns = bars.size.coerceAtLeast(1)
+    val span = if (bars.size >= 2) abs(xOf(bars.last().at) - xOf(bars.first().at)) else plotW
+    val barW = ((if (bars.size >= 2) span / (columns - 1) else plotW) * 1.08f).coerceAtLeast(2f)
+    for (bar in bars) {
+        val total = bar.heatPumpMin + bar.auxMin + bar.coolMin
+        if (total <= 0.0 || bar.bucketMin <= 0.0) continue
+        val scale = if (total > bar.bucketMin) bar.bucketMin / total else 1.0
+        var cursor = bottom
+        val parts = listOf(
+            bar.heatPumpMin to SolColors.HeatPump,
+            bar.auxMin to SolColors.AuxHeat,
+            bar.coolMin to SolColors.CoolRun
+        )
+        for ((minutes, color) in parts) {
+            val bandH = ((minutes * scale / bar.bucketMin).toFloat() * plotH).coerceAtLeast(0f)
+            if (bandH <= 0.4f) continue
+            cursor -= bandH
+            drawRect(
+                color = color.copy(alpha = 0.78f),
+                topLeft = Offset(xOf(bar.at) - barW / 2f, cursor),
+                size = Size(barW, bandH)
             )
         }
     }

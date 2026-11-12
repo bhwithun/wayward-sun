@@ -12,6 +12,21 @@ class EcobeeTest {
     private val t0: Instant = Instant.parse("2026-01-15T15:00:00Z")
 
     @Test
+    fun hvacSummaryPricesAuxGasAndKeepsHeatPumpSeparate() {
+        val cold = sample(t0, 65.0, 75.0, 66.0).copy(heatPumpSec = 300, auxHeatSec = 180, coolSec = 0, fanSec = 300)
+        val mild = sample(t0.plusSeconds(300), 68.0, 75.0, 66.0).copy(heatPumpSec = 240, auxHeatSec = 0, coolSec = 0)
+        val summary = hvacSummary(listOf(cold, mild), t0, t0.plusSeconds(3600), t0.plusSeconds(3600))
+        assertEquals(540.0 / 3600.0, summary.heatPumpHours, 0.0001)
+        assertEquals(180.0 / 3600.0, summary.auxHours, 0.0001)
+        assertEquals(summary.auxHours * 0.60, summary.gasCostDollars, 0.0001)
+        val bars = hvacBars(listOf(cold), t0, t0.plusSeconds(3600), 6, t0.plusSeconds(3600))
+        assertTrue(bars.any { it.auxMin > 0.0 })
+        val mildBars = hvacBars(listOf(mild), t0, t0.plusSeconds(3600), 6, t0.plusSeconds(3600))
+        assertTrue(mildBars.all { it.auxMin == 0.0 && it.heatPumpMin > 0.0 })
+        assertTrue(hvacSummaryLabel(summary).contains("Gas $"))
+    }
+
+    @Test
     fun aboveCoolSetpointIsACoolingGap() {
         val mark = sample(t0, indoor = 75.0, cool = 74.0, heat = 68.0).classify()
         assertEquals(EcobeeBand.COOLING, mark.band)

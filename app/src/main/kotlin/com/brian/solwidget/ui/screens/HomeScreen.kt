@@ -73,6 +73,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brian.solwidget.R
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.hvacSummary
+import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.DteTou
@@ -459,6 +461,13 @@ private fun LivePane(
             )
         }
         ChartLegend(layers = layers, onOpen = onOpenLayers)
+        if (layers.hvac) {
+            Text(
+                text = hvacSummaryLabel(hvacSummary(ecobee, rangeFrom, rangeTo, now)),
+                color = SolColors.Muted,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -544,6 +553,13 @@ private fun HistoryPane(
                 }
             }
             ChartLegend(layers = layers, onOpen = onOpenLayers)
+            if (layers.hvac && chart != null) {
+                Text(
+                    text = hvacSummaryLabel(hvacSummary(chart.ecobee, from, to, now)),
+                    color = SolColors.Muted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             if (pageMatches && history != null && chart != null &&
                 chart.points.isEmpty() && chart.weather.isEmpty() && chart.ecobee.isEmpty() &&
                 historyError == null

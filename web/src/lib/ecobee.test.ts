@@ -4,6 +4,8 @@ import {
   classifyEcobee,
   downsampleEcobee,
   ecobeeFillSegments,
+  hvacBars,
+  hvacSummary,
   parseEcobeeSetpoint,
   prepareEcobee,
   sharedFahrenheitRange,
@@ -64,6 +66,30 @@ describe("ecobee bands", () => {
       [75, 76],
       [66, 65],
     ]);
+  });
+});
+
+describe("hvac runtime", () => {
+  it("stacks a cold aux hour and prices the gas", () => {
+    const samples = [
+      { ...sample(t0, 65, 75, 66), heatPumpSec: 300, auxHeatSec: 180, coolSec: 0, fanSec: 300 },
+      { ...sample(t0 + 300_000, 64, 75, 66), heatPumpSec: 60, auxHeatSec: 0, coolSec: 0, fanSec: 60 },
+    ];
+    const summary = hvacSummary(samples, t0, t0 + 3_600_000, t0 + 3_600_000);
+    expect(summary.heatPumpHours).toBeCloseTo(360 / 3600);
+    expect(summary.auxHours).toBeCloseTo(180 / 3600);
+    expect(summary.gasCostDollars).toBeCloseTo((180 / 3600) * 0.6);
+    const bars = hvacBars(samples, t0, t0 + 3_600_000, 2, t0 + 3_600_000);
+    expect(bars.length).toBeGreaterThan(0);
+    expect(bars.reduce((sum, bar) => sum + bar.auxMin, 0)).toBeCloseTo(3);
+  });
+
+  it("keeps a mild hour on the heat pump", () => {
+    const samples = [{ ...sample(t0, 68, 75, 66), heatPumpSec: 240, auxHeatSec: 0, coolSec: 0 }];
+    const summary = hvacSummary(samples, t0, t0 + 600_000);
+    expect(summary.auxHours).toBe(0);
+    expect(summary.heatPumpHours).toBeCloseTo(240 / 3600);
+    expect(summary.gasCostDollars).toBe(0);
   });
 });
 

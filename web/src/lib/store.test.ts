@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isMissingEcobeeTable, isoDate } from "./store";
+import { isMissingEcobeeRuntime, isMissingEcobeeTable, isoDate } from "./store";
 
 describe("isoDate", () => {
   it("keeps a date-only string", () => {
@@ -20,5 +20,11 @@ describe("ecobee table", () => {
     expect(isMissingEcobeeTable({ code: "42P01" })).toBe(true);
     expect(isMissingEcobeeTable(new Error('relation "ecobee_samples" does not exist'))).toBe(true);
     expect(isMissingEcobeeTable(new Error("connection reset"))).toBe(false);
+  });
+
+  it("treats a database without the runtime columns as the older ecobee shape", () => {
+    expect(isMissingEcobeeRuntime({ code: "42703" })).toBe(true);
+    expect(isMissingEcobeeRuntime(new Error('column "heat_pump_sec" does not exist'))).toBe(true);
+    expect(isMissingEcobeeRuntime(new Error("connection reset"))).toBe(false);
   });
 });

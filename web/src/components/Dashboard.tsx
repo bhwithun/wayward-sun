@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PowerChart, type ChartLayers } from "@/components/PowerChart";
-import type { EcobeeSample } from "@/lib/ecobee";
+import { hvacSummary, hvacSummaryLabel, type EcobeeSample } from "@/lib/ecobee";
 import {
   BASE_MID_PEAK_CENTS,
   BASE_OFF_PEAK_CENTS,
@@ -44,6 +44,7 @@ const DEFAULT_LAYERS: ChartLayers = {
   buy: true,
   sell: true,
   ecobee: true,
+  hvac: false,
 };
 
 function readLayers(): ChartLayers {
@@ -60,6 +61,7 @@ function readLayers(): ChartLayers {
       buy: parsed.buy !== false,
       sell: parsed.sell !== false,
       ecobee: parsed.ecobee !== false,
+      hvac: parsed.hvac === true,
     };
   } catch {
     return DEFAULT_LAYERS;
@@ -89,7 +91,17 @@ type HistoryPoint = {
   outflowCents: number | null;
 };
 
-type EcobeeBody = { t: string; indoorF: number; coolF: number | null; heatF: number | null };
+type EcobeeBody = {
+  t: string;
+  indoorF: number;
+  coolF: number | null;
+  heatF: number | null;
+  heatPumpSec?: number | null;
+  auxHeatSec?: number | null;
+  coolSec?: number | null;
+  fanSec?: number | null;
+  outdoorF?: number | null;
+};
 
 type HistoryBody = {
   points?: HistoryPoint[];
@@ -216,6 +228,7 @@ export function Dashboard() {
         <Chip label="Buy" on={layers.buy} onClick={() => setLayers({ ...layers, buy: !layers.buy })} />
         <Chip label="Sell" on={layers.sell} onClick={() => setLayers({ ...layers, sell: !layers.sell })} />
         <Chip label="Ecobee" on={layers.ecobee} onClick={() => setLayers({ ...layers, ecobee: !layers.ecobee })} />
+        <Chip label="HVAC" on={layers.hvac} onClick={() => setLayers({ ...layers, hvac: !layers.hvac })} />
       </div>
 
       {status && <p className="banner">{status}</p>}
@@ -241,6 +254,13 @@ export function Dashboard() {
               </span>
             </div>
           )}
+          {layers.hvac && (
+            <div className="legend-row">
+              <span><i className="swatch" style={{ background: "#00897B" }} /> Heat pump</span>
+              <span><i className="swatch" style={{ background: "#FF6E40" }} /> Gas aux</span>
+              <span><i className="swatch" style={{ background: "#90CAF9" }} /> Cool</span>
+            </div>
+          )}
           {(layers.precip || layers.buy || layers.sell) && (
             <div className="legend-row">
               {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
@@ -261,6 +281,11 @@ export function Dashboard() {
           demo={cache?.source === "demo"}
           ecobee={chart.ecobee}
         />
+        {layers.hvac && (
+          <p className="muted">
+            {hvacSummaryLabel(hvacSummary(chart.ecobee, chart.fromMs, chart.toMs, clock))}
+          </p>
+        )}
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
 
@@ -396,6 +421,11 @@ function chartModel(
       indoorF: sample.indoorF,
       coolF: sample.coolF,
       heatF: sample.heatF,
+      heatPumpSec: sample.heatPumpSec ?? null,
+      auxHeatSec: sample.auxHeatSec ?? null,
+      coolSec: sample.coolSec ?? null,
+      fanSec: sample.fanSec ?? null,
+      outdoorF: sample.outdoorF ?? null,
     }))
     .filter((sample) => Number.isFinite(sample.t) && sample.t >= fromMs && sample.t < toMs);
   const sun: SunSpan[] = (history?.sun ?? [])
