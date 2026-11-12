@@ -239,7 +239,7 @@ class EcobeeScreenshotTest {
         captureSized(width, height, "live-fullscreen-2.8.0f.png") {
             liveScreen(expanded = true)
         }
-        captureSized(width, height, "fullscreen-portrait-2.8.1b.png", emulateCutout = true) {
+        captureSized(width, height, "fullscreen-portrait-2.8.1c.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
         }
         captureSized((844 * density).roundToInt(), (390 * density).roundToInt(), "fullscreen-landscape-2.8.1b.png", emulateCutout = true) {

@@ -1012,7 +1012,7 @@ private fun ExpandedChart(
         ) {
             Text(
                 text = title,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).alignByBaseline(),
                 color = SolColors.Ink,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
@@ -1035,7 +1035,7 @@ private fun ExpandedChart(
                 open = controls.legendOpen,
                 onClick = controls.onToggleLegend,
                 compact = true,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = 8.dp).alignByBaseline()
             )
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
