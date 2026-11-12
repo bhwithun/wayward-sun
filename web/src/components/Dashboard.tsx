@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PowerChart, type ChartLayers } from "@/components/PowerChart";
 import { hvacPresence, hvacSummary, hvacSummaryLabel, type EcobeeSample } from "@/lib/ecobee";
 import {
@@ -135,6 +135,8 @@ export function Dashboard() {
   const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
   const [layersReady, setLayersReady] = useState(false);
   const [tab, setTab] = useState<Tab>("live");
+  const [legendOpen, setLegendOpen] = useState(false);
+  const legendRow = useRef<HTMLDivElement>(null);
   const [focus, setFocus] = useState<HistoryFocus>("week");
   const [dayId, setDayId] = useState<string | null>(null);
   const [cache, setCache] = useState<CacheBody | null>(null);
@@ -213,6 +215,22 @@ export function Dashboard() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!legendOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLegendOpen(false);
+    };
+    const onPointer = (event: MouseEvent) => {
+      if (!legendRow.current?.contains(event.target as Node)) setLegendOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointer);
+    };
+  }, [legendOpen]);
+
   const chartFocus =
     tab === "history" && focus === "week" && selectedWeek
       ? { from: parseYmd(selectedWeek.id) ?? selectedDay, days: 7 }
@@ -226,18 +244,20 @@ export function Dashboard() {
   return (
     <main>
       <h1>Wayward Sun</h1>
+      <div className="tabs" role="tablist" data-tab={tab}>
+        <button type="button" role="tab" aria-selected={tab === "live"} onClick={() => setTab("live")}>
+          Live
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
+          History
+        </button>
+        <span className="tab-indicator" aria-hidden="true">
+          <i />
+        </span>
+      </div>
       <p className="muted">
         Shared Solcast cache on Vercel. Phones download <code>GET /cache</code>. Solcast itself runs only on the Detroit schedule.
       </p>
-
-      <div className="tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === "live"} className={tab === "live" ? "on" : ""} onClick={() => setTab("live")}>
-          Live
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>
-          History
-        </button>
-      </div>
 
       <div className="toolbar">
         <Chip label="Solcast" on={layers.solcast} onClick={() => setLayers({ ...layers, solcast: !layers.solcast })} />
@@ -253,10 +273,24 @@ export function Dashboard() {
       {status && <p className="banner">{status}</p>}
 
       <section className="panel chart-wrap">
-        {tab === "history" && selectedWeek && (
-          <p className="period">{historyPeriod(focus, selectedWeek.id, selectedDay)}</p>
-        )}
-        <div className="legend">
+        <div className="period-row" ref={legendRow}>
+          <p className="period">
+            {tab === "history" && selectedWeek
+              ? historyPeriod(focus, selectedWeek.id, selectedDay)
+              : "2 days before through 2 days after"}
+          </p>
+          <button
+            type="button"
+            className="legend-button"
+            aria-expanded={legendOpen}
+            onClick={() => setLegendOpen((open) => !open)}
+          >
+            <i className="legend-mark" aria-hidden="true" />
+            Legend
+          </button>
+          {legendOpen && (
+            <div className="legend-popover" role="dialog" aria-label="Legend">
+              <div className="legend">
           <div className="legend-row">
             {layers.solcast && <span style={{ color: "#F5C542" }}>● Solcast</span>}
             {layers.enphase && <span style={{ color: "#2EE6A6" }}>● Enphase</span>}
@@ -304,6 +338,9 @@ export function Dashboard() {
               {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
               {layers.buy && <span style={{ color: "#E57FD8" }}>▮ Buy</span>}
               {layers.sell && <span style={{ color: "#7BD88F" }}>▮ Sell</span>}
+            </div>
+          )}
+              </div>
             </div>
           )}
         </div>

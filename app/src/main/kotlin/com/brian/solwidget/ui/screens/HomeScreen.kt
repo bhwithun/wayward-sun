@@ -23,8 +23,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -34,7 +40,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -46,7 +55,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,6 +68,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -89,6 +104,10 @@ import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryPage
 import com.brian.solwidget.data.WeatherSnapshot
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import com.brian.solwidget.data.AppStorage
 import com.brian.solwidget.data.chartFor
 import com.brian.solwidget.data.historyFetchKey
 import com.brian.solwidget.data.liveSolarPoints
@@ -109,6 +128,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,9 +173,55 @@ fun HomeScreen(
         viewModel.consumeToast()
     }
 
-    BackHandler(enabled = drawerState.isOpen) {
+    val expanded = state.chartExpanded
+    var legendOpen by rememberSaveable { mutableStateOf(false) }
+    var cardBounds by remember { mutableStateOf<Rect?>(null) }
+    var expandHintSeen by remember { mutableStateOf(true) }
+    val expandProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(CHART_EXPAND_MILLIS, easing = FastOutSlowInEasing),
+        label = "chartExpand"
+    )
+    val covering = expanded || expandProgress > 0.01f
+    val showExpandHint = showChartExpandHint(expandHintSeen, expanded)
+    LaunchedEffect(Unit) {
+        expandHintSeen = AppStorage(context).chartExpandHintSeen()
+    }
+    LaunchedEffect(showExpandHint) {
+        if (!showExpandHint) return@LaunchedEffect
+        delay(2400)
+        AppStorage(context).setChartExpandHintSeen()
+        expandHintSeen = true
+    }
+    DisposableEffect(expanded) {
+        val activity = context as? Activity
+        val window = activity?.window
+        val controller = if (window != null) {
+            WindowCompat.getInsetsController(window, window.decorView)
+        } else {
+            null
+        }
+        if (expanded && window != null && controller != null) {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else if (window != null && controller != null) {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
+        onDispose {
+            if (window != null && controller != null) {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+            }
+        }
+    }
+
+    BackHandler(enabled = drawerState.isOpen && !expanded && !legendOpen) {
         scope.launch { drawerState.close() }
     }
+    BackHandler(enabled = legendOpen) { legendOpen = false }
+    BackHandler(enabled = expanded && !legendOpen) { viewModel.setChartExpanded(false) }
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen,
@@ -205,48 +271,79 @@ fun HomeScreen(
             }
         }
     ) {
+    val chartControls = ChartControls(
+        expanded = covering,
+        expandProgress = expandProgress,
+        cardBounds = cardBounds,
+        onChartTap = {
+            legendOpen = false
+            viewModel.setChartExpanded(!expanded)
+        },
+        onCardBounds = { cardBounds = it },
+        legendOpen = legendOpen,
+        onToggleLegend = { legendOpen = !legendOpen },
+        onDismissLegend = { legendOpen = false },
+        showExpandHint = showExpandHint && !covering
+    )
     Scaffold(
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { openDrawer() }) {
-                        Icon(
-                            imageVector = Icons.Filled.Menu,
-                            contentDescription = "Open navigation",
-                            tint = SolColors.Ink
+            if (!covering) {
+                Box {
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = { openDrawer() }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Menu,
+                                    contentDescription = "Open navigation",
+                                    tint = SolColors.Ink
+                                )
+                            }
+                        },
+                        title = {
+                            Text(
+                                text = "Wayward Sun",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = SolColors.Navy,
+                            titleContentColor = SolColors.Ink
                         )
-                    }
-                },
-                title = {
-                    Text(
-                        text = "Wayward Sun",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SolColors.Navy,
-                    titleContentColor = SolColors.Ink
-                )
-            )
+                    if (legendOpen) {
+                        LegendScrim { legendOpen = false }
+                    }
+                }
+            }
         },
         containerColor = SolColors.Navy
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(if (covering) PaddingValues(0.dp) else padding)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = if (covering) 0.dp else 16.dp)
             ) {
-                HomeTabs(
-                    tab = state.tab,
-                    onSelect = viewModel::showTab,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                if (!covering) {
+                    Box {
+                        HomeTabs(
+                            tab = state.tab,
+                            onSelect = {
+                                legendOpen = false
+                                viewModel.showTab(it)
+                            },
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                        if (legendOpen) {
+                            LegendScrim { legendOpen = false }
+                        }
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -263,13 +360,13 @@ fun HomeScreen(
                                 now = state.now,
                                 zone = zone,
                                 isLoading = state.isLoading,
-                                onOpenLayers = { openDrawer() },
                                 onOpenSettings = onOpenSettings,
                                 expandedPanel = expandedPanel,
                                 onToggleExpand = { panel ->
                                     expandedPanel = if (expandedPanel == panel) null else panel
                                 },
-                                gasDollarsPerHour = state.gasDollarsPerHour
+                                gasDollarsPerHour = state.gasDollarsPerHour,
+                                controls = chartControls
                             )
                         } else {
                             HistoryPane(
@@ -283,14 +380,14 @@ fun HomeScreen(
                                 historyError = state.historyError,
                                 layers = state.layers,
                                 now = state.now,
-                                onOpenLayers = { openDrawer() },
                                 onShiftMonth = viewModel::shiftHistoryMonth,
                                 onShiftWeek = viewModel::shiftHistoryWeek,
                                 onSelectWeek = viewModel::selectHistoryWeek,
                                 onShiftDay = viewModel::shiftHistoryDay,
                                 onSelectDay = viewModel::selectHistoryDay,
                                 onShowToday = viewModel::showCurrentHistory,
-                                gasDollarsPerHour = state.gasDollarsPerHour
+                                gasDollarsPerHour = state.gasDollarsPerHour,
+                                controls = chartControls
                             )
                         }
                     }
@@ -404,27 +501,65 @@ private fun ReadyUpdateDialog(
     )
 }
 
+private val TabLabelActive = Color(0xFFE6E1F0)
+private val TabLabelInactive = Color.White.copy(alpha = 0.55f)
+private val TabUnderline = Color(0xFFFFC94A)
+
 @Composable
 internal fun HomeTabs(
     tab: HomeTab,
     onSelect: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    val selected = if (tab == HomeTab.LIVE) 0 else 1
+    TabRow(
+        selectedTabIndex = selected,
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        LayerChip("Live", tab == HomeTab.LIVE, Modifier.weight(1f)) {
-            if (it) onSelect(HomeTab.LIVE)
+        containerColor = Color.Transparent,
+        contentColor = TabLabelActive,
+        indicator = { positions ->
+            val current = positions[selected]
+            val spec = tween<Dp>(durationMillis = 250, easing = FastOutSlowInEasing)
+            val underlineWidth by animateDpAsState(current.width * 0.6f, spec, label = "tabUnderlineWidth")
+            val underlineOffset by animateDpAsState(current.left + current.width * 0.2f, spec, label = "tabUnderlineOffset")
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .wrapContentSize(Alignment.BottomStart)
+                    .offset(x = underlineOffset)
+                    .width(underlineWidth)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(1.5.dp))
+                    .background(TabUnderline)
+            )
+        },
+        divider = {
+            HorizontalDivider(thickness = 1.dp, color = Color.White.copy(alpha = 0.10f))
         }
-        LayerChip("History", tab == HomeTab.HISTORY, Modifier.weight(1f)) {
-            if (it) onSelect(HomeTab.HISTORY)
+    ) {
+        HomeTab.entries.forEach { item ->
+            val active = item == tab
+            Tab(
+                selected = active,
+                onClick = { onSelect(item) },
+                modifier = Modifier.height(48.dp),
+                selectedContentColor = TabLabelActive,
+                unselectedContentColor = TabLabelInactive,
+                text = {
+                    Text(
+                        text = if (item == HomeTab.LIVE) "Live" else "History",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
+            )
         }
     }
 }
 
 @Composable
-private fun LivePane(
+internal fun LivePane(
     snapshot: ForecastSnapshot?,
     weather: WeatherSnapshot?,
     livePast: List<PowerPoint>?,
@@ -433,12 +568,12 @@ private fun LivePane(
     now: Instant,
     zone: ZoneId,
     isLoading: Boolean,
-    onOpenLayers: () -> Unit,
     onOpenSettings: () -> Unit,
     expandedPanel: MetaPanel?,
     onToggleExpand: (MetaPanel) -> Unit,
     gasDollarsPerHour: Double,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    controls: ChartControls = ChartControls()
 ) {
     if (snapshot == null) {
         Box(
@@ -451,43 +586,47 @@ private fun LivePane(
         }
         return
     }
-    Column(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
+    val (tooWarm, tooCool) = ecobeeFillPresence(ecobee, rangeFrom, rangeTo, now)
+    val runtime = hvacPresence(ecobee, rangeFrom, rangeTo, now)
+    val legend = LegendModel(
+        layers = layers,
+        showTooWarm = tooWarm,
+        showTooCool = tooCool,
+        showHeatPump = runtime.heatPump,
+        showGasAux = runtime.aux,
+        showCoolRun = runtime.cool
+    )
+    val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        PowerChart(
+            points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
+            now = now,
+            weather = weather?.alignedWithPower(now, zone).orEmpty(),
+            rangeFrom = rangeFrom,
+            rangeTo = rangeTo,
+            layers = layers,
+            sunDays = weather?.sunDays.orEmpty(),
+            isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
+            ecobee = ecobee
+        )
+    }
+    if (controls.expanded) {
+        ExpandedChart(modifier, controls, legend, content = chartContent)
+        return
+    }
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         snapshot.errorMessage
             ?.takeUnless { it.isSolcastQuotaMessage() }
             ?.let { message -> StatusBanner(message) }
         if (snapshot.isDemo && snapshot.errorMessage == null) {
             StatusBanner("Showing sample output until the shared cache has Solcast data.")
         }
-        Text(
-            text = "2 days before through 2 days after",
-            style = MaterialTheme.typography.titleMedium,
-            color = SolColors.Ink
-        )
-        val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
-        ChartFrame {
-            PowerChart(
-                points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
-                now = now,
-                weather = weather?.alignedWithPower(now, zone).orEmpty(),
-                rangeFrom = rangeFrom,
-                rangeTo = rangeTo,
-                layers = layers,
-                sunDays = weather?.sunDays.orEmpty(),
-                isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
-                ecobee = ecobee
-            )
+        ChartHeading("2 days before through 2 days after", controls, legend)
+        if (controls.showExpandHint) {
+            Text("Tap chart to expand", color = SolColors.Muted, fontSize = 12.sp)
         }
-        val (tooWarm, tooCool) = ecobeeFillPresence(ecobee, rangeFrom, rangeTo, now)
-        val runtime = hvacPresence(ecobee, rangeFrom, rangeTo, now)
-        ChartLegend(
-            layers = layers,
-            onOpen = onOpenLayers,
-            showTooWarm = tooWarm,
-            showTooCool = tooCool,
-            showHeatPump = runtime.heatPump,
-            showGasAux = runtime.aux,
-            showCoolRun = runtime.cool
-        )
+        ChartFrame(onTap = controls.onChartTap, onBounds = controls.onCardBounds, content = chartContent)
         if (layers.hvac) {
             Text(
                 text = hvacSummaryLabel(hvacSummary(ecobee, rangeFrom, rangeTo, now), gasDollarsPerHour),
@@ -520,6 +659,11 @@ private fun LivePane(
             }
         }
     }
+    if (controls.legendOpen) {
+        LegendScrim(controls.onDismissLegend)
+        LegendCard(legend, Modifier.align(Alignment.TopEnd).padding(top = 48.dp).zIndex(2f))
+    }
+    }
 }
 
 @Composable
@@ -534,7 +678,6 @@ internal fun HistoryPane(
     historyError: String?,
     layers: ChartLayers,
     now: Instant,
-    onOpenLayers: () -> Unit,
     onShiftMonth: (Int) -> Unit,
     onShiftWeek: (Int) -> Unit,
     onSelectWeek: (LocalDate) -> Unit,
@@ -542,7 +685,8 @@ internal fun HistoryPane(
     onSelectDay: (LocalDate) -> Unit,
     onShowToday: () -> Unit,
     gasDollarsPerHour: Double,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    controls: ChartControls = ChartControls()
 ) {
     val today = DetroitCalendar.today(now)
     val shownMonth = month ?: YearMonth.from(today)
@@ -552,25 +696,58 @@ internal fun HistoryPane(
         ?: weeks.firstOrNull()
     val (fetchFrom, fetchTo) = DetroitCalendar.monthFetchRange(weeks)
     val pageMatches = historyKey == historyFetchKey(fetchFrom, fetchTo)
-    Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        historyError?.let { StatusBanner(it) }
-        val shownDay = selectedDay ?: today
-        val shownWeek = week?.id ?: DetroitCalendar.weekStart(shownDay)
-        if (weekSelected || week != null) {
-            val (from, to) = if (weekSelected) {
-                DetroitCalendar.weekRange(shownWeek)
-            } else {
-                DetroitCalendar.dayRange(shownDay)
-            }
-            val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
-            Text(
-                text = historyPeriodLabel(weekSelected, shownDay, shownWeek),
-                color = SolColors.Ink,
-                style = MaterialTheme.typography.titleMedium
+    val shownDay = selectedDay ?: today
+    val shownWeek = week?.id ?: DetroitCalendar.weekStart(shownDay)
+    val (from, to) = if (weekSelected) {
+        DetroitCalendar.weekRange(shownWeek)
+    } else {
+        DetroitCalendar.dayRange(shownDay)
+    }
+    val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
+    val (tooWarm, tooCool) = if (chart != null) {
+        ecobeeFillPresence(chart.ecobee, from, to, now)
+    } else {
+        false to false
+    }
+    val runtime = if (chart != null) hvacPresence(chart.ecobee, from, to, now) else null
+    val legend = LegendModel(
+        layers = layers,
+        showTooWarm = tooWarm,
+        showTooCool = tooCool,
+        showHeatPump = runtime?.heatPump == true,
+        showGasAux = runtime?.aux == true,
+        showCoolRun = runtime?.cool == true
+    )
+    val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        if (chart != null) {
+            PowerChart(
+                points = chart.points,
+                now = now,
+                weather = chart.weather,
+                rangeFrom = from,
+                rangeTo = to,
+                layers = layers,
+                sunDays = chart.sunDays,
+                zone = DetroitCalendar.ZONE,
+                ecobee = chart.ecobee
             )
+        }
+        if (chart == null && historyLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        }
+    }
+    if (controls.expanded) {
+        ExpandedChart(modifier, controls, legend, content = chartContent)
+        return
+    }
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        historyError?.let { StatusBanner(it) }
+        if (weekSelected || week != null) {
+            ChartHeading(historyPeriodLabel(weekSelected, shownDay, shownWeek), controls, legend)
+            if (controls.showExpandHint) {
+                Text("Tap chart to expand", color = SolColors.Muted, fontSize = 12.sp)
+            }
             ChartFrame(
                 modifier = Modifier
                     .adjacentSwipe(if (weekSelected) onShiftWeek else onShiftDay)
@@ -580,39 +757,10 @@ internal fun HistoryPane(
                         } else {
                             "History day. Swipe left for the next day or right for the previous day."
                         }
-                    }
-            ) {
-                if (chart != null) {
-                    PowerChart(
-                        points = chart.points,
-                        now = now,
-                        weather = chart.weather,
-                        rangeFrom = from,
-                        rangeTo = to,
-                        layers = layers,
-                        sunDays = chart.sunDays,
-                        zone = DetroitCalendar.ZONE,
-                        ecobee = chart.ecobee
-                    )
-                }
-                if (chart == null && historyLoading) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-            }
-            val (tooWarm, tooCool) = if (chart != null) {
-                ecobeeFillPresence(chart.ecobee, from, to, now)
-            } else {
-                false to false
-            }
-            val runtime = if (chart != null) hvacPresence(chart.ecobee, from, to, now) else null
-            ChartLegend(
-                layers = layers,
-                onOpen = onOpenLayers,
-                showTooWarm = tooWarm,
-                showTooCool = tooCool,
-                showHeatPump = runtime?.heatPump == true,
-                showGasAux = runtime?.aux == true,
-                showCoolRun = runtime?.cool == true
+                    },
+                onTap = controls.onChartTap,
+                onBounds = controls.onCardBounds,
+                content = chartContent
             )
             if (layers.hvac && chart != null) {
                 Text(
@@ -650,20 +798,115 @@ internal fun HistoryPane(
             )
         }
     }
+    if (controls.legendOpen) {
+        LegendScrim(controls.onDismissLegend)
+        LegendCard(legend, Modifier.align(Alignment.TopEnd).padding(top = 48.dp).zIndex(2f))
+    }
+    }
 }
+
+@Composable
+private fun ChartHeading(title: String, controls: ChartControls, legend: LegendModel) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f).alignByBaseline(),
+            style = MaterialTheme.typography.titleMedium,
+            color = SolColors.Ink
+        )
+        LegendButton(
+            open = controls.legendOpen,
+            onClick = controls.onToggleLegend,
+            modifier = Modifier.alignByBaseline()
+        )
+    }
+}
+
+@Composable
+private fun LegendScrim(onDismiss: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .zIndex(1f)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss
+            )
+            .semantics { contentDescription = "Dismiss legend" }
+    )
+}
+
+@Composable
+private fun ExpandedChart(
+    modifier: Modifier,
+    controls: ChartControls,
+    legend: LegendModel,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
+) {
+    var full by remember { mutableStateOf<Rect?>(null) }
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(SolColors.Navy)
+            .onGloballyPositioned { full = it.boundsInRoot() }
+            .scaleFromCard(controls.expandProgress, controls.cardBounds, full)
+    ) {
+        ChartFrame(
+            expanded = true,
+            onTap = controls.onChartTap,
+            modifier = Modifier.fillMaxSize(),
+            content = content
+        )
+        LegendButton(
+            open = controls.legendOpen,
+            onClick = controls.onToggleLegend,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 8.dp)
+        )
+        if (controls.legendOpen) {
+            LegendScrim(controls.onDismissLegend)
+            LegendCard(
+                legend,
+                Modifier.align(Alignment.TopEnd).padding(top = 52.dp, end = 8.dp).zIndex(2f)
+            )
+        }
+    }
+}
+
+internal data class ChartControls(
+    val expanded: Boolean = false,
+    val expandProgress: Float = 1f,
+    val cardBounds: Rect? = null,
+    val onChartTap: () -> Unit = {},
+    val onCardBounds: (Rect) -> Unit = {},
+    val legendOpen: Boolean = false,
+    val onToggleLegend: () -> Unit = {},
+    val onDismissLegend: () -> Unit = {},
+    val showExpandHint: Boolean = false
+)
 
 @Composable
 private fun ChartFrame(
     modifier: Modifier = Modifier,
+    expanded: Boolean = false,
+    onTap: (() -> Unit)? = null,
+    onBounds: ((Rect) -> Unit)? = null,
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(300.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .then(if (expanded) Modifier.fillMaxSize() else Modifier.height(300.dp))
+            .onGloballyPositioned { coords -> onBounds?.invoke(coords.boundsInRoot()) }
+            .clip(RoundedCornerShape(if (expanded) 0.dp else 20.dp))
             .background(SolColors.Panel)
-            .padding(8.dp),
+            .padding(
+                start = if (expanded) 12.dp else 8.dp,
+                top = if (expanded) 40.dp else 8.dp,
+                end = if (expanded) 12.dp else 8.dp,
+                bottom = if (expanded) 12.dp else 8.dp
+            )
+            .then(if (onTap != null) Modifier.chartTap(onTap) else Modifier),
         content = content
     )
 }
@@ -912,7 +1155,7 @@ internal fun HistoryCalendar(
     }
 }
 
-private enum class MetaPanel { SOLAR, TEMP, PRECIP, RATES }
+internal enum class MetaPanel { SOLAR, TEMP, PRECIP, RATES }
 
 @Composable
 private fun StatusBanner(message: String) {
@@ -926,30 +1169,6 @@ private fun StatusBanner(message: String) {
         color = SolColors.Forecast,
         style = MaterialTheme.typography.bodyMedium
     )
-}
-
-@Composable
-private fun LayerChip(
-    label: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: (Boolean) -> Unit
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) SolColors.TableStripe else SolColors.Panel)
-            .clickable { onClick(!selected) }
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            color = if (selected) Color.White else SolColors.Muted,
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
-            maxLines = 1
-        )
-    }
 }
 
 @Composable

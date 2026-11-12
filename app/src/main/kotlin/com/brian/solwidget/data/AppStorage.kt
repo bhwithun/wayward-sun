@@ -46,6 +46,7 @@ class AppStorage(private val context: Context) {
         val SHOW_HVAC = booleanPreferencesKey("show_hvac")
         val GAS_AUX_DOLLARS = doublePreferencesKey("gas_aux_dollars_per_hour")
         val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
+        val CHART_EXPAND_HINT_SEEN = booleanPreferencesKey("chart_expand_hint_seen")
         val UPDATE_CHECK_AT = longPreferencesKey("update_check_at")
     }
 
@@ -221,6 +222,10 @@ class AppStorage(private val context: Context) {
         getStringOnce(Keys.LAST_HOME_TAB, "live")?.ifBlank { "live" } ?: "live"
 
     suspend fun setLastHomeTab(value: String) = setString(Keys.LAST_HOME_TAB, value)
+
+    suspend fun chartExpandHintSeen(): Boolean = getBooleanOnce(Keys.CHART_EXPAND_HINT_SEEN, false)
+
+    suspend fun setChartExpandHintSeen() = setBoolean(Keys.CHART_EXPAND_HINT_SEEN, true)
 
     suspend fun gasAuxDollarsOnce(): Double =
         context.dataStore.data.first()[Keys.GAS_AUX_DOLLARS] ?: GAS_AUX_DOLLARS_PER_HOUR

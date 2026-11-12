@@ -63,7 +63,8 @@ data class HomeUiState(
     val livePast: List<PowerPoint>? = null,
     val liveEcobee: List<EcobeeSample> = emptyList(),
     val livePastKey: String? = null,
-    val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR
+    val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR,
+    val chartExpanded: Boolean = false
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -157,6 +158,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(livePast = past.points, liveEcobee = past.ecobee, livePastKey = key) }
         }
         return result.isSuccess
+    }
+
+    fun setChartExpanded(expanded: Boolean) {
+        if (_uiState.value.chartExpanded == expanded) return
+        _uiState.update { it.copy(chartExpanded = expanded) }
     }
 
     fun showTab(tab: HomeTab) {
