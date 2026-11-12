@@ -25,7 +25,8 @@ class EcobeeTest {
         val mildRuns = hvacRuns(listOf(mild), t0, t0.plusSeconds(3600), t0.plusSeconds(3600))
         assertEquals(1, mildRuns.size)
         assertEquals(HvacSource.HEAT_PUMP, mildRuns.single().source)
-        assertTrue(hvacSummaryLabel(summary).contains("Gas aux"))
+        assertTrue(hvacSummaryLabel(summary).contains("Aux heat"))
+        assertTrue(hvacSummaryLabel(summary).contains("Gas ≈"))
         assertTrue(hvacSummaryLabel(hvacSummary(listOf(mild), t0, t0.plusSeconds(3600))).startsWith("Heat pump"))
         assertTrue(!hvacSummaryLabel(hvacSummary(listOf(mild), t0, t0.plusSeconds(3600))).contains("Gas"))
     }
@@ -214,7 +215,7 @@ class EcobeeTest {
         val covered = temperatureGrid(-16.0, 80.0, snapEnds = true)
         assertEquals(20.0, covered.step, 0.0)
         assertEquals(-20.0, covered.min, 0.0)
-        assertEquals(100.0, covered.max, 0.0)
+        assertEquals(80.0, covered.max, 0.0)
         val near = temperatureGrid(20.0, 45.0, snapEnds = true)
         assertTrue(near.ticks.none { abs(it - 32.0) <= 3.0 })
         val tight = temperatureGrid(68.0, 78.0, snapEnds = true)

@@ -156,7 +156,7 @@ describe("ecobee geometry", () => {
     expect(wide.max).toBe(100);
     expect(wide.ticks.every((tick) => Math.abs(tick - 32) > 3)).toBe(true);
     const covered = temperatureGrid(-16, 80, true);
-    expect(covered).toMatchObject({ step: 20, min: -20, max: 100 });
+    expect(covered).toMatchObject({ step: 20, min: -20, max: 80 });
     const tight = temperatureGrid(68, 78, true);
     expect(tight.step).toBe(5);
     expect(tight.ticks).toContain(70);

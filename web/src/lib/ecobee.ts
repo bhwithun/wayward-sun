@@ -104,7 +104,7 @@ export function hvacSummaryLabel(summary: HvacSummary, dollarsPerHour = GAS_AUX_
   const hours = (value: number) => `${value.toFixed(1)} h`;
   const parts: string[] = [];
   if (summary.heatPumpHours >= 0.05) parts.push(`Heat pump ${hours(summary.heatPumpHours)}`);
-  if (summary.auxHours >= 0.05) parts.push(`Gas aux ${hours(summary.auxHours)}`);
+  if (summary.auxHours >= 0.05) parts.push(`Aux heat ${hours(summary.auxHours)}`);
   if (summary.coolHours >= 0.05) parts.push(`Cool ${hours(summary.coolHours)}`);
   if (summary.auxHours >= 0.05) parts.push(`Gas ≈ $${(summary.auxHours * dollarsPerHour).toFixed(2)}`);
   return parts.join(" · ");
@@ -319,7 +319,7 @@ export function tightestTempFit(dataMin: number, dataMax: number): { step: numbe
     if (Math.abs(span - bestSpan) <= 1e-6 && next.step > best.step) return next;
     return best;
   });
-  return dataMax >= fit.max - 0.05 ? { ...fit, max: fit.max + fit.step } : fit;
+  return fit;
 }
 
 export function chooseTempStep(span: number): number {

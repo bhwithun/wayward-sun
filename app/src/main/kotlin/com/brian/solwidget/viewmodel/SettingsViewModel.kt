@@ -69,7 +69,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             try {
                 val gas = _uiState.value.gasDollars.toDoubleOrNull()
                 if (gas == null || gas < 0.0) {
-                    _uiState.update { it.copy(isSaving = false, errorMessage = "Gas rate must be a number of dollars per hour.") }
+                    _uiState.update { it.copy(isSaving = false, errorMessage = "Aux heat rate must be a number of dollars per hour.") }
                     return@launch
                 }
                 storage.setGasAuxDollars(gas)

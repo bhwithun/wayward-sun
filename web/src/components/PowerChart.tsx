@@ -186,8 +186,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     }
   }
 
-  const nowX = props.now >= props.from && props.now < props.to ? xOf(props.now) : null;
-  if (showDegrees) drawFreezeReference(ctx, yTemp, left, right, tempRange.min, tempRange.max, nowX);
+  if (showDegrees) drawFreezeReference(ctx, yTemp, left, right, tempRange.min, tempRange.max);
 
   const ecobeeEnd = Math.min(props.to, props.now);
   if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "fill", props.now);
@@ -210,11 +209,13 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const laneGap = props.layers.hvac ? 4 : 0;
   const laneTop = top - laneGap - laneH;
   if (props.layers.hvac) {
+    const trackRight = props.now < props.from ? left : props.now >= props.to ? right : xOf(props.now);
     drawRuntimeLane(
       ctx,
       hvacRuns(ecobee, props.from, Math.min(props.to, props.now), props.now),
       xOf,
       left,
+      trackRight,
       right,
       laneTop,
       laneH
@@ -306,8 +307,7 @@ function drawFreezeReference(
   left: number,
   right: number,
   tempMin: number,
-  tempMax: number,
-  nowX: number | null
+  tempMax: number
 ) {
   if (!(tempMin < 32 && tempMax > 32)) return;
   const y = yOf(32);
@@ -322,16 +322,15 @@ function drawFreezeReference(
   ctx.setLineDash([]);
   const text = "32°";
   ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
-  ctx.textAlign = "right";
+  ctx.textAlign = "left";
   const textWidth = ctx.measureText(text).width;
-  const anchor = nowX == null ? right - 8 : Math.min(right - 8, Math.max(left + textWidth + 8, nowX - 10));
-  const boxLeft = anchor - textWidth - 4;
+  const boxLeft = left + 4;
   ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
   ctx.beginPath();
   ctx.roundRect(boxLeft, y - 13, textWidth + 8, 14, 4);
   ctx.fill();
   ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
-  ctx.fillText(text, anchor, y - 3);
+  ctx.fillText(text, boxLeft + 4, y - 3);
   ctx.restore();
 }
 
@@ -463,6 +462,7 @@ function drawRuntimeLane(
   runs: HvacRun[],
   xOf: (t: number) => number,
   left: number,
+  trackRight: number,
   right: number,
   laneTop: number,
   laneHeight: number
@@ -471,10 +471,13 @@ function drawRuntimeLane(
   ctx.save();
   const colorFor = (source: HvacRun["source"]) =>
     source === "aux" ? AUX_HEAT : source === "cool" ? COOL_RUN : HEAT_PUMP;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
-  ctx.beginPath();
-  ctx.roundRect(left, laneTop, right - left, laneHeight, laneHeight / 2);
-  ctx.fill();
+  const trackEnd = Math.min(right, Math.max(left, trackRight));
+  if (trackEnd - left >= 1) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.beginPath();
+    ctx.roundRect(left, laneTop, trackEnd - left, laneHeight, laneHeight / 2);
+    ctx.fill();
+  }
   for (const run of runs) {
     const x1 = Math.min(right, Math.max(left, xOf(run.start)));
     const x2 = Math.min(right, Math.max(left, xOf(run.end)));

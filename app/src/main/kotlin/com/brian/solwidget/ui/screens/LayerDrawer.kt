@@ -244,7 +244,7 @@ private fun legendGroups(
     if (layers.hvac) {
         val runtime = buildList {
             if (showHeatPump) add(LegendItem("Heat pump", SolColors.HeatPump, LegendMark.SQUARE))
-            if (showGasAux) add(LegendItem("Gas aux", SolColors.AuxHeat, LegendMark.SQUARE))
+            if (showGasAux) add(LegendItem("Aux heat", SolColors.AuxHeat, LegendMark.SQUARE))
             if (showCoolRun) add(LegendItem("Cool", SolColors.CoolRun, LegendMark.SQUARE))
         }
         if (runtime.isNotEmpty()) add(runtime)

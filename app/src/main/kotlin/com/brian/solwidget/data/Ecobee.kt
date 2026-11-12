@@ -236,7 +236,7 @@ fun hvacSummary(samples: List<EcobeeSample>, from: Instant, to: Instant, now: In
 fun hvacSummaryLabel(summary: HvacSummary, dollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR): String {
     val parts = ArrayList<String>()
     if (summary.heatPumpHours >= 0.05) parts.add("Heat pump ${hours(summary.heatPumpHours)}")
-    if (summary.auxHours >= 0.05) parts.add("Gas aux ${hours(summary.auxHours)}")
+    if (summary.auxHours >= 0.05) parts.add("Aux heat ${hours(summary.auxHours)}")
     if (summary.coolHours >= 0.05) parts.add("Cool ${hours(summary.coolHours)}")
     if (summary.auxHours >= 0.05) parts.add("Gas ≈ ${money(summary.auxHours * dollarsPerHour)}")
     return parts.joinToString(" · ")
@@ -344,7 +344,12 @@ data class TemperatureGrid(
  * to a much wider scale. A tick within 3° of freezing is omitted so the dotted
  * 32° line keeps that label.
  */
-fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): TemperatureGrid {
+fun temperatureGrid(
+    dataMin: Double,
+    dataMax: Double,
+    snapEnds: Boolean,
+    padTop: Boolean = false
+): TemperatureGrid {
     var lo = dataMin
     var hi = dataMax
     if (hi - lo < 1.0) {
@@ -352,7 +357,7 @@ fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): Temper
         hi += 5.0
     }
     val step = if (snapEnds) {
-        val fit = tightestTempFit(lo, hi)
+        val fit = tightestTempFit(lo, hi, padTop)
         lo = fit.min
         hi = fit.max
         fit.step
@@ -379,8 +384,11 @@ fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): Temper
 
 private data class TempFit(val step: Double, val min: Double, val max: Double)
 
-/** Smallest snapped range whose step still leaves a readable number of intervals. */
-private fun tightestTempFit(dataMin: Double, dataMax: Double): TempFit {
+/**
+ * Smallest snapped range whose step still leaves a readable number of intervals.
+ * [padTop] keeps the widget's extra step when the data sits on that top line.
+ */
+private fun tightestTempFit(dataMin: Double, dataMax: Double, padTop: Boolean): TempFit {
     val steps = doubleArrayOf(5.0, 10.0, 20.0, 25.0, 50.0, 100.0)
     val fits = steps.map { step ->
         val lo = floor(dataMin / step) * step
@@ -393,7 +401,7 @@ private fun tightestTempFit(dataMin: Double, dataMax: Double): TempFit {
         intervals in 2.0..6.0
     }
     val fit = (readable.ifEmpty { fits }).minWith(compareBy({ it.max - it.min }, { -it.step }))
-    return if (dataMax >= fit.max - 0.05) fit.copy(max = fit.max + fit.step) else fit
+    return if (padTop && dataMax >= fit.max - 0.05) fit.copy(max = fit.max + fit.step) else fit
 }
 
 fun chooseTempStep(span: Double): Double {

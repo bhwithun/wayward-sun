@@ -268,7 +268,7 @@ export function Dashboard() {
               )}
               {runtime.aux && (
                 <span>
-                  <i className="swatch" style={{ background: "#EF5350" }} /> Gas aux
+                  <i className="swatch" style={{ background: "#EF5350" }} /> Aux heat
                 </span>
               )}
               {runtime.cool && (
@@ -299,7 +299,7 @@ export function Dashboard() {
           ecobee={chart.ecobee}
         />
         {layers.hvac && (
-          <p className="muted hvac-summary" title="Gas aux is about $0.60 per runtime hour">
+          <p className="muted hvac-summary" title="Aux heat is about $0.60 per runtime hour">
             {hvacSummaryLabel(hvacSummary(chart.ecobee, chart.fromMs, chart.toMs, clock))}
           </p>
         )}

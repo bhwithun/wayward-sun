@@ -328,10 +328,16 @@ fun PowerChart(
             drawDemoWatermark(native, left, top, right, bottom)
         }
         if (layers.hvac) {
+            val trackRight = when {
+                now.isBefore(startInstant) -> left
+                !now.isBefore(endInstant) -> right
+                else -> xOf(now)
+            }
             drawRuntimeLane(
                 hvacRuns(ecobee, from, to, now),
                 ::xOf,
                 left,
+                trackRight,
                 right,
                 laneTop,
                 laneHeight
@@ -547,18 +553,22 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRuntimeLane(
     runs: List<HvacRun>,
     xOf: (Instant) -> Float,
     left: Float,
+    trackRight: Float,
     right: Float,
     laneTop: Float,
     laneHeight: Float
 ) {
     if (laneHeight < 1f || right <= left) return
-    val trackRadius = CornerRadius(laneHeight / 2f, laneHeight / 2f)
-    drawRoundRect(
-        color = Color.White.copy(alpha = 0.08f),
-        topLeft = Offset(left, laneTop),
-        size = Size(right - left, laneHeight),
-        cornerRadius = trackRadius
-    )
+    val trackEnd = trackRight.coerceIn(left, right)
+    if (trackEnd - left >= 1f) {
+        val trackRadius = CornerRadius(laneHeight / 2f, laneHeight / 2f)
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.08f),
+            topLeft = Offset(left, laneTop),
+            size = Size(trackEnd - left, laneHeight),
+            cornerRadius = trackRadius
+        )
+    }
     for (run in runs) {
         val x1 = xOf(run.start).coerceIn(left, right)
         val x2 = xOf(run.end).coerceIn(left, right)
@@ -739,7 +749,7 @@ object ChartBitmapRenderer {
             scaleToData = layers.ecobee,
             pad = !layers.ecobee
         )
-        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
+        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee, padTop = true)
         val tempMin = tempGrid.min
         val tempMax = tempGrid.max
         val tempSpan = (tempMax - tempMin).takeIf { it > 0.0 } ?: 1.0
