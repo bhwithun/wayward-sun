@@ -149,10 +149,10 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "hvac-cold-2.6.1.png") {
+        captureSized(width, height, "hvac-cold-2.7.0.png") {
             PhoneFrame(runtimeDay(aux = true), past, future, hvacLayers, drawerOpen = false)
         }
-        captureSized(width, height, "hvac-mild-2.6.1.png") {
+        captureSized(width, height, "hvac-mild-2.7.0.png") {
             PhoneFrame(runtimeDay(aux = false), past, future, hvacLayers, drawerOpen = false)
         }
         val from = now.minus(48, ChronoUnit.HOURS)
@@ -207,10 +207,10 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "day-view-2.6.1.png") {
+        captureSized(width, height, "day-view-2.7.0.png") {
             historyScreen(HomeTab.HISTORY_DAY, day, month, page, key, layers, dayMode = true)
         }
-        captureSized(width, height, "day-calendar-2.6.1.png") {
+        captureSized(width, height, "day-calendar-2.7.0.png") {
             SolWidgetTheme {
                 Column(Modifier.fillMaxSize().background(SolColors.Navy).padding(16.dp)) {
                     Text("Wayward Sun", color = SolColors.Ink)
@@ -228,7 +228,7 @@ class EcobeeScreenshotTest {
                 }
             }
         }
-        captureSized(width, height, "week-tab-2.6.1.png") {
+        captureSized(width, height, "week-tab-2.7.0.png") {
             historyScreen(HomeTab.HISTORY, day, month, page, key, layers, dayMode = false)
         }
     }
