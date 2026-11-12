@@ -38,6 +38,14 @@ class DetroitCalendarTest {
     }
 
     @Test
+    fun weekNumberUsesSundayStartAndCountsTheJanuaryFirstWeekAsOne() {
+        assertEquals(1, DetroitCalendar.weekNumber(LocalDate.of(2025, 12, 28)))
+        assertEquals(52, DetroitCalendar.weekNumber(LocalDate.of(2025, 12, 21)))
+        assertEquals(2, DetroitCalendar.weekNumber(LocalDate.of(2026, 1, 4)))
+        assertEquals(46, DetroitCalendar.weekNumber(LocalDate.of(2026, 11, 8)))
+    }
+
+    @Test
     fun dayRangeIsEasternMidnightThroughTheNextMidnight() {
         val (from, to) = DetroitCalendar.dayRange(LocalDate.of(2026, 11, 11))
         assertEquals(Instant.parse("2026-11-11T05:00:00Z"), from)

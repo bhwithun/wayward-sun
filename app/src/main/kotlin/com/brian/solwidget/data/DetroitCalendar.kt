@@ -1,9 +1,11 @@
 package com.brian.solwidget.data
 
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.temporal.WeekFields
 
 data class CalendarDay(
     val date: LocalDate,
@@ -28,12 +30,18 @@ data class HistoryFocus(
 object DetroitCalendar {
     val ZONE: ZoneId = ZoneId.of("America/Detroit")
 
+    /** Sunday-start week, and the week that contains January 1 is week 1. */
+    private val US_WEEKS: WeekFields = WeekFields.of(DayOfWeek.SUNDAY, 1)
+
     fun today(now: Instant = Instant.now()): LocalDate = now.atZone(ZONE).toLocalDate()
 
     fun weekStart(date: LocalDate): LocalDate {
         val daysFromSunday = date.dayOfWeek.value % 7
         return date.minusDays(daysFromSunday.toLong())
     }
+
+    /** US week-of-year for the Sunday that starts [sunday]. Jan 1's week is week 1. */
+    fun weekNumber(sunday: LocalDate): Int = weekStart(sunday).get(US_WEEKS.weekOfWeekBasedYear())
 
     fun monthWeeks(year: Int, month: Int): List<CalendarWeek> {
         val firstOfMonth = LocalDate.of(year, month, 1)

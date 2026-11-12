@@ -34,19 +34,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
-enum class HomeTab { LIVE, HISTORY, HISTORY_DAY }
+enum class HomeTab { LIVE, HISTORY }
 
 fun homeTabStored(name: String?): HomeTab = when (name) {
-    "history" -> HomeTab.HISTORY
-    "history-day" -> HomeTab.HISTORY_DAY
+    "history", "history-day" -> HomeTab.HISTORY
     else -> HomeTab.LIVE
 }
 
-fun HomeTab.storedName(): String = when (this) {
-    HomeTab.HISTORY -> "history"
-    HomeTab.HISTORY_DAY -> "history-day"
-    HomeTab.LIVE -> "live"
-}
+fun HomeTab.storedName(): String = if (this == HomeTab.HISTORY) "history" else "live"
 
 data class HomeUiState(
     val snapshot: ForecastSnapshot? = null,
@@ -59,6 +54,8 @@ data class HomeUiState(
     val historyMonth: YearMonth? = null,
     val selectedWeek: LocalDate? = null,
     val selectedDay: LocalDate? = null,
+    /** Opening History shows the current week until a day cell is tapped. */
+    val historyWeekSelected: Boolean = true,
     val history: HistoryPage? = null,
     val historyKey: String? = null,
     val historyLoading: Boolean = false,
@@ -66,7 +63,8 @@ data class HomeUiState(
     val livePast: List<PowerPoint>? = null,
     val liveEcobee: List<EcobeeSample> = emptyList(),
     val livePastKey: String? = null,
-    val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR
+    val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR,
+    val chartExpanded: Boolean = false
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -162,11 +160,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return result.isSuccess
     }
 
+    fun setChartExpanded(expanded: Boolean) {
+        if (_uiState.value.chartExpanded == expanded) return
+        _uiState.update { it.copy(chartExpanded = expanded) }
+    }
+
     fun showTab(tab: HomeTab) {
         if (_uiState.value.tab == tab) return
         _uiState.update { it.copy(tab = tab) }
         viewModelScope.launch { storage.setLastHomeTab(tab.storedName()) }
-        if (tab == HomeTab.HISTORY || tab == HomeTab.HISTORY_DAY) loadHistory()
+        if (tab == HomeTab.HISTORY) loadHistory()
     }
 
     fun shiftHistoryMonth(delta: Int) {
@@ -190,14 +193,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadHistory()
     }
 
+    /** Month title. Returns to today's week. */
+    fun showCurrentHistory() {
+        val today = DetroitCalendar.today(_uiState.value.now)
+        _uiState.update {
+            it.copy(
+                historyMonth = YearMonth.from(today),
+                selectedWeek = DetroitCalendar.weekStart(today),
+                selectedDay = today,
+                historyWeekSelected = true
+            )
+        }
+        loadHistory()
+    }
+
     fun selectHistoryWeek(sunday: LocalDate) {
-        _uiState.update { it.copy(selectedWeek = sunday) }
+        val start = DetroitCalendar.weekStart(sunday)
+        _uiState.update { it.copy(selectedWeek = start, historyWeekSelected = true) }
     }
 
     fun selectHistoryDay(date: LocalDate) {
         val month = YearMonth.from(date)
         val monthChanged = _uiState.value.historyMonth != month
-        _uiState.update { it.copy(selectedDay = date, historyMonth = month) }
+        _uiState.update { it.copy(selectedDay = date, historyMonth = month, historyWeekSelected = false) }
         if (monthChanged) loadHistory()
     }
 

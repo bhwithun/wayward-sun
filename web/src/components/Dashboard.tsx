@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PowerChart, type ChartLayers } from "@/components/PowerChart";
 import { hvacPresence, hvacSummary, hvacSummaryLabel, type EcobeeSample } from "@/lib/ecobee";
 import {
@@ -23,9 +23,12 @@ import { dayTotals, seriesFromHistory, type SeriesPoint, type SunSpan } from "@/
 import {
   addDays,
   detroitParts,
+  livePeriod,
   liveWindow,
   monthWeeks,
   parseYmd,
+  periodRange,
+  usWeekNumber,
   shiftMonth,
   ymdKey,
   zonedTimeToUtc,
@@ -109,7 +112,8 @@ type HistoryBody = {
   error?: string;
 };
 
-type Tab = "live" | "week" | "day";
+type Tab = "live" | "history";
+type HistoryFocus = "week" | "day";
 
 const RATES: Array<[string, string, string, string]> = [
   ["Import base", cents(BASE_OFF_PEAK_CENTS), cents(BASE_MID_PEAK_CENTS), cents(BASE_PEAK_CENTS)],
@@ -133,6 +137,9 @@ export function Dashboard() {
   const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
   const [layersReady, setLayersReady] = useState(false);
   const [tab, setTab] = useState<Tab>("live");
+  const [legendOpen, setLegendOpen] = useState(false);
+  const legendRow = useRef<HTMLDivElement>(null);
+  const [focus, setFocus] = useState<HistoryFocus>("week");
   const [dayId, setDayId] = useState<string | null>(null);
   const [cache, setCache] = useState<CacheBody | null>(null);
   const [history, setHistory] = useState<HistoryBody | null>(null);
@@ -210,10 +217,26 @@ export function Dashboard() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!legendOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLegendOpen(false);
+    };
+    const onPointer = (event: MouseEvent) => {
+      if (!legendRow.current?.contains(event.target as Node)) setLegendOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointer);
+    };
+  }, [legendOpen]);
+
   const chartFocus =
-    tab === "week" && selectedWeek
+    tab === "history" && focus === "week" && selectedWeek
       ? { from: parseYmd(selectedWeek.id) ?? selectedDay, days: 7 }
-      : tab === "day"
+      : tab === "history"
         ? { from: selectedDay, days: 1 }
         : null;
   const chart = chartModel(history, clock, chartFocus, todayParts);
@@ -223,21 +246,20 @@ export function Dashboard() {
   return (
     <main>
       <h1>Wayward Sun</h1>
+      <div className="tabs" role="tablist" data-tab={tab}>
+        <button type="button" role="tab" aria-selected={tab === "live"} onClick={() => setTab("live")}>
+          Live
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
+          History
+        </button>
+        <span className="tab-indicator" aria-hidden="true">
+          <i />
+        </span>
+      </div>
       <p className="muted">
         Shared Solcast cache on Vercel. Phones download <code>GET /cache</code>. Solcast itself runs only on the Detroit schedule.
       </p>
-
-      <div className="tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === "live"} className={tab === "live" ? "on" : ""} onClick={() => setTab("live")}>
-          Live
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "week"} className={tab === "week" ? "on" : ""} onClick={() => setTab("week")}>
-          History/week
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "day"} className={tab === "day" ? "on" : ""} onClick={() => setTab("day")}>
-          History/day
-        </button>
-      </div>
 
       <div className="toolbar">
         <Chip label="Solcast" on={layers.solcast} onClick={() => setLayers({ ...layers, solcast: !layers.solcast })} />
@@ -253,7 +275,24 @@ export function Dashboard() {
       {status && <p className="banner">{status}</p>}
 
       <section className="panel chart-wrap">
-        <div className="legend">
+        <div className="period-row" ref={legendRow}>
+          <p className="period">
+            {tab === "history" && selectedWeek
+              ? historyPeriod(focus, selectedWeek.id, selectedDay)
+              : livePeriod(todayParts)}
+          </p>
+          <button
+            type="button"
+            className="legend-button"
+            aria-expanded={legendOpen}
+            onClick={() => setLegendOpen((open) => !open)}
+          >
+            <i className="legend-mark" aria-hidden="true" />
+            Legend
+          </button>
+          {legendOpen && (
+            <div className="legend-popover" role="dialog" aria-label="Legend">
+              <div className="legend">
           <div className="legend-row">
             {layers.solcast && <span style={{ color: "#F5C542" }}>● Solcast</span>}
             {layers.enphase && <span style={{ color: "#2EE6A6" }}>● Enphase</span>}
@@ -303,6 +342,9 @@ export function Dashboard() {
               {layers.sell && <span style={{ color: "#7BD88F" }}>▮ Sell</span>}
             </div>
           )}
+              </div>
+            </div>
+          )}
         </div>
         <PowerChart
           points={chart.points}
@@ -324,65 +366,58 @@ export function Dashboard() {
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
 
-      {(tab === "week" || tab === "day") && (
+      {tab === "history" && (
         <section className="panel calendar">
           <div className="cal-nav">
-            <button
-              type="button"
-              aria-label="Previous month"
-              onClick={() => {
-                const next = shiftMonth(month.year, month.month, -1);
-                setMonth(next);
-                if (tab === "day") setDayId(ymdKey(next));
-              }}
-            >
+            <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month.year, month.month, -1))}>
               ‹
             </button>
-            <h2>{monthName}</h2>
-            <button
-              type="button"
-              aria-label="Next month"
-              onClick={() => {
-                const next = shiftMonth(month.year, month.month, 1);
-                setMonth(next);
-                if (tab === "day") setDayId(ymdKey(next));
-              }}
-            >
+            <h2>
+              <button
+                type="button"
+                className="month-jump"
+                onClick={() => {
+                  setMonth({ year: todayParts.year, month: todayParts.month });
+                  setFocus("week");
+                  setWeekId(null);
+                  setDayId(null);
+                }}
+              >
+                {monthName}
+              </button>
+            </h2>
+            <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month.year, month.month, 1))}>
               ›
             </button>
           </div>
+          <div className="cal-grid">
           <div className="cal-dow">
+            <span aria-hidden="true" />
             {WEEKDAYS.map((label) => (
               <span key={label}>{label}</span>
             ))}
           </div>
-          {tab === "week" &&
-            weeks.map((week) => (
-              <button
-                key={week.id}
-                type="button"
-                className={week.id === selectedWeek?.id ? "week selected" : "week"}
-                aria-pressed={week.id === selectedWeek?.id}
-                onClick={() => setWeekId(week.id)}
-              >
+          {weeks.map((week) => {
+            const weekOn = focus === "week" && week.id === selectedWeek?.id;
+            const weekNumber = usWeekNumber(parseYmd(week.id) ?? { year: month.year, month: month.month, day: 1 });
+            return (
+              <div key={week.id} className={weekOn ? "cal-week selected" : "cal-week"}>
+                <button
+                  type="button"
+                  className="wk"
+                  aria-pressed={weekOn}
+                  aria-label={`Week ${weekNumber}`}
+                  onClick={() => {
+                    setWeekId(week.id);
+                    setFocus("week");
+                  }}
+                >
+                  <span className="wk-chip">W{weekNumber}</span>
+                </button>
                 {week.days.map((day) => {
                   const key = ymdKey(day);
-                  const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : ""].filter(Boolean).join(" ");
-                  return (
-                    <span key={key} className={className}>
-                      {day.day}
-                    </span>
-                  );
-                })}
-              </button>
-            ))}
-          {tab === "day" && (
-            <div className="day-grid">
-              {weeks.flatMap((week) =>
-                week.days.map((day) => {
-                  const key = ymdKey(day);
-                  const selected = key === ymdKey(selectedDay);
-                  const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : "", selected ? "selected" : ""]
+                  const dayOn = focus === "day" && key === ymdKey(selectedDay);
+                  const className = ["day", day.inMonth ? "" : "out", key === todayKey ? "today" : "", dayOn ? "selected" : ""]
                     .filter(Boolean)
                     .join(" ");
                   return (
@@ -390,21 +425,24 @@ export function Dashboard() {
                       key={key}
                       type="button"
                       className={className}
-                      aria-pressed={selected}
+                      aria-pressed={dayOn}
                       onClick={() => {
                         setDayId(key);
+                        setFocus("day");
                         if (day.year !== month.year || day.month !== month.month) {
                           setMonth({ year: day.year, month: day.month });
                         }
                       }}
                     >
                       {day.day}
+                      {key === todayKey && <i className="today-dot" />}
                     </button>
                   );
-                })
-              )}
-            </div>
-          )}
+                })}
+              </div>
+            );
+          })}
+          </div>
         </section>
       )}
 
@@ -542,6 +580,18 @@ function filledTotals(start: Ymd, count: number, points: SeriesPoint[], nowMs: n
     const label = ymdKey(addDays(start, index)).slice(5);
     return byLabel.get(label) ?? { label, kwh: 0, liveKwh: 0, forecastKwh: 0 };
   });
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function historyPeriod(focus: HistoryFocus, weekId: string, day: Ymd): string {
+  if (focus === "day") {
+    const noon = zonedTimeToUtc(day.year, day.month, day.day, 12);
+    const parts = detroitParts(noon);
+    return `${parts.weekday}, ${MONTHS[day.month - 1]} ${day.day}`;
+  }
+  const start = parseYmd(weekId) ?? day;
+  return periodRange(start, addDays(start, 6));
 }
 
 function span(from: Ymd, to: Ymd): { from: string; to: string } {

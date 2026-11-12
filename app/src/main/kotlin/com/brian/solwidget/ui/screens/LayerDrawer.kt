@@ -2,16 +2,21 @@ package com.brian.solwidget.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,14 +27,24 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.LastBaseline
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -38,46 +53,134 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.math.max
 import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.ui.theme.SolColors
 
+internal data class LegendModel(
+    val layers: ChartLayers,
+    val showTooWarm: Boolean = false,
+    val showTooCool: Boolean = false,
+    val showHeatPump: Boolean = false,
+    val showGasAux: Boolean = false,
+    val showCoolRun: Boolean = false
+)
+
+private fun Modifier.expandTapTarget(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val min = 48.dp.roundToPx()
+    val width = max(placeable.width, min)
+    val height = max(placeable.height, min)
+    val x = (width - placeable.width) / 2
+    val y = (height - placeable.height) / 2
+    val lines = mutableMapOf<AlignmentLine, Int>()
+    val first = placeable[FirstBaseline]
+    val last = placeable[LastBaseline]
+    if (first != AlignmentLine.Unspecified) lines[FirstBaseline] = first + y
+    if (last != AlignmentLine.Unspecified) lines[LastBaseline] = last + y
+    layout(width, height, lines) { placeable.place(x, y) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChartLegend(
-    layers: ChartLayers,
-    onOpen: () -> Unit,
+internal fun LegendButton(
+    open: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    showTooWarm: Boolean = true,
-    showTooCool: Boolean = true,
-    showHeatPump: Boolean = false,
-    showGasAux: Boolean = false,
-    showCoolRun: Boolean = false
+    onAnchor: (androidx.compose.ui.geometry.Rect) -> Unit = {}
 ) {
-        val groups = legendGroups(layers, showTooWarm, showTooCool, showHeatPump, showGasAux, showCoolRun)
-    Column(
+    Row(
         modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 32.dp)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .clickable(role = Role.Button, onClick = onOpen)
-            .padding(horizontal = 4.dp, vertical = 4.dp)
-            .semantics { contentDescription = "Chart legend. Opens layers." },
-        verticalArrangement = Arrangement.spacedBy(2.dp)
+            .expandTapTarget()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = false),
+                onClick = onClick
+            )
+            .onGloballyPositioned { onAnchor(it.boundsInRoot()) }
+            .semantics { contentDescription = if (open) "Hide legend" else "Show legend" }
+            .padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        groups.forEach { group ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                group.forEach { item -> LegendChip(item) }
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .border(1.dp, Color.White.copy(alpha = 0.70f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "i",
+                color = Color.White.copy(alpha = 0.70f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Text(
+            text = "Legend",
+            color = Color.White.copy(alpha = 0.70f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.alignByBaseline()
+        )
+    }
+}
+
+@Composable
+internal fun LegendCard(
+    model: LegendModel,
+    modifier: Modifier = Modifier
+) {
+    val groups = legendGroups(
+        model.layers,
+        model.showTooWarm,
+        model.showTooCool,
+        model.showHeatPump,
+        model.showGasAux,
+        model.showCoolRun
+    )
+    Surface(
+        modifier = modifier
+            .widthIn(max = 320.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            ),
+        color = SolColors.Panel,
+        shape = RoundedCornerShape(12.dp),
+        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (groups.isEmpty()) {
+                Text("No layers on", color = SolColors.Muted, fontSize = 13.sp)
+            }
+            groups.forEach { group ->
+                LegendGroup(group)
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LegendChip(item: LegendItem) {
+private fun LegendGroup(group: List<LegendItem>) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        group.forEach { item -> LegendChip(item, fontSize = 13.sp) }
+    }
+}
+
+@Composable
+private fun LegendChip(item: LegendItem, fontSize: androidx.compose.ui.unit.TextUnit = 11.sp) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -100,7 +203,7 @@ private fun LegendChip(item: LegendItem) {
         Text(
             text = item.name,
             color = SolColors.Ink,
-            fontSize = 11.sp,
+            fontSize = fontSize,
             maxLines = 1
         )
     }

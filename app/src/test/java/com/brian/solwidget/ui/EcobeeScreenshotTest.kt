@@ -40,6 +40,7 @@ import com.brian.solwidget.data.hvacPresence
 import com.brian.solwidget.data.hvacSummary
 import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
+import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.WeatherPoint
@@ -49,11 +50,12 @@ import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.HistoryInterval
 import com.brian.solwidget.data.HistoryPage
 import com.brian.solwidget.data.historyFetchKey
-import com.brian.solwidget.ui.screens.ChartLegend
+import com.brian.solwidget.ui.screens.ChartControls
 import com.brian.solwidget.ui.screens.HistoryCalendar
 import com.brian.solwidget.ui.screens.HistoryPane
 import com.brian.solwidget.ui.screens.HomeTabs
 import com.brian.solwidget.ui.screens.LayerDrawerContent
+import com.brian.solwidget.ui.screens.LivePane
 import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.ui.theme.SolWidgetTheme
@@ -194,7 +196,7 @@ class EcobeeScreenshotTest {
             to = fetchTo,
             points = historyHours(fetchFrom, fetchTo),
             sun = emptyList(),
-            ecobee = coldEasternDay()
+            ecobee = coldEasternDay() + earlierWeekRuntime()
         )
         val key = historyFetchKey(fetchFrom, fetchTo)
         val layers = ChartLayers(
@@ -207,65 +209,161 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "day-view-2.7.0.png") {
-            historyScreen(HomeTab.HISTORY_DAY, day, month, page, key, layers, dayMode = true)
+        captureSized(width, height, "history-day-2.8.0c.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = false)
         }
-        captureSized(width, height, "day-calendar-2.7.0.png") {
+        captureSized(width, (420 * density).roundToInt(), "weeknum-closeup-unselected-2.8.0d.png") {
+            weekCalendar(day, month, weeks, selectedWeek = null, selectedDay = day)
+        }
+        captureSized(width, (420 * density).roundToInt(), "weeknum-closeup-selected-2.8.0e.png") {
+            weekCalendar(day, month, weeks, selectedWeek = DetroitCalendar.weekStart(day), selectedDay = null)
+        }
+        captureSized(width, height, "history-week-2.8.0f.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = true)
+        }
+        captureSized(width, height, "history-week-legend-closed-2.8.0f.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = true)
+        }
+        captureSized(width, height, "history-week-legend-open-2.8.0g.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = true, legendOpen = true)
+        }
+        captureSized(width, height, "fullscreen-portrait-2.8.0g.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
+        }
+        captureSized((844 * density).roundToInt(), (390 * density).roundToInt(), "fullscreen-landscape-2.8.0f.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
+        }
+        captureSized(width, height, "live-2.8.0g.png") {
+            liveScreen()
+        }
+        captureSized(width, height, "live-fullscreen-2.8.0f.png") {
+            liveScreen(expanded = true)
+        }
+        captureSized(width, (112 * density).roundToInt(), "tabs-closeup-2.8.0f.png") {
             SolWidgetTheme {
-                Column(Modifier.fillMaxSize().background(SolColors.Navy).padding(16.dp)) {
-                    Text("Wayward Sun", color = SolColors.Ink)
-                    HomeTabs(tab = HomeTab.HISTORY_DAY, onSelect = {}, modifier = Modifier.padding(top = 8.dp))
-                    HistoryCalendar(
-                        month = month,
-                        weeks = weeks,
-                        selectedWeek = DetroitCalendar.weekStart(day),
-                        selectedDay = day,
-                        today = day,
-                        onShiftMonth = {},
-                        onSelectWeek = {},
-                        onSelectDay = {}
+                Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
+                    Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
+                    HomeTabs(
+                        tab = HomeTab.HISTORY,
+                        onSelect = {},
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)
                     )
                 }
             }
         }
-        captureSized(width, height, "week-tab-2.7.0.png") {
-            historyScreen(HomeTab.HISTORY, day, month, page, key, layers, dayMode = false)
+    }
+
+    @Composable
+    private fun weekCalendar(
+        day: LocalDate,
+        month: YearMonth,
+        weeks: List<com.brian.solwidget.data.CalendarWeek>,
+        selectedWeek: LocalDate?,
+        selectedDay: LocalDate?
+    ) {
+        SolWidgetTheme {
+            Column(Modifier.fillMaxSize().background(SolColors.Navy).padding(16.dp)) {
+                Text("Wayward Sun", color = SolColors.Ink)
+                HomeTabs(tab = HomeTab.HISTORY, onSelect = {}, modifier = Modifier.padding(top = 12.dp))
+                HistoryCalendar(
+                    month = month,
+                    weeks = weeks,
+                    selectedWeek = selectedWeek,
+                    selectedDay = selectedDay,
+                    today = day,
+                    onShiftMonth = {},
+                    onSelectWeek = {},
+                    onSelectDay = {},
+                    onShowToday = {}
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun liveScreen(expanded: Boolean = false) {
+        val from = now.minus(48, ChronoUnit.HOURS)
+        val to = now.plus(48, ChronoUnit.HOURS)
+        val indoor = runtimeDay(aux = false)
+        val chartLayers = layers(temp = true, ecobee = true, solar = true)
+        SolWidgetTheme {
+            Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
+                if (!expanded) {
+                    Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
+                    HomeTabs(
+                        tab = HomeTab.LIVE,
+                        onSelect = {},
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)
+                    )
+                }
+                LivePane(
+                    snapshot = ForecastSnapshot(
+                        resourceId = "84d7-8b52-33f3-bd7b",
+                        points = solar(from, to),
+                        fetchedAt = now,
+                        requestsUsed = 0,
+                        requestLimit = 10,
+                        isDemo = false
+                    ),
+                    weather = null,
+                    livePast = solar(from, to),
+                    ecobee = indoor,
+                    layers = chartLayers,
+                    now = now,
+                    zone = zone,
+                    isLoading = false,
+                    onOpenSettings = {},
+                    expandedPanel = null,
+                    onToggleExpand = {},
+                    gasDollarsPerHour = 0.60,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = if (expanded) 0.dp else 16.dp),
+                    controls = ChartControls(expanded = expanded, expandProgress = 1f)
+                )
+            }
         }
     }
 
     @Composable
     private fun historyScreen(
-        tab: HomeTab,
         day: LocalDate,
         month: YearMonth,
         page: HistoryPage,
         key: String,
         layers: ChartLayers,
-        dayMode: Boolean
+        weekSelected: Boolean,
+        expanded: Boolean = false,
+        legendOpen: Boolean = false
     ) {
         SolWidgetTheme {
             Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
-                Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
-                HomeTabs(tab = tab, onSelect = {}, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                if (!expanded) {
+                    Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
+                    HomeTabs(tab = HomeTab.HISTORY, onSelect = {}, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
+                }
                 HistoryPane(
                     month = month,
                     selectedWeek = DetroitCalendar.weekStart(day),
                     selectedDay = day,
-                    dayMode = dayMode,
+                    weekSelected = weekSelected,
                     history = page,
                     historyKey = key,
                     historyLoading = false,
                     historyError = null,
                     layers = layers,
                     now = now,
-                    onOpenLayers = {},
                     onShiftMonth = {},
                     onShiftWeek = {},
                     onSelectWeek = {},
                     onShiftDay = {},
                     onSelectDay = {},
+                    onShowToday = {},
                     gasDollarsPerHour = 0.60,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = if (expanded) 0.dp else 16.dp),
+                    controls = ChartControls(expanded = expanded, expandProgress = 1f, legendOpen = legendOpen)
                 )
             }
         }
@@ -289,6 +387,34 @@ class EcobeeScreenshotTest {
                 coolSec = 0,
                 fanSec = if (aux || pump) 280 else 20,
                 outdoorF = if (aux) 22.0 else 30.0
+            )
+            cursor = cursor.plusSeconds(5 * 60)
+        }
+        return samples
+    }
+
+    /** Extra runtime on Monday and Tuesday so a week total is not the Wednesday total. */
+    private fun earlierWeekRuntime(): List<EcobeeSample> {
+        val monday = runtimeBlock(LocalDate.of(2026, 11, 9), 0, 4, aux = true)
+        val tuesday = runtimeBlock(LocalDate.of(2026, 11, 10), 6, 14, aux = false)
+        return monday + tuesday
+    }
+
+    private fun runtimeBlock(date: LocalDate, fromHour: Int, untilHour: Int, aux: Boolean): List<EcobeeSample> {
+        val start = DetroitCalendar.dayRange(date).first.plusSeconds(fromHour * 3600L)
+        val end = DetroitCalendar.dayRange(date).first.plusSeconds(untilHour * 3600L)
+        val samples = ArrayList<EcobeeSample>()
+        var cursor = start
+        while (cursor.isBefore(end)) {
+            samples += EcobeeSample(
+                at = cursor,
+                indoorF = if (aux) 63.0 else 68.0,
+                coolSetF = 75.0,
+                heatSetF = 66.0,
+                heatPumpSec = if (aux) 0 else 300,
+                auxHeatSec = if (aux) 300 else 0,
+                coolSec = 0,
+                fanSec = 300
             )
             cursor = cursor.plusSeconds(5 * 60)
         }
@@ -577,18 +703,6 @@ class EcobeeScreenshotTest {
                             ecobee = indoor
                         )
                     }
-                    val (tooWarm, tooCool) = ecobeeFillPresence(indoor, from, to, now)
-                    val runtime = hvacPresence(indoor, from, to, now)
-                    ChartLegend(
-                        layers = layers,
-                        onOpen = {},
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        showTooWarm = tooWarm,
-                        showTooCool = tooCool,
-                        showHeatPump = runtime.heatPump,
-                        showGasAux = runtime.aux,
-                        showCoolRun = runtime.cool
-                    )
                     if (layers.hvac) {
                         Text(
                             text = hvacSummaryLabel(hvacSummary(indoor, from, to, now)),

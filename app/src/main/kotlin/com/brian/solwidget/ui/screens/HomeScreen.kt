@@ -3,23 +3,35 @@ package com.brian.solwidget.ui.screens
 import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -29,7 +41,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -41,6 +56,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -51,6 +69,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -83,6 +105,10 @@ import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryPage
 import com.brian.solwidget.data.WeatherSnapshot
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import com.brian.solwidget.data.AppStorage
 import com.brian.solwidget.data.chartFor
 import com.brian.solwidget.data.historyFetchKey
 import com.brian.solwidget.data.liveSolarPoints
@@ -103,6 +129,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,9 +174,55 @@ fun HomeScreen(
         viewModel.consumeToast()
     }
 
-    BackHandler(enabled = drawerState.isOpen) {
+    val expanded = state.chartExpanded
+    var legendOpen by rememberSaveable { mutableStateOf(false) }
+    var cardBounds by remember { mutableStateOf<Rect?>(null) }
+    var expandHintSeen by remember { mutableStateOf(true) }
+    val expandProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(CHART_EXPAND_MILLIS, easing = FastOutSlowInEasing),
+        label = "chartExpand"
+    )
+    val covering = expanded || expandProgress > 0.01f
+    val showExpandHint = showChartExpandHint(expandHintSeen, expanded)
+    LaunchedEffect(Unit) {
+        expandHintSeen = AppStorage(context).chartExpandHintSeen()
+    }
+    LaunchedEffect(showExpandHint) {
+        if (!showExpandHint) return@LaunchedEffect
+        delay(2400)
+        AppStorage(context).setChartExpandHintSeen()
+        expandHintSeen = true
+    }
+    DisposableEffect(expanded) {
+        val activity = context as? Activity
+        val window = activity?.window
+        val controller = if (window != null) {
+            WindowCompat.getInsetsController(window, window.decorView)
+        } else {
+            null
+        }
+        if (expanded && window != null && controller != null) {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else if (window != null && controller != null) {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
+        onDispose {
+            if (window != null && controller != null) {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+            }
+        }
+    }
+
+    BackHandler(enabled = drawerState.isOpen && !expanded && !legendOpen) {
         scope.launch { drawerState.close() }
     }
+    BackHandler(enabled = legendOpen) { legendOpen = false }
+    BackHandler(enabled = expanded && !legendOpen) { viewModel.setChartExpanded(false) }
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen,
@@ -199,48 +272,79 @@ fun HomeScreen(
             }
         }
     ) {
+    val chartControls = ChartControls(
+        expanded = covering,
+        expandProgress = expandProgress,
+        cardBounds = cardBounds,
+        onChartTap = {
+            legendOpen = false
+            viewModel.setChartExpanded(!expanded)
+        },
+        onCardBounds = { cardBounds = it },
+        legendOpen = legendOpen,
+        onToggleLegend = { legendOpen = !legendOpen },
+        onDismissLegend = { legendOpen = false },
+        showExpandHint = showExpandHint && !covering
+    )
     Scaffold(
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { openDrawer() }) {
-                        Icon(
-                            imageVector = Icons.Filled.Menu,
-                            contentDescription = "Open navigation",
-                            tint = SolColors.Ink
+            if (!covering) {
+                Box {
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = { openDrawer() }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Menu,
+                                    contentDescription = "Open navigation",
+                                    tint = SolColors.Ink
+                                )
+                            }
+                        },
+                        title = {
+                            Text(
+                                text = "Wayward Sun",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = SolColors.Navy,
+                            titleContentColor = SolColors.Ink
                         )
-                    }
-                },
-                title = {
-                    Text(
-                        text = "Wayward Sun",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SolColors.Navy,
-                    titleContentColor = SolColors.Ink
-                )
-            )
+                    if (legendOpen) {
+                        LegendScrim { legendOpen = false }
+                    }
+                }
+            }
         },
         containerColor = SolColors.Navy
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(if (covering) PaddingValues(0.dp) else padding)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = if (covering) 0.dp else 16.dp)
             ) {
-                HomeTabs(
-                    tab = state.tab,
-                    onSelect = viewModel::showTab,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                if (!covering) {
+                    Box {
+                        HomeTabs(
+                            tab = state.tab,
+                            onSelect = {
+                                legendOpen = false
+                                viewModel.showTab(it)
+                            },
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                        if (legendOpen) {
+                            LegendScrim { legendOpen = false }
+                        }
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -257,33 +361,34 @@ fun HomeScreen(
                                 now = state.now,
                                 zone = zone,
                                 isLoading = state.isLoading,
-                                onOpenLayers = { openDrawer() },
                                 onOpenSettings = onOpenSettings,
                                 expandedPanel = expandedPanel,
                                 onToggleExpand = { panel ->
                                     expandedPanel = if (expandedPanel == panel) null else panel
                                 },
-                                gasDollarsPerHour = state.gasDollarsPerHour
+                                gasDollarsPerHour = state.gasDollarsPerHour,
+                                controls = chartControls
                             )
                         } else {
                             HistoryPane(
                                 month = state.historyMonth,
                                 selectedWeek = state.selectedWeek,
                                 selectedDay = state.selectedDay,
-                                dayMode = state.tab == HomeTab.HISTORY_DAY,
+                                weekSelected = state.historyWeekSelected,
                                 history = state.history,
                                 historyKey = state.historyKey,
                                 historyLoading = state.historyLoading,
                                 historyError = state.historyError,
                                 layers = state.layers,
                                 now = state.now,
-                                onOpenLayers = { openDrawer() },
                                 onShiftMonth = viewModel::shiftHistoryMonth,
                                 onShiftWeek = viewModel::shiftHistoryWeek,
                                 onSelectWeek = viewModel::selectHistoryWeek,
                                 onShiftDay = viewModel::shiftHistoryDay,
                                 onSelectDay = viewModel::selectHistoryDay,
-                                gasDollarsPerHour = state.gasDollarsPerHour
+                                onShowToday = viewModel::showCurrentHistory,
+                                gasDollarsPerHour = state.gasDollarsPerHour,
+                                controls = chartControls
                             )
                         }
                     }
@@ -397,30 +502,65 @@ private fun ReadyUpdateDialog(
     )
 }
 
+private val TabLabelActive = Color(0xFFE6E1F0)
+private val TabLabelInactive = Color.White.copy(alpha = 0.55f)
+private val TabUnderline = Color(0xFFFFC94A)
+
 @Composable
 internal fun HomeTabs(
     tab: HomeTab,
     onSelect: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    val selected = if (tab == HomeTab.LIVE) 0 else 1
+    TabRow(
+        selectedTabIndex = selected,
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        containerColor = Color.Transparent,
+        contentColor = TabLabelActive,
+        indicator = { positions ->
+            val current = positions[selected]
+            val spec = tween<Dp>(durationMillis = 250, easing = FastOutSlowInEasing)
+            val underlineWidth by animateDpAsState(current.width * 0.6f, spec, label = "tabUnderlineWidth")
+            val underlineOffset by animateDpAsState(current.left + current.width * 0.2f, spec, label = "tabUnderlineOffset")
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .wrapContentSize(Alignment.BottomStart)
+                    .offset(x = underlineOffset)
+                    .width(underlineWidth)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(1.5.dp))
+                    .background(TabUnderline)
+            )
+        },
+        divider = {
+            HorizontalDivider(thickness = 1.dp, color = Color.White.copy(alpha = 0.10f))
+        }
     ) {
-        LayerChip("Live", tab == HomeTab.LIVE, Modifier.weight(1f)) {
-            if (it) onSelect(HomeTab.LIVE)
-        }
-        LayerChip("History/week", tab == HomeTab.HISTORY, Modifier.weight(1.3f)) {
-            if (it) onSelect(HomeTab.HISTORY)
-        }
-        LayerChip("History/day", tab == HomeTab.HISTORY_DAY, Modifier.weight(1.2f)) {
-            if (it) onSelect(HomeTab.HISTORY_DAY)
+        HomeTab.entries.forEach { item ->
+            val active = item == tab
+            Tab(
+                selected = active,
+                onClick = { onSelect(item) },
+                modifier = Modifier.height(48.dp),
+                selectedContentColor = TabLabelActive,
+                unselectedContentColor = TabLabelInactive,
+                text = {
+                    Text(
+                        text = if (item == HomeTab.LIVE) "Live" else "History",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
+            )
         }
     }
 }
 
 @Composable
-private fun LivePane(
+internal fun LivePane(
     snapshot: ForecastSnapshot?,
     weather: WeatherSnapshot?,
     livePast: List<PowerPoint>?,
@@ -429,12 +569,12 @@ private fun LivePane(
     now: Instant,
     zone: ZoneId,
     isLoading: Boolean,
-    onOpenLayers: () -> Unit,
     onOpenSettings: () -> Unit,
     expandedPanel: MetaPanel?,
     onToggleExpand: (MetaPanel) -> Unit,
     gasDollarsPerHour: Double,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    controls: ChartControls = ChartControls()
 ) {
     if (snapshot == null) {
         Box(
@@ -447,49 +587,52 @@ private fun LivePane(
         }
         return
     }
-    Column(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
+    val (tooWarm, tooCool) = ecobeeFillPresence(ecobee, rangeFrom, rangeTo, now)
+    val runtime = hvacPresence(ecobee, rangeFrom, rangeTo, now)
+    val legend = LegendModel(
+        layers = layers,
+        showTooWarm = tooWarm,
+        showTooCool = tooCool,
+        showHeatPump = runtime.heatPump,
+        showGasAux = runtime.aux,
+        showCoolRun = runtime.cool
+    )
+    val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        PowerChart(
+            points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
+            now = now,
+            weather = weather?.alignedWithPower(now, zone).orEmpty(),
+            rangeFrom = rangeFrom,
+            rangeTo = rangeTo,
+            layers = layers,
+            sunDays = weather?.sunDays.orEmpty(),
+            isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
+            ecobee = ecobee
+        )
+    }
+    if (controls.expanded) {
+        ExpandedChart(modifier, controls, legend, content = chartContent)
+        return
+    }
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         snapshot.errorMessage
             ?.takeUnless { it.isSolcastQuotaMessage() }
             ?.let { message -> StatusBanner(message) }
         if (snapshot.isDemo && snapshot.errorMessage == null) {
             StatusBanner("Showing sample output until the shared cache has Solcast data.")
         }
-        Text(
-            text = "2 days before through 2 days after",
-            style = MaterialTheme.typography.titleMedium,
-            color = SolColors.Ink
-        )
-        val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
-        ChartFrame {
-            PowerChart(
-                points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
-                now = now,
-                weather = weather?.alignedWithPower(now, zone).orEmpty(),
-                rangeFrom = rangeFrom,
-                rangeTo = rangeTo,
-                layers = layers,
-                sunDays = weather?.sunDays.orEmpty(),
-                isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
-                ecobee = ecobee
-            )
+        ChartHeading(livePeriodLabel(now, zone), controls, legend)
+        if (controls.showExpandHint) {
+            Text("Tap chart to expand", color = SolColors.Muted, fontSize = 12.sp)
         }
-        val (tooWarm, tooCool) = ecobeeFillPresence(ecobee, rangeFrom, rangeTo, now)
-        val runtime = hvacPresence(ecobee, rangeFrom, rangeTo, now)
-        ChartLegend(
-            layers = layers,
-            onOpen = onOpenLayers,
-            showTooWarm = tooWarm,
-            showTooCool = tooCool,
-            showHeatPump = runtime.heatPump,
-            showGasAux = runtime.aux,
-            showCoolRun = runtime.cool
-        )
+        ChartFrame(onTap = controls.onChartTap, onBounds = controls.onCardBounds, content = chartContent)
         if (layers.hvac) {
             Text(
                 text = hvacSummaryLabel(hvacSummary(ecobee, rangeFrom, rangeTo, now), gasDollarsPerHour),
                 color = SolColors.Muted,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                style = MaterialTheme.typography.bodySmall
             )
         }
         Column(
@@ -517,6 +660,14 @@ private fun LivePane(
             }
         }
     }
+    if (controls.legendOpen) {
+        LegendScrim(controls.onDismissLegend)
+        LegendCard(
+            legend,
+            Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 12.dp).zIndex(2f)
+        )
+    }
+    }
 }
 
 @Composable
@@ -524,21 +675,22 @@ internal fun HistoryPane(
     month: YearMonth?,
     selectedWeek: LocalDate?,
     selectedDay: LocalDate?,
-    dayMode: Boolean,
+    weekSelected: Boolean,
     history: HistoryPage?,
     historyKey: String?,
     historyLoading: Boolean,
     historyError: String?,
     layers: ChartLayers,
     now: Instant,
-    onOpenLayers: () -> Unit,
     onShiftMonth: (Int) -> Unit,
     onShiftWeek: (Int) -> Unit,
     onSelectWeek: (LocalDate) -> Unit,
     onShiftDay: (Int) -> Unit,
     onSelectDay: (LocalDate) -> Unit,
+    onShowToday: () -> Unit,
     gasDollarsPerHour: Double,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    controls: ChartControls = ChartControls()
 ) {
     val today = DetroitCalendar.today(now)
     val shownMonth = month ?: YearMonth.from(today)
@@ -548,68 +700,77 @@ internal fun HistoryPane(
         ?: weeks.firstOrNull()
     val (fetchFrom, fetchTo) = DetroitCalendar.monthFetchRange(weeks)
     val pageMatches = historyKey == historyFetchKey(fetchFrom, fetchTo)
-    Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    val shownDay = selectedDay ?: today
+    val shownWeek = week?.id ?: DetroitCalendar.weekStart(shownDay)
+    val (from, to) = if (weekSelected) {
+        DetroitCalendar.weekRange(shownWeek)
+    } else {
+        DetroitCalendar.dayRange(shownDay)
+    }
+    val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
+    val (tooWarm, tooCool) = if (chart != null) {
+        ecobeeFillPresence(chart.ecobee, from, to, now)
+    } else {
+        false to false
+    }
+    val runtime = if (chart != null) hvacPresence(chart.ecobee, from, to, now) else null
+    val legend = LegendModel(
+        layers = layers,
+        showTooWarm = tooWarm,
+        showTooCool = tooCool,
+        showHeatPump = runtime?.heatPump == true,
+        showGasAux = runtime?.aux == true,
+        showCoolRun = runtime?.cool == true
+    )
+    val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        if (chart != null) {
+            PowerChart(
+                points = chart.points,
+                now = now,
+                weather = chart.weather,
+                rangeFrom = from,
+                rangeTo = to,
+                layers = layers,
+                sunDays = chart.sunDays,
+                zone = DetroitCalendar.ZONE,
+                ecobee = chart.ecobee
+            )
+        }
+        if (chart == null && historyLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        }
+    }
+    if (controls.expanded) {
+        ExpandedChart(modifier, controls, legend, content = chartContent)
+        return
+    }
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         historyError?.let { StatusBanner(it) }
-        val shownDay = selectedDay ?: today
-        if (dayMode || week != null) {
-            val (from, to) = if (dayMode) {
-                DetroitCalendar.dayRange(shownDay)
-            } else {
-                DetroitCalendar.weekRange(week!!.id)
+        if (weekSelected || week != null) {
+            ChartHeading(historyPeriodLabel(weekSelected, shownDay, shownWeek), controls, legend)
+            if (controls.showExpandHint) {
+                Text("Tap chart to expand", color = SolColors.Muted, fontSize = 12.sp)
             }
-            val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
             ChartFrame(
                 modifier = Modifier
-                    .adjacentSwipe(if (dayMode) onShiftDay else onShiftWeek)
+                    .adjacentSwipe(if (weekSelected) onShiftWeek else onShiftDay)
                     .semantics {
-                        contentDescription = if (dayMode) {
-                            "History day. Swipe left for the next day or right for the previous day."
-                        } else {
+                        contentDescription = if (weekSelected) {
                             "History week. Swipe left for the next week or right for the previous week."
+                        } else {
+                            "History day. Swipe left for the next day or right for the previous day."
                         }
-                    }
-            ) {
-                if (chart != null) {
-                    PowerChart(
-                        points = chart.points,
-                        now = now,
-                        weather = chart.weather,
-                        rangeFrom = from,
-                        rangeTo = to,
-                        layers = layers,
-                        sunDays = chart.sunDays,
-                        zone = DetroitCalendar.ZONE,
-                        ecobee = chart.ecobee
-                    )
-                }
-                if (chart == null && historyLoading) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-            }
-            val (tooWarm, tooCool) = if (chart != null) {
-                ecobeeFillPresence(chart.ecobee, from, to, now)
-            } else {
-                false to false
-            }
-            val runtime = if (chart != null) hvacPresence(chart.ecobee, from, to, now) else null
-            ChartLegend(
-                layers = layers,
-                onOpen = onOpenLayers,
-                showTooWarm = tooWarm,
-                showTooCool = tooCool,
-                showHeatPump = runtime?.heatPump == true,
-                showGasAux = runtime?.aux == true,
-                showCoolRun = runtime?.cool == true
+                    },
+                onTap = controls.onChartTap,
+                onBounds = controls.onCardBounds,
+                content = chartContent
             )
             if (layers.hvac && chart != null) {
                 Text(
                     text = hvacSummaryLabel(hvacSummary(chart.ecobee, from, to, now), gasDollarsPerHour),
                     color = SolColors.Muted,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
             if (pageMatches && history != null && chart != null &&
@@ -631,29 +792,133 @@ internal fun HistoryPane(
             HistoryCalendar(
                 month = shownMonth,
                 weeks = weeks,
-                selectedWeek = week?.id,
-                selectedDay = if (dayMode) shownDay else null,
+                selectedWeek = if (weekSelected) shownWeek else null,
+                selectedDay = if (weekSelected) null else shownDay,
                 today = today,
                 onShiftMonth = onShiftMonth,
                 onSelectWeek = onSelectWeek,
-                onSelectDay = if (dayMode) onSelectDay else null
+                onSelectDay = onSelectDay,
+                onShowToday = onShowToday
+            )
+        }
+    }
+    if (controls.legendOpen) {
+        LegendScrim(controls.onDismissLegend)
+        LegendCard(
+            legend,
+            Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 12.dp).zIndex(2f)
+        )
+    }
+    }
+}
+
+@Composable
+private fun ChartHeading(title: String, controls: ChartControls, legend: LegendModel) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f).alignByBaseline(),
+            style = MaterialTheme.typography.titleMedium,
+            color = SolColors.Ink
+        )
+        LegendButton(
+            open = controls.legendOpen,
+            onClick = controls.onToggleLegend,
+            modifier = Modifier.alignByBaseline()
+        )
+    }
+}
+
+@Composable
+private fun LegendScrim(onDismiss: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .zIndex(1f)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss
+            )
+            .semantics { contentDescription = "Dismiss legend" }
+    )
+}
+
+@Composable
+private fun ExpandedChart(
+    modifier: Modifier,
+    controls: ChartControls,
+    legend: LegendModel,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
+) {
+    var full by remember { mutableStateOf<Rect?>(null) }
+    BoxWithConstraints(
+        modifier
+            .fillMaxSize()
+            .background(SolColors.Navy)
+            .onGloballyPositioned { full = it.boundsInRoot() }
+            .scaleFromCard(controls.expandProgress, controls.cardBounds, full)
+    ) {
+        val portrait = maxHeight > maxWidth
+        val chartHeight = if (maxWidth * 1.2f < maxHeight) maxWidth * 1.2f else maxHeight
+        ChartFrame(
+            expanded = true,
+            onTap = controls.onChartTap,
+            modifier = if (portrait) {
+                Modifier.fillMaxWidth().height(chartHeight).align(Alignment.Center)
+            } else {
+                Modifier.fillMaxSize()
+            },
+            content = content
+        )
+        LegendButton(
+            open = controls.legendOpen,
+            onClick = controls.onToggleLegend,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 8.dp)
+        )
+        if (controls.legendOpen) {
+            LegendScrim(controls.onDismissLegend)
+            LegendCard(
+                legend,
+                Modifier.align(Alignment.TopEnd).padding(top = 52.dp, end = 12.dp).zIndex(2f)
             )
         }
     }
 }
 
+internal data class ChartControls(
+    val expanded: Boolean = false,
+    val expandProgress: Float = 1f,
+    val cardBounds: Rect? = null,
+    val onChartTap: () -> Unit = {},
+    val onCardBounds: (Rect) -> Unit = {},
+    val legendOpen: Boolean = false,
+    val onToggleLegend: () -> Unit = {},
+    val onDismissLegend: () -> Unit = {},
+    val showExpandHint: Boolean = false
+)
+
 @Composable
 private fun ChartFrame(
     modifier: Modifier = Modifier,
+    expanded: Boolean = false,
+    onTap: (() -> Unit)? = null,
+    onBounds: ((Rect) -> Unit)? = null,
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
 ) {
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .height(300.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .then(if (expanded) Modifier else Modifier.fillMaxWidth().height(300.dp))
+            .onGloballyPositioned { coords -> onBounds?.invoke(coords.boundsInRoot()) }
+            .clip(RoundedCornerShape(if (expanded) 0.dp else 20.dp))
             .background(SolColors.Panel)
-            .padding(8.dp),
+            .padding(
+                start = if (expanded) 12.dp else 8.dp,
+                top = if (expanded) 40.dp else 8.dp,
+                end = if (expanded) 12.dp else 8.dp,
+                bottom = if (expanded) 12.dp else 8.dp
+            )
+            .then(if (onTap != null) Modifier.chartTap(onTap) else Modifier),
         content = content
     )
 }
@@ -706,6 +971,35 @@ private fun Modifier.adjacentSwipe(onAdjacent: (Int) -> Unit): Modifier =
 
 private val WeekdayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 private val MonthLabel = DateTimeFormatter.ofPattern("MMMM yyyy")
+private val PeriodDay = DateTimeFormatter.ofPattern("EEE, MMM d")
+private val PeriodMonthDay = DateTimeFormatter.ofPattern("MMM d")
+
+private fun historyPeriodLabel(weekSelected: Boolean, day: LocalDate, weekStart: LocalDate): String {
+    if (!weekSelected) return PeriodDay.format(day)
+    return periodRangeLabel(weekStart, weekStart.plusDays(6))
+}
+
+/** Inclusive local dates, matching the History week header across month boundaries. */
+internal fun periodRangeLabel(start: LocalDate, end: LocalDate): String {
+    return if (start.year == end.year && start.month == end.month) {
+        "${PeriodMonthDay.format(start)} – ${end.dayOfMonth}"
+    } else {
+        "${PeriodMonthDay.format(start)} – ${PeriodMonthDay.format(end)}"
+    }
+}
+
+internal fun livePeriodLabel(now: Instant, zone: ZoneId): String {
+    val (from, to) = ForecastSnapshot.range(now, zone)
+    val start = from.atZone(zone).toLocalDate()
+    val end = to.atZone(zone).toLocalDate().minusDays(1)
+    return periodRangeLabel(start, end)
+}
+
+private val WeekNumberGold = Color(0xFFC9A24A)
+private val WeekChipIdle = Color.White.copy(alpha = 0.06f)
+private val WeekChipPressed = Color.White.copy(alpha = 0.14f)
+private val WeekChipSelected = Color(0xFF3A5680)
+private val WeekChipSelectedPressed = Color(0xFF4A6896)
 
 @Composable
 internal fun HistoryCalendar(
@@ -716,7 +1010,8 @@ internal fun HistoryCalendar(
     today: LocalDate,
     onShiftMonth: (Int) -> Unit,
     onSelectWeek: (LocalDate) -> Unit,
-    onSelectDay: ((LocalDate) -> Unit)?
+    onSelectDay: ((LocalDate) -> Unit)?,
+    onShowToday: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -743,14 +1038,25 @@ internal fun HistoryCalendar(
             Text(
                 text = MonthLabel.format(month),
                 color = SolColors.Ink,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onShowToday)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .semantics { contentDescription = "Back to this week" }
             )
             TextButton(
                 onClick = { onShiftMonth(1) },
                 modifier = Modifier.semantics { contentDescription = "Next month" }
             ) { Text("›", style = MaterialTheme.typography.titleLarge) }
         }
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(44.dp))
             WeekdayLabels.forEach { label ->
                 Text(
                     text = label,
@@ -761,82 +1067,118 @@ internal fun HistoryCalendar(
                 )
             }
         }
-        if (onSelectDay != null) {
-            weeks.forEach { week ->
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    week.days.forEach { day ->
-                        val selected = day.date == selectedDay
-                        val color = when {
-                            day.date == today -> SolColors.Forecast
-                            !day.inMonth -> Color(0xFF5C6B82)
-                            else -> SolColors.Ink
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(2.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected) SolColors.TableStripe else Color.Transparent)
-                                .then(
-                                    if (selected) {
-                                        Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                                .clickable { onSelectDay(day.date) }
-                                .padding(vertical = 8.dp)
-                                .semantics { contentDescription = "Day ${day.date}" },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = day.date.dayOfMonth.toString(),
-                                color = color,
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.labelLarge
+        weeks.forEach { week ->
+            val weekOn = week.id == selectedWeek
+            val shape = RoundedCornerShape(8.dp)
+            key(week.id) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .background(if (weekOn) SolColors.TableStripe else Color.Transparent)
+                    .then(
+                        if (weekOn) Modifier.border(1.dp, SolColors.Forecast, shape) else Modifier
+                    )
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val interaction = remember { MutableInteractionSource() }
+                val pressed by interaction.collectIsPressedAsState()
+                Box(
+                    modifier = Modifier
+                        .width(44.dp)
+                        .heightIn(min = 40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = LocalIndication.current
+                        ) { onSelectWeek(week.id) }
+                        .semantics { contentDescription = "Week ${DetroitCalendar.weekNumber(week.id)}" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val number = DetroitCalendar.weekNumber(week.id)
+                    Box(
+                        modifier = Modifier
+                            .width(32.dp)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                when {
+                                    weekOn && pressed -> WeekChipSelectedPressed
+                                    weekOn -> WeekChipSelected
+                                    pressed -> WeekChipPressed
+                                    else -> WeekChipIdle
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "W$number",
+                            color = if (weekOn) Color.White else WeekNumberGold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
+                }
+                week.days.forEach { day ->
+                    val dayOn = !weekOn && day.date == selectedDay
+                    val color = if (!day.inMonth) Color(0xFF5C6B82) else SolColors.Ink
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 40.dp)
+                            .padding(horizontal = 1.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (dayOn) SolColors.TableStripe else Color.Transparent)
+                            .then(
+                                if (dayOn) {
+                                    Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .clickable { onSelectDay?.invoke(day.date) }
+                            .semantics { contentDescription = "Day ${day.date}" },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = day.date.dayOfMonth.toString(),
+                            color = color,
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                        if (day.date == today) {
+                            Box(
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 4.dp)
+                                    .size(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(SolColors.Forecast)
                             )
                         }
                     }
                 }
             }
-        }
-        if (onSelectDay == null) weeks.forEach { week ->
-            val selected = week.id == selectedWeek
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (selected) SolColors.TableStripe else SolColors.PanelAlt)
-                    .then(
-                        if (selected) {
-                            Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
-                        } else {
-                            Modifier
-                        }
-                    )
-                    .clickable { onSelectWeek(week.id) }
-                    .padding(vertical = 8.dp)
-            ) {
-                week.days.forEach { day ->
-                    val color = when {
-                        day.date == today -> SolColors.Forecast
-                        !day.inMonth -> Color(0xFF5C6B82)
-                        else -> SolColors.Ink
-                    }
-                    Text(
-                        text = day.date.dayOfMonth.toString(),
-                        modifier = Modifier.weight(1f),
-                        color = color,
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
             }
+        }
+        }
+        Box(Modifier.matchParentSize()) {
+            Box(
+                Modifier
+                    .padding(start = 43.dp)
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(Color.White.copy(alpha = 0.10f))
+            )
+        }
         }
     }
 }
 
-private enum class MetaPanel { SOLAR, TEMP, PRECIP, RATES }
+internal enum class MetaPanel { SOLAR, TEMP, PRECIP, RATES }
 
 @Composable
 private fun StatusBanner(message: String) {
@@ -850,30 +1192,6 @@ private fun StatusBanner(message: String) {
         color = SolColors.Forecast,
         style = MaterialTheme.typography.bodyMedium
     )
-}
-
-@Composable
-private fun LayerChip(
-    label: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: (Boolean) -> Unit
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) SolColors.PanelAlt else SolColors.Panel)
-            .clickable { onClick(!selected) }
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            color = if (selected) SolColors.Ink else SolColors.Muted,
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
-            maxLines = 1
-        )
-    }
 }
 
 @Composable
@@ -899,8 +1217,19 @@ private fun LayerMetaPanel(
                 expanded = expanded,
                 onClick = { onToggleExpand(MetaPanel.SOLAR) }
             ) {
-                LegendKeys(type, "● Solcast" to SolColors.Forecast, "● Enphase" to SolColors.Live, "● Now" to SolColors.Now)
-                Text(snapshot.resourceId, color = SolColors.Ink, style = type.body)
+                if (snapshot.isDemo) {
+                    Text(
+                        text = "demo",
+                        color = SolColors.Muted,
+                        style = type.caption,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(SolColors.PanelAlt)
+                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                    )
+                } else {
+                    Text(snapshot.resourceId, color = SolColors.Ink, style = type.body)
+                }
                 Text(Formatters.asOf(snapshot.fetchedAt, now), color = SolColors.Muted, style = type.caption)
             }
         }
@@ -913,13 +1242,7 @@ private fun LayerMetaPanel(
                 expanded = expanded,
                 onClick = { onToggleExpand(MetaPanel.TEMP) },
                 type = type
-            ) {
-                LegendKeys(
-                    type,
-                    "– Outdoor °F" to SolColors.Temp,
-                    "·· 32°F" to Color.White.copy(alpha = 0.25f)
-                )
-            }
+            ) {}
         }
         if (layers.precipitation && (showOnly == null || showOnly == MetaPanel.PRECIP)) {
             WeatherMetaCard(
