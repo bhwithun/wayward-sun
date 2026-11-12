@@ -47,6 +47,7 @@ import org.junit.runner.RunWith
 /**
  * Forward history navigation when the loaded month ends before today.
  * The clock is 15 December 2026, so November is on the way to the current month.
+ * The forecast horizon is 29 December, fourteen days later.
  */
 @RunWith(AndroidJUnit4::class)
 class HistoryForwardTest {
@@ -151,7 +152,7 @@ class HistoryForwardTest {
     }
 
     @Test
-    fun fullscreenWeekStopsAtTheCurrentWeek() {
+    fun fullscreenWeekStopsAtTheForecastHorizon() {
         rule.setContent {
             HistoryHost(
                 weekSelected = true,
@@ -162,21 +163,23 @@ class HistoryForwardTest {
             )
         }
         rule.onNodeWithText(currentWeek).assertIsDisplayed()
+        swipeFullscreen(weekOfDec20)
+        swipeFullscreen(weekOfDec27)
         rule.onNodeWithTag("fullscreen-chart").performTouchInput { swipeLeft() }
         rule.waitForIdle()
-        rule.onNodeWithText(currentWeek).assertIsDisplayed()
-        check(rule.onAllNodesWithText(weekOfDec20).fetchSemanticsNodes().isEmpty()) {
-            "Week pager moved past the current week"
+        rule.onNodeWithText(weekOfDec27).assertIsDisplayed()
+        check(rule.onAllNodesWithText(weekOfJan3).fetchSemanticsNodes().isEmpty()) {
+            "Week pager moved past the 14-day forecast"
         }
         rule.onNodeWithTag("fullscreen-chart").performTouchInput { swipeRight() }
         rule.waitUntil(timeoutMillis = 8_000) {
-            rule.onAllNodesWithText(weekOfDec6).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithText(weekOfDec20).fetchSemanticsNodes().isNotEmpty()
         }
-        rule.onNodeWithText(weekOfDec6).assertIsDisplayed()
+        rule.onNodeWithText(weekOfDec20).assertIsDisplayed()
     }
 
     @Test
-    fun fullscreenDayStopsAtToday() {
+    fun fullscreenDayReachesTomorrowAndStopsAfterFourteenDays() {
         rule.setContent {
             HistoryHost(
                 weekSelected = false,
@@ -187,15 +190,32 @@ class HistoryForwardTest {
             )
         }
         rule.onNodeWithText(todayLabel).assertIsDisplayed()
+        swipeFullscreen(tomorrowLabel)
+        rule.onNodeWithTag("fullscreen-chart").performTouchInput { swipeRight() }
+        rule.waitUntil(timeoutMillis = 8_000) {
+            rule.onAllNodesWithText(todayLabel).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        rule.setContent {
+            HistoryHost(
+                weekSelected = false,
+                expanded = true,
+                initialMonth = YearMonth.of(2026, 12),
+                initialWeek = LocalDate.of(2026, 12, 27),
+                initialDay = LocalDate.of(2026, 12, 28)
+            )
+        }
+        rule.onNodeWithText(dayBeforeHorizon).assertIsDisplayed()
+        swipeFullscreen(horizonLabel)
         rule.onNodeWithTag("fullscreen-chart").performTouchInput { swipeLeft() }
         rule.waitForIdle()
-        rule.onNodeWithText(todayLabel).assertIsDisplayed()
-        check(rule.onAllNodesWithText(tomorrowLabel).fetchSemanticsNodes().isEmpty()) {
-            "Day pager moved past today"
+        rule.onNodeWithText(horizonLabel).assertIsDisplayed()
+        check(rule.onAllNodesWithText(pastHorizonLabel).fetchSemanticsNodes().isEmpty()) {
+            "Day pager moved past the 14-day forecast"
         }
         rule.onNodeWithTag("fullscreen-chart").performTouchInput { swipeRight() }
         rule.waitUntil(timeoutMillis = 8_000) {
-            rule.onAllNodesWithText(yesterdayLabel).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithText(dayBeforeHorizon).fetchSemanticsNodes().isNotEmpty()
         }
     }
 
@@ -340,15 +360,18 @@ class HistoryForwardTest {
         val weekOfOct25 = "Oct 25 $EN 31"
         val weekOfNov1 = "Nov 1 $EN 7"
         val weekOfNov8 = "Nov 8 $EN 14"
-        val weekOfDec6 = "Dec 6 $EN 12"
         val currentWeek = "Dec 13 $EN 19"
         val weekOfDec20 = "Dec 20 $EN 26"
+        val weekOfDec27 = "Dec 27 $EN Jan 2"
+        val weekOfJan3 = "Jan 3 $EN 9"
         const val saturday = "Sat, Oct 31"
         const val sunday = "Sun, Nov 1"
         const val monday = "Mon, Nov 2"
         const val tuesday = "Tue, Nov 3"
-        const val yesterdayLabel = "Mon, Dec 14"
         const val todayLabel = "Tue, Dec 15"
         const val tomorrowLabel = "Wed, Dec 16"
+        const val dayBeforeHorizon = "Mon, Dec 28"
+        const val horizonLabel = "Tue, Dec 29"
+        const val pastHorizonLabel = "Wed, Dec 30"
     }
 }

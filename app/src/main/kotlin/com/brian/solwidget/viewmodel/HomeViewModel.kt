@@ -229,14 +229,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectHistoryWeek(sunday: LocalDate) {
         val today = DetroitCalendar.today(_uiState.value.now)
+        val forwardLimit = DetroitCalendar.forwardLimit(today)
         val start = DetroitCalendar.weekStart(sunday)
-        if (start.isAfter(DetroitCalendar.weekStart(today))) return
+        if (start.isAfter(DetroitCalendar.weekStart(forwardLimit))) return
         _uiState.update { it.copy(selectedWeek = start, historyWeekSelected = true) }
     }
 
     fun selectHistoryDay(date: LocalDate) {
         val today = DetroitCalendar.today(_uiState.value.now)
-        if (date.isAfter(today)) return
+        val forwardLimit = DetroitCalendar.forwardLimit(today)
+        if (date.isAfter(forwardLimit)) return
         val month = YearMonth.from(date)
         val monthChanged = _uiState.value.historyMonth != month
         _uiState.update { it.copy(selectedDay = date, historyMonth = month, historyWeekSelected = false) }

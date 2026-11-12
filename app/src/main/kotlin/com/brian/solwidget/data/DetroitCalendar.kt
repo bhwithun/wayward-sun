@@ -32,9 +32,16 @@ object DetroitCalendar {
 
     /**
      * Safety cap for a pager span. Ecobee reaches back to August 2025, so a day
-     * list from that month through today is a few hundred pages, not the forward bound.
+     * list from that month through the forecast horizon is a few hundred pages,
+     * not the forward bound.
      */
     private const val PAGER_SPAN_GUARD = 2000
+
+    /**
+     * Last America/Detroit day history can open.
+     * Solcast forecasts 14 days (`hours=336`). Open-Meteo forecasts 15; history follows Solcast.
+     */
+    fun forwardLimit(today: LocalDate): LocalDate = today.plusDays(14)
 
     /** Sunday-start week, and the week that contains January 1 is week 1. */
     private val US_WEEKS: WeekFields = WeekFields.of(DayOfWeek.SUNDAY, 1)
@@ -101,8 +108,8 @@ object DetroitCalendar {
     }
 
     /**
-     * One day step. The future stops at [today], even when the loaded month's last
-     * sample is earlier. Inside a loaded window, days before [earliest] are empty.
+     * One day step. The future stops at [forwardLimit], even when the loaded month's
+     * last sample is earlier. Inside a loaded window, days before [earliest] are empty.
      * An empty window blocks another step past its start.
      */
     fun canStepDay(
@@ -114,8 +121,9 @@ object DetroitCalendar {
         earliest: LocalDate?
     ): Boolean {
         if (delta == 0) return false
+        val forwardLimit = forwardLimit(today)
         val next = day.plusDays(delta.toLong())
-        if (next.isAfter(today)) return false
+        if (next.isAfter(forwardLimit)) return false
         if (windowFrom != null && windowToExclusive != null && earliest != null) {
             val inside = !next.isBefore(windowFrom) && next.isBefore(windowToExclusive)
             if (inside && next.isBefore(earliest)) return false
@@ -125,7 +133,7 @@ object DetroitCalendar {
     }
 
     /**
-     * One Sunday–Saturday step. A week after [today]'s week does not move.
+     * One Sunday–Saturday step. A week after the week containing [forwardLimit] does not move.
      * A week entirely before the oldest sample in the loaded window does not move.
      * The loaded window's last sample is not the forward bound.
      */
@@ -138,8 +146,9 @@ object DetroitCalendar {
         earliest: LocalDate?
     ): Boolean {
         if (delta == 0) return false
+        val forwardLimit = forwardLimit(today)
         val next = weekStart(week).plusDays(7L * delta)
-        if (next.isAfter(weekStart(today))) return false
+        if (next.isAfter(weekStart(forwardLimit))) return false
         val saturday = next.plusDays(6)
         if (windowFrom != null && windowToExclusive != null && earliest != null) {
             val overlaps = !saturday.isBefore(windowFrom) && next.isBefore(windowToExclusive)
@@ -149,18 +158,19 @@ object DetroitCalendar {
         return true
     }
 
-    /** The calendar can move backward without limit. Forward stops at [today]'s month. */
+    /** The calendar can move backward without limit. Forward stops at [forwardLimit]'s month. */
     fun canShiftMonth(month: YearMonth, delta: Int, today: LocalDate): Boolean {
         if (delta == 0) return false
         if (delta < 0) return true
-        return !month.plusMonths(delta.toLong()).isAfter(YearMonth.from(today))
+        val forwardLimit = forwardLimit(today)
+        return !month.plusMonths(delta.toLong()).isAfter(YearMonth.from(forwardLimit))
     }
 
     /**
-     * Weeks the fullscreen pager can land on. The last page is [today]'s week, not the
-     * last week inside the loaded month. Includes every loaded week that is not entirely
-     * before the oldest sample, plus one older week when [canStepWeek] allows it so a
-     * swipe can still cross into the previous month.
+     * Weeks the fullscreen pager can land on. The last page is the week containing
+     * [forwardLimit], not the last week inside the loaded month. Includes every loaded
+     * week that is not entirely before the oldest sample, plus one older week when
+     * [canStepWeek] allows it so a swipe can still cross into the previous month.
      */
     fun fullscreenWeeks(
         anchor: LocalDate,
@@ -169,7 +179,8 @@ object DetroitCalendar {
         windowToExclusive: LocalDate?,
         earliest: LocalDate?
     ): List<LocalDate> {
-        val end = weekStart(today)
+        val forwardLimit = forwardLimit(today)
+        val end = weekStart(forwardLimit)
         var start = weekStart(windowFrom ?: anchor)
         if (earliest != null) {
             var guard = 0
@@ -199,8 +210,8 @@ object DetroitCalendar {
     }
 
     /**
-     * Days the fullscreen pager can land on. The last page is [today]. Same backward
-     * window as [canStepDay], plus one older day when that step is legal.
+     * Days the fullscreen pager can land on. The last page is [forwardLimit]. Same
+     * backward window as [canStepDay], plus one older day when that step is legal.
      */
     fun fullscreenDays(
         anchor: LocalDate,
@@ -211,7 +222,8 @@ object DetroitCalendar {
     ): List<LocalDate> {
         var start = windowFrom ?: earliest ?: anchor
         if (earliest != null && start.isBefore(earliest)) start = earliest
-        var end = today
+        val forwardLimit = forwardLimit(today)
+        var end = forwardLimit
         if (start.isAfter(end)) start = end
         val pages = ArrayList<LocalDate>()
         var cursor = start

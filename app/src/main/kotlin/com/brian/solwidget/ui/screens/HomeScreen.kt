@@ -1317,7 +1317,8 @@ internal fun HistoryCalendar(
     onSelectDay: ((LocalDate) -> Unit)?,
     onShowToday: () -> Unit
 ) {
-    val currentWeek = DetroitCalendar.weekStart(today)
+    val forwardLimit = DetroitCalendar.forwardLimit(today)
+    val lastWeek = DetroitCalendar.weekStart(forwardLimit)
     fun shiftMonth(delta: Int) {
         if (DetroitCalendar.canShiftMonth(month, delta, today)) onShiftMonth(delta)
     }
@@ -1402,7 +1403,7 @@ internal fun HistoryCalendar(
                         .clickable(
                             interactionSource = interaction,
                             indication = LocalIndication.current,
-                            enabled = !week.id.isAfter(currentWeek)
+                            enabled = !week.id.isAfter(lastWeek)
                         ) { onSelectWeek(week.id) }
                         .semantics { contentDescription = "Week ${DetroitCalendar.weekNumber(week.id)}" },
                     contentAlignment = Alignment.Center
@@ -1449,7 +1450,7 @@ internal fun HistoryCalendar(
                                     Modifier
                                 }
                             )
-                            .clickable(enabled = onSelectDay != null && !day.date.isAfter(today)) {
+                            .clickable(enabled = onSelectDay != null && !day.date.isAfter(forwardLimit)) {
                                 onSelectDay?.invoke(day.date)
                             }
                             .semantics { contentDescription = "Day ${day.date}" },
