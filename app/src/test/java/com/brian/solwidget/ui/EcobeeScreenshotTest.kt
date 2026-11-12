@@ -239,19 +239,19 @@ class EcobeeScreenshotTest {
         captureSized(width, height, "live-fullscreen-2.8.0f.png") {
             liveScreen(expanded = true)
         }
-        captureSized(width, height, "fullscreen-portrait-2.8.1.png") {
+        captureSized(width, height, "fullscreen-portrait-2.8.1b.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
         }
-        captureSized((844 * density).roundToInt(), (390 * density).roundToInt(), "fullscreen-landscape-2.8.1.png") {
+        captureSized((844 * density).roundToInt(), (390 * density).roundToInt(), "fullscreen-landscape-2.8.1b.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
         }
-        captureSized(width, height, "fullscreen-day-portrait-2.8.1.png") {
+        captureSized(width, height, "fullscreen-day-portrait-2.8.1b.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = false, expanded = true)
         }
-        captureSized(width, height, "live-fullscreen-2.8.1.png") {
+        captureSized(width, height, "live-fullscreen-2.8.1b.png", emulateCutout = true) {
             liveScreen(expanded = true)
         }
-        captureSized(width, height, "fullscreen-swipe-2.8.1.png") {
+        captureSized(width, height, "fullscreen-swipe-2.8.1b.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true, previewDragFraction = 0.42f)
         }
         captureSized(width, (112 * density).roundToInt(), "tabs-closeup-2.8.0f.png") {
@@ -738,14 +738,34 @@ class EcobeeScreenshotTest {
     }
 
     private fun capture(name: String, content: @Composable () -> Unit) {
-        captureSized(1080, 2400, name, content)
+        captureSized(1080, 2400, name, content = content)
     }
 
-    private fun captureSized(width: Int, height: Int, name: String, content: @Composable () -> Unit) {
+    private fun captureSized(
+        width: Int,
+        height: Int,
+        name: String,
+        emulateCutout: Boolean = false,
+        content: @Composable () -> Unit
+    ) {
         val activity = Robolectric.buildActivity(ScreenshotActivity::class.java).setup().get()
         val composeView = ComposeView(activity)
         activity.setContentView(composeView, FrameLayout.LayoutParams(width, height))
         composeView.setContent { content() }
+        composeView.measure(
+            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+        )
+        composeView.layout(0, 0, width, height)
+        if (emulateCutout) {
+            val cutout = android.view.WindowInsets.Builder()
+                .setInsets(android.view.WindowInsets.Type.displayCutout(), android.graphics.Insets.of(0, 84, 0, 0))
+                .setInsets(android.view.WindowInsets.Type.systemGestures(), android.graphics.Insets.of(0, 0, 0, 48))
+                .setInsets(android.view.WindowInsets.Type.mandatorySystemGestures(), android.graphics.Insets.of(0, 0, 0, 48))
+                .build()
+            composeView.dispatchApplyWindowInsets(cutout)
+        }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
         composeView.measure(
             MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)

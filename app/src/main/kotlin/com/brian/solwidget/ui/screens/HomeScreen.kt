@@ -28,7 +28,11 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -82,6 +86,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -95,6 +100,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
@@ -675,6 +682,7 @@ internal fun LivePane(
             pageCount = pageCount,
             pageIndex = index,
             showDots = true,
+            title = livePeriodLabel(now, zone),
             previous = if (index > 0) {
                 { LiveFullscreenPage(index - 1, cards, chartContent, layers, snapshot, weather, now, onOpenSettings) }
             } else {
@@ -858,6 +866,7 @@ internal fun HistoryPane(
             pageCount = 1,
             pageIndex = 0,
             showDots = false,
+            title = historyPeriodLabel(weekSelected, shownDay, shownWeek),
             previous = previousStart?.let { start -> pageFor(start) },
             next = nextStart?.let { start -> pageFor(start) },
             content = pageFor(anchor)
@@ -972,6 +981,7 @@ private fun ExpandedChart(
     pageCount: Int,
     pageIndex: Int,
     showDots: Boolean,
+    title: String,
     previous: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)?,
     next: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)?,
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
@@ -990,11 +1000,49 @@ private fun ExpandedChart(
             .background(SolColors.Navy)
             .onGloballyPositioned { full = it.boundsInRoot() }
             .scaleFromCard(controls.expandProgress, controls.cardBounds, full)
+            .padding(fullscreenSafePadding())
     ) {
+        Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f),
+                color = SolColors.Ink,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (showDots && pageCount in 2..6) {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    repeat(pageCount) { index ->
+                        Box(
+                            Modifier
+                                .size(if (index == pageIndex) 7.dp else 5.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = if (index == pageIndex) 0.9f else 0.35f))
+                        )
+                    }
+                }
+            }
+            LegendButton(
+                open = controls.legendOpen,
+                onClick = controls.onToggleLegend,
+                compact = true,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
         Box(
             Modifier
                 .fillMaxSize()
-                .clipToBounds()
+                .background(SolColors.Panel)
                 .onSizeChanged { widthPx = it.width }
                 .pointerInput(previous != null, next != null, controls.legendOpen) {
                     if (controls.legendOpen) return@pointerInput
@@ -1055,40 +1103,39 @@ private fun ExpandedChart(
                     }
                 }
         ) {
+            Text("PLOT", color = Color.Yellow, fontSize = 48.sp, modifier = Modifier.align(Alignment.Center))
             val width = widthPx.toFloat()
             if (previous != null && width > 0f) {
-                Box(Modifier.fillMaxSize().offset { IntOffset((slide - width).roundToInt(), 0) }, content = previous)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { translationX = slide - width }
+                        .background(SolColors.Panel),
+                    content = previous
+                )
             }
-            Box(Modifier.fillMaxSize().offset { IntOffset(slide.roundToInt(), 0) }) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { translationX = slide }
+                    .background(SolColors.Panel)
+            ) {
                 ChartFrame(expanded = true, modifier = Modifier.fillMaxSize(), content = content)
             }
             if (next != null && width > 0f) {
-                Box(Modifier.fillMaxSize().offset { IntOffset((slide + width).roundToInt(), 0) }, content = next)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { translationX = slide + width }
+                        .background(SolColors.Panel),
+                    content = next
+                )
             }
+            if (previous != null) PagerChevron(pointsLeft = true, Modifier.align(Alignment.CenterStart))
+            if (next != null) PagerChevron(pointsLeft = false, Modifier.align(Alignment.CenterEnd))
         }
-        if (showDots && pageCount in 2..6) {
-            Row(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                repeat(pageCount) { index ->
-                    Box(
-                        Modifier
-                            .size(if (index == pageIndex) 7.dp else 5.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = if (index == pageIndex) 0.9f else 0.35f))
-                    )
-                }
-            }
-        } else {
-            if (previous != null) PagerEdge(Modifier.align(Alignment.CenterStart))
-            if (next != null) PagerEdge(Modifier.align(Alignment.CenterEnd))
         }
-        LegendButton(
-            open = controls.legendOpen,
-            onClick = controls.onToggleLegend,
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 8.dp)
-        )
+        }
         if (controls.legendOpen) {
             LegendScrim(controls.onDismissLegend)
             LegendCard(
@@ -1100,15 +1147,34 @@ private fun ExpandedChart(
 }
 
 @Composable
-private fun PagerEdge(modifier: Modifier) {
-    Box(
-        modifier
-            .padding(horizontal = 4.dp)
-            .width(3.dp)
-            .height(48.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(Color.White.copy(alpha = 0.28f))
+private fun PagerChevron(pointsLeft: Boolean, modifier: Modifier) {
+    Text(
+        text = if (pointsLeft) "‹" else "›",
+        color = Color.White.copy(alpha = 0.30f),
+        fontSize = 28.sp,
+        modifier = modifier.padding(horizontal = 6.dp)
     )
+}
+
+@Composable
+private fun fullscreenSafePadding(): androidx.compose.foundation.layout.PaddingValues {
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val cutout = WindowInsets.displayCutout
+    val gestures = WindowInsets.systemGestures
+    val mandatory = WindowInsets.mandatorySystemGestures
+    val top = maxOf(cutout.getTop(density), gestures.getTop(density), mandatory.getTop(density))
+    val bottom = maxOf(cutout.getBottom(density), gestures.getBottom(density), mandatory.getBottom(density))
+    val start = cutout.getLeft(density, layoutDirection)
+    val end = cutout.getRight(density, layoutDirection)
+    return with(density) {
+        androidx.compose.foundation.layout.PaddingValues(
+            start = start.toDp(),
+            top = top.toDp(),
+            end = end.toDp(),
+            bottom = bottom.toDp()
+        )
+    }
 }
 
 internal data class ChartControls(
@@ -1138,9 +1204,9 @@ private fun ChartFrame(
         modifier = modifier
             .then(if (expanded) Modifier else Modifier.fillMaxWidth().height(300.dp))
             .onGloballyPositioned { coords -> onBounds?.invoke(coords.boundsInRoot()) }
-            .clip(RoundedCornerShape(if (expanded) 0.dp else 20.dp))
+            .then(if (expanded) Modifier else Modifier.clip(RoundedCornerShape(20.dp)))
             .background(SolColors.Panel)
-            .padding(if (expanded) 4.dp else 8.dp)
+            .padding(if (expanded) 0.dp else 8.dp)
             .then(if (onTap != null) Modifier.chartTap(onTap) else Modifier),
         content = content
     )

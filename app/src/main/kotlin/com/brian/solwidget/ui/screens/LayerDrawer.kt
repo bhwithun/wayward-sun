@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.heightIn
@@ -89,11 +90,12 @@ internal fun LegendButton(
     open: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     onAnchor: (androidx.compose.ui.geometry.Rect) -> Unit = {}
 ) {
     Row(
         modifier = modifier
-            .expandTapTarget()
+            .then(if (compact) Modifier.height(32.dp) else Modifier.expandTapTarget())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(bounded = false),
