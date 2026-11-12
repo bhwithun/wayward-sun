@@ -2,6 +2,10 @@ package com.brian.solwidget.ui
 
 import com.brian.solwidget.ui.screens.CHART_EXPAND_MILLIS
 import com.brian.solwidget.ui.screens.chartTapFires
+import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.ui.screens.MetaPanel
+import com.brian.solwidget.ui.screens.liveFullscreenCards
+import com.brian.solwidget.ui.screens.pagerDelta
 import com.brian.solwidget.ui.screens.livePeriodLabel
 import com.brian.solwidget.ui.screens.periodRangeLabel
 import com.brian.solwidget.ui.screens.showChartExpandHint
@@ -23,6 +27,30 @@ class ChartExpandTest {
             "Oct 30 – Nov 3",
             periodRangeLabel(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 3))
         )
+    }
+
+    @Test
+    fun aQuarterWidthDragTurnsThePageAndAShortDragDoesNot() {
+        assertEquals(0, pagerDelta(dx = 40f, width = 400f, canPrev = true, canNext = true))
+        assertEquals(1, pagerDelta(dx = -120f, width = 400f, canPrev = true, canNext = true))
+        assertEquals(0, pagerDelta(dx = -120f, width = 400f, canPrev = true, canNext = false))
+        assertEquals(-1, pagerDelta(dx = 120f, width = 400f, canPrev = true, canNext = false))
+    }
+
+    @Test
+    fun liveFullscreenFollowsTheCardsThatAreOn() {
+        val cards = liveFullscreenCards(
+            ChartLayers(
+                temperature = true,
+                precipitation = false,
+                buy = false,
+                sell = false,
+                solcast = true,
+                enphase = false,
+                ecobee = false
+            )
+        )
+        assertEquals(listOf(MetaPanel.SOLAR, MetaPanel.TEMP), cards)
     }
 
     @Test

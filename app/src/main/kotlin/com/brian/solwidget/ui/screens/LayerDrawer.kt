@@ -89,11 +89,12 @@ internal fun LegendButton(
     open: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     onAnchor: (androidx.compose.ui.geometry.Rect) -> Unit = {}
 ) {
     Row(
         modifier = modifier
-            .expandTapTarget()
+            .then(if (compact) Modifier else Modifier.expandTapTarget())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(bounded = false),
@@ -122,8 +123,7 @@ internal fun LegendButton(
             text = "Legend",
             color = Color.White.copy(alpha = 0.70f),
             fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.alignByBaseline()
+            fontWeight = FontWeight.Medium
         )
     }
 }

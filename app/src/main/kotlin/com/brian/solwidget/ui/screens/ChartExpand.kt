@@ -23,6 +23,23 @@ internal fun chartTapFires(
 
 internal fun showChartExpandHint(seen: Boolean, expanded: Boolean): Boolean = !seen && !expanded
 
+/** 1 moves toward the next chart, -1 toward the previous. A short drag stays put. */
+internal fun pagerDelta(dx: Float, width: Float, canPrev: Boolean, canNext: Boolean): Int {
+    if (width <= 0f) return 0
+    val threshold = width * 0.25f
+    return when {
+        dx <= -threshold && canNext -> 1
+        dx >= threshold && canPrev -> -1
+        else -> 0
+    }
+}
+
+internal fun resistedDrag(dx: Float, canPrev: Boolean, canNext: Boolean): Float = when {
+    dx > 0f && !canPrev -> dx * 0.2f
+    dx < 0f && !canNext -> dx * 0.2f
+    else -> dx
+}
+
 internal fun Modifier.chartTap(onTap: () -> Unit): Modifier = pointerInput(onTap) {
     val slop = viewConfiguration.touchSlop
     val longPress = viewConfiguration.longPressTimeoutMillis

@@ -94,6 +94,51 @@ object DetroitCalendar {
         return HistoryFocus(adjacent, selected)
     }
 
+    /**
+     * One day step that stays on stored days.
+     * The future stops at [newest]. Inside a loaded window, days before [earliest]
+     * are empty. An empty window blocks another step past its start.
+     */
+    fun canStepDay(
+        day: LocalDate,
+        delta: Int,
+        newest: LocalDate,
+        windowFrom: LocalDate?,
+        windowToExclusive: LocalDate?,
+        earliest: LocalDate?
+    ): Boolean {
+        if (delta == 0) return false
+        val next = day.plusDays(delta.toLong())
+        if (next.isAfter(newest)) return false
+        if (windowFrom != null && windowToExclusive != null && earliest != null) {
+            val inside = !next.isBefore(windowFrom) && next.isBefore(windowToExclusive)
+            if (inside && next.isBefore(earliest)) return false
+        }
+        if (earliest == null && windowFrom != null && delta < 0 && next.isBefore(windowFrom)) return false
+        return true
+    }
+
+    /** One Sunday–Saturday step. A week after [newest]'s week, or entirely before the oldest sample, does not move. */
+    fun canStepWeek(
+        week: LocalDate,
+        delta: Int,
+        newest: LocalDate,
+        windowFrom: LocalDate?,
+        windowToExclusive: LocalDate?,
+        earliest: LocalDate?
+    ): Boolean {
+        if (delta == 0) return false
+        val next = weekStart(week).plusDays(7L * delta)
+        if (next.isAfter(weekStart(newest))) return false
+        val saturday = next.plusDays(6)
+        if (windowFrom != null && windowToExclusive != null && earliest != null) {
+            val overlaps = !saturday.isBefore(windowFrom) && next.isBefore(windowToExclusive)
+            if (overlaps && saturday.isBefore(earliest)) return false
+        }
+        if (earliest == null && windowFrom != null && delta < 0 && next.isBefore(windowFrom)) return false
+        return true
+    }
+
     /** First Sunday of the visible month through the day after its last Saturday. */
     fun monthFetchRange(weeks: List<CalendarWeek>): Pair<Instant, Instant> {
         val start = weeks.first().id
