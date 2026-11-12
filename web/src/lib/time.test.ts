@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { liveWindow, monthWeeks, usWeekNumber, weekStart } from "./time";
+import { livePeriod, liveWindow, monthWeeks, periodRange, usWeekNumber, weekStart } from "./time";
 
 describe("weekStart", () => {
   it("returns the Sunday on or before a Thursday", () => {
@@ -45,6 +45,24 @@ describe("monthWeeks", () => {
     expect(weeks[weeks.length - 1].id).toBe("2026-10-25");
     expect(weeks[weeks.length - 1].days[6]).toMatchObject({ day: 31, inMonth: true });
     expect(weeks.every((week) => week.days.length === 7)).toBe(true);
+  });
+});
+
+describe("periodRange", () => {
+  it("drops the ending month inside one month and keeps it across a boundary", () => {
+    expect(periodRange({ year: 2026, month: 11, day: 9 }, { year: 2026, month: 11, day: 13 })).toBe(
+      "Nov 9 – 13"
+    );
+    expect(periodRange({ year: 2026, month: 10, day: 30 }, { year: 2026, month: 11, day: 3 })).toBe(
+      "Oct 30 – Nov 3"
+    );
+  });
+});
+
+describe("livePeriod", () => {
+  it("names the inclusive live window", () => {
+    expect(livePeriod({ year: 2026, month: 11, day: 11 })).toBe("Nov 7 – 13");
+    expect(livePeriod({ year: 2026, month: 10, day: 1 })).toBe("Sep 27 – Oct 3");
   });
 });
 

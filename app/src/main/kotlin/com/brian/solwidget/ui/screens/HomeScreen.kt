@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -622,7 +623,7 @@ internal fun LivePane(
         if (snapshot.isDemo && snapshot.errorMessage == null) {
             StatusBanner("Showing sample output until the shared cache has Solcast data.")
         }
-        ChartHeading("2 days before through 2 days after", controls, legend)
+        ChartHeading(livePeriodLabel(now, zone), controls, legend)
         if (controls.showExpandHint) {
             Text("Tap chart to expand", color = SolColors.Muted, fontSize = 12.sp)
         }
@@ -661,7 +662,10 @@ internal fun LivePane(
     }
     if (controls.legendOpen) {
         LegendScrim(controls.onDismissLegend)
-        LegendCard(legend, Modifier.align(Alignment.TopEnd).padding(top = 48.dp).zIndex(2f))
+        LegendCard(
+            legend,
+            Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 12.dp).zIndex(2f)
+        )
     }
     }
 }
@@ -800,7 +804,10 @@ internal fun HistoryPane(
     }
     if (controls.legendOpen) {
         LegendScrim(controls.onDismissLegend)
-        LegendCard(legend, Modifier.align(Alignment.TopEnd).padding(top = 48.dp).zIndex(2f))
+        LegendCard(
+            legend,
+            Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 12.dp).zIndex(2f)
+        )
     }
     }
 }
@@ -845,17 +852,23 @@ private fun ExpandedChart(
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
 ) {
     var full by remember { mutableStateOf<Rect?>(null) }
-    Box(
+    BoxWithConstraints(
         modifier
             .fillMaxSize()
             .background(SolColors.Navy)
             .onGloballyPositioned { full = it.boundsInRoot() }
             .scaleFromCard(controls.expandProgress, controls.cardBounds, full)
     ) {
+        val portrait = maxHeight > maxWidth
+        val chartHeight = if (maxWidth * 1.2f < maxHeight) maxWidth * 1.2f else maxHeight
         ChartFrame(
             expanded = true,
             onTap = controls.onChartTap,
-            modifier = Modifier.fillMaxSize(),
+            modifier = if (portrait) {
+                Modifier.fillMaxWidth().height(chartHeight).align(Alignment.Center)
+            } else {
+                Modifier.fillMaxSize()
+            },
             content = content
         )
         LegendButton(
@@ -867,7 +880,7 @@ private fun ExpandedChart(
             LegendScrim(controls.onDismissLegend)
             LegendCard(
                 legend,
-                Modifier.align(Alignment.TopEnd).padding(top = 52.dp, end = 8.dp).zIndex(2f)
+                Modifier.align(Alignment.TopEnd).padding(top = 52.dp, end = 12.dp).zIndex(2f)
             )
         }
     }
@@ -895,8 +908,7 @@ private fun ChartFrame(
 ) {
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .then(if (expanded) Modifier.fillMaxSize() else Modifier.height(300.dp))
+            .then(if (expanded) Modifier else Modifier.fillMaxWidth().height(300.dp))
             .onGloballyPositioned { coords -> onBounds?.invoke(coords.boundsInRoot()) }
             .clip(RoundedCornerShape(if (expanded) 0.dp else 20.dp))
             .background(SolColors.Panel)
@@ -964,12 +976,23 @@ private val PeriodMonthDay = DateTimeFormatter.ofPattern("MMM d")
 
 private fun historyPeriodLabel(weekSelected: Boolean, day: LocalDate, weekStart: LocalDate): String {
     if (!weekSelected) return PeriodDay.format(day)
-    val end = weekStart.plusDays(6)
-    return if (weekStart.month == end.month) {
-        "${PeriodMonthDay.format(weekStart)} – ${end.dayOfMonth}"
+    return periodRangeLabel(weekStart, weekStart.plusDays(6))
+}
+
+/** Inclusive local dates, matching the History week header across month boundaries. */
+internal fun periodRangeLabel(start: LocalDate, end: LocalDate): String {
+    return if (start.year == end.year && start.month == end.month) {
+        "${PeriodMonthDay.format(start)} – ${end.dayOfMonth}"
     } else {
-        "${PeriodMonthDay.format(weekStart)} – ${PeriodMonthDay.format(end)}"
+        "${PeriodMonthDay.format(start)} – ${PeriodMonthDay.format(end)}"
     }
+}
+
+internal fun livePeriodLabel(now: Instant, zone: ZoneId): String {
+    val (from, to) = ForecastSnapshot.range(now, zone)
+    val start = from.atZone(zone).toLocalDate()
+    val end = to.atZone(zone).toLocalDate().minusDays(1)
+    return periodRangeLabel(start, end)
 }
 
 private val WeekNumberGold = Color(0xFFC9A24A)
@@ -1194,8 +1217,19 @@ private fun LayerMetaPanel(
                 expanded = expanded,
                 onClick = { onToggleExpand(MetaPanel.SOLAR) }
             ) {
-                LegendKeys(type, "● Solcast" to SolColors.Forecast, "● Enphase" to SolColors.Live, "● Now" to SolColors.Now)
-                Text(snapshot.resourceId, color = SolColors.Ink, style = type.body)
+                if (snapshot.isDemo) {
+                    Text(
+                        text = "demo",
+                        color = SolColors.Muted,
+                        style = type.caption,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(SolColors.PanelAlt)
+                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                    )
+                } else {
+                    Text(snapshot.resourceId, color = SolColors.Ink, style = type.body)
+                }
                 Text(Formatters.asOf(snapshot.fetchedAt, now), color = SolColors.Muted, style = type.caption)
             }
         }
@@ -1208,13 +1242,7 @@ private fun LayerMetaPanel(
                 expanded = expanded,
                 onClick = { onToggleExpand(MetaPanel.TEMP) },
                 type = type
-            ) {
-                LegendKeys(
-                    type,
-                    "– Outdoor °F" to SolColors.Temp,
-                    "·· 32°F" to Color.White.copy(alpha = 0.25f)
-                )
-            }
+            ) {}
         }
         if (layers.precipitation && (showOnly == null || showOnly == MetaPanel.PRECIP)) {
             WeatherMetaCard(

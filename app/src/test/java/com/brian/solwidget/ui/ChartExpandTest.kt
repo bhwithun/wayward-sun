@@ -2,15 +2,29 @@ package com.brian.solwidget.ui
 
 import com.brian.solwidget.ui.screens.CHART_EXPAND_MILLIS
 import com.brian.solwidget.ui.screens.chartTapFires
+import com.brian.solwidget.ui.screens.livePeriodLabel
+import com.brian.solwidget.ui.screens.periodRangeLabel
 import com.brian.solwidget.ui.screens.showChartExpandHint
 import com.brian.solwidget.viewmodel.HomeUiState
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChartExpandTest {
+    @Test
+    fun liveTitleMatchesTheChartWindow() {
+        val zone = ZoneId.of("America/Detroit")
+        assertEquals("Nov 9 – 13", livePeriodLabel(Instant.parse("2026-11-11T17:00:00Z"), zone))
+        assertEquals(
+            "Oct 30 – Nov 3",
+            periodRangeLabel(LocalDate.of(2026, 10, 30), LocalDate.of(2026, 11, 3))
+        )
+    }
+
     @Test
     fun expandAnimationIsTwoHundredMilliseconds() {
         assertEquals(200, CHART_EXPAND_MILLIS)

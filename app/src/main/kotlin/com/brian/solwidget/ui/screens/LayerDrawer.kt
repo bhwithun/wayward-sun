@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -153,21 +155,27 @@ internal fun LegendCard(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (groups.isEmpty()) {
                 Text("No layers on", color = SolColors.Muted, fontSize = 13.sp)
             }
             groups.forEach { group ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    group.forEach { item -> LegendChip(item, fontSize = 13.sp) }
-                }
+                LegendGroup(group)
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LegendGroup(group: List<LegendItem>) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        group.forEach { item -> LegendChip(item, fontSize = 13.sp) }
     }
 }
 

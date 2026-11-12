@@ -148,6 +148,22 @@ export function monthWeeks(year: number, month: number): CalendarWeek[] {
   return weeks;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Inclusive dates, dropping the ending month when it matches the start. */
+export function periodRange(start: Ymd, end: Ymd): string {
+  if (start.year === end.year && start.month === end.month) {
+    return `${MONTHS[start.month - 1]} ${start.day} – ${end.day}`;
+  }
+  return `${MONTHS[start.month - 1]} ${start.day} – ${MONTHS[end.month - 1]} ${end.day}`;
+}
+
+/** Inclusive days of the live chart window. */
+export function livePeriod(today: Ymd): string {
+  const window = liveWindow(today);
+  return periodRange(window.from, addDays(window.to, -1));
+}
+
 /** Start of 4 local days before `today` through the start of the day after 2 days ahead. */
 export function liveWindow(today: Ymd): { from: Ymd; to: Ymd } {
   return { from: addDays(today, -4), to: addDays(today, 3) };

@@ -224,16 +224,16 @@ class EcobeeScreenshotTest {
         captureSized(width, height, "history-week-legend-closed-2.8.0f.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true)
         }
-        captureSized(width, height, "history-week-legend-open-2.8.0f.png") {
+        captureSized(width, height, "history-week-legend-open-2.8.0g.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true, legendOpen = true)
         }
-        captureSized(width, height, "fullscreen-portrait-2.8.0f.png") {
+        captureSized(width, height, "fullscreen-portrait-2.8.0g.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
         }
         captureSized((844 * density).roundToInt(), (390 * density).roundToInt(), "fullscreen-landscape-2.8.0f.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
         }
-        captureSized(width, height, "live-2.8.0f.png") {
+        captureSized(width, height, "live-2.8.0g.png") {
             liveScreen()
         }
         captureSized(width, height, "live-fullscreen-2.8.0f.png") {
@@ -298,7 +298,7 @@ class EcobeeScreenshotTest {
                 }
                 LivePane(
                     snapshot = ForecastSnapshot(
-                        resourceId = "demo",
+                        resourceId = "84d7-8b52-33f3-bd7b",
                         points = solar(from, to),
                         fetchedAt = now,
                         requestsUsed = 0,

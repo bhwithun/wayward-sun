@@ -23,9 +23,11 @@ import { dayTotals, seriesFromHistory, type SeriesPoint, type SunSpan } from "@/
 import {
   addDays,
   detroitParts,
+  livePeriod,
   liveWindow,
   monthWeeks,
   parseYmd,
+  periodRange,
   usWeekNumber,
   shiftMonth,
   ymdKey,
@@ -277,7 +279,7 @@ export function Dashboard() {
           <p className="period">
             {tab === "history" && selectedWeek
               ? historyPeriod(focus, selectedWeek.id, selectedDay)
-              : "2 days before through 2 days after"}
+              : livePeriod(todayParts)}
           </p>
           <button
             type="button"
@@ -589,9 +591,7 @@ function historyPeriod(focus: HistoryFocus, weekId: string, day: Ymd): string {
     return `${parts.weekday}, ${MONTHS[day.month - 1]} ${day.day}`;
   }
   const start = parseYmd(weekId) ?? day;
-  const end = addDays(start, 6);
-  if (start.month === end.month) return `${MONTHS[start.month - 1]} ${start.day} – ${end.day}`;
-  return `${MONTHS[start.month - 1]} ${start.day} – ${MONTHS[end.month - 1]} ${end.day}`;
+  return periodRange(start, addDays(start, 6));
 }
 
 function span(from: Ymd, to: Ymd): { from: string; to: string } {
