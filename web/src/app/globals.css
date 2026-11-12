@@ -50,14 +50,49 @@ code { color: #F5C542; }
 .week.selected { outline: 1px solid #F5C542; background: #2A4163; }
 .week .out, .cal-week .out { color: #5C6B82; }
 .week .today { color: #F5C542; }
+.cal-grid { position: relative; }
+.cal-grid::before {
+  content: "";
+  position: absolute;
+  left: 43px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.10);
+  pointer-events: none;
+}
 .cal-week { margin-top: 4px; border-radius: 8px; }
 .cal-week.selected { outline: 1px solid #F5C542; background: #2A4163; }
 .cal-week button { background: transparent; min-width: 0; min-height: 40px; padding: 8px 0; cursor: pointer; }
 .cal-week button.day:hover { background: #1C2B45; border-radius: 8px; }
 .cal-week button.day.selected { outline: 1px solid #F5C542; background: #2A4163; border-radius: 8px; }
-.cal-week .wk { color: #E8EEF7; font-size: 0.92rem; font-weight: 650; }
-.cal-week .wk:hover { background: #1C2B45; border-radius: 8px; }
-.cal-week.selected .wk:hover { background: transparent; }
+.cal-week .wk {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0;
+  background: transparent;
+  border-radius: 8px;
+}
+.cal-week .wk-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #C9A24A;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+.cal-week .wk:hover .wk-chip,
+.cal-week .wk:active .wk-chip { background: rgba(255, 255, 255, 0.14); }
+.cal-week.selected .wk-chip { background: #3A5680; }
+.cal-week.selected .wk:hover .wk-chip,
+.cal-week.selected .wk:active .wk-chip { background: #4A6896; }
 .cal-week button.day { position: relative; }
 .today-dot {
   position: absolute;

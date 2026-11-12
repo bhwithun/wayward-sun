@@ -351,6 +351,7 @@ export function Dashboard() {
               ›
             </button>
           </div>
+          <div className="cal-grid">
           <div className="cal-dow">
             <span>Wk</span>
             {WEEKDAYS.map((label) => (
@@ -359,19 +360,20 @@ export function Dashboard() {
           </div>
           {weeks.map((week) => {
             const weekOn = focus === "week" && week.id === selectedWeek?.id;
+            const weekNumber = usWeekNumber(parseYmd(week.id) ?? { year: month.year, month: month.month, day: 1 });
             return (
               <div key={week.id} className={weekOn ? "cal-week selected" : "cal-week"}>
                 <button
                   type="button"
                   className="wk"
                   aria-pressed={weekOn}
-                  aria-label={`Week ${usWeekNumber(parseYmd(week.id) ?? { year: month.year, month: month.month, day: 1 })}`}
+                  aria-label={`Week ${weekNumber}`}
                   onClick={() => {
                     setWeekId(week.id);
                     setFocus("week");
                   }}
                 >
-                  {usWeekNumber(parseYmd(week.id) ?? { year: month.year, month: month.month, day: 1 })}
+                  <span className="wk-chip">W{weekNumber}</span>
                 </button>
                 {week.days.map((day) => {
                   const key = ymdKey(day);
@@ -401,6 +403,7 @@ export function Dashboard() {
               </div>
             );
           })}
+          </div>
         </section>
       )}
 

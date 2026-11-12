@@ -3,9 +3,12 @@ package com.brian.solwidget.ui.screens
 import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
@@ -42,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -724,6 +729,12 @@ private fun historyPeriodLabel(weekSelected: Boolean, day: LocalDate, weekStart:
     }
 }
 
+private val WeekNumberGold = Color(0xFFC9A24A)
+private val WeekChipIdle = Color.White.copy(alpha = 0.06f)
+private val WeekChipPressed = Color.White.copy(alpha = 0.14f)
+private val WeekChipSelected = Color(0xFF3A5680)
+private val WeekChipSelectedPressed = Color(0xFF4A6896)
+
 @Composable
 internal fun HistoryCalendar(
     month: YearMonth,
@@ -773,6 +784,11 @@ internal fun HistoryCalendar(
                 modifier = Modifier.semantics { contentDescription = "Next month" }
             ) { Text("›", style = MaterialTheme.typography.titleLarge) }
         }
+        Box(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Wk",
@@ -794,6 +810,7 @@ internal fun HistoryCalendar(
         weeks.forEach { week ->
             val weekOn = week.id == selectedWeek
             val shape = RoundedCornerShape(8.dp)
+            key(week.id) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -805,21 +822,44 @@ internal fun HistoryCalendar(
                     .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val interaction = remember { MutableInteractionSource() }
+                val pressed by interaction.collectIsPressedAsState()
                 Box(
                     modifier = Modifier
                         .width(44.dp)
                         .heightIn(min = 40.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { onSelectWeek(week.id) }
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = LocalIndication.current
+                        ) { onSelectWeek(week.id) }
                         .semantics { contentDescription = "Week ${DetroitCalendar.weekNumber(week.id)}" },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = DetroitCalendar.weekNumber(week.id).toString(),
-                        color = SolColors.Ink,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    val number = DetroitCalendar.weekNumber(week.id)
+                    Box(
+                        modifier = Modifier
+                            .width(32.dp)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                when {
+                                    weekOn && pressed -> WeekChipSelectedPressed
+                                    weekOn -> WeekChipSelected
+                                    pressed -> WeekChipPressed
+                                    else -> WeekChipIdle
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "W$number",
+                            color = WeekNumberGold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
                 }
                 week.days.forEach { day ->
                     val dayOn = !weekOn && day.date == selectedDay
@@ -862,6 +902,18 @@ internal fun HistoryCalendar(
                     }
                 }
             }
+            }
+        }
+        }
+        Box(Modifier.matchParentSize()) {
+            Box(
+                Modifier
+                    .padding(start = 43.dp)
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(Color.White.copy(alpha = 0.10f))
+            )
+        }
         }
     }
 }
