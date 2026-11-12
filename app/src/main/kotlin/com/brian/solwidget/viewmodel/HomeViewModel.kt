@@ -187,6 +187,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadHistory()
     }
 
+    /** Month title. Returns to today's week. */
+    fun showCurrentHistory() {
+        val today = DetroitCalendar.today(_uiState.value.now)
+        _uiState.update {
+            it.copy(
+                historyMonth = YearMonth.from(today),
+                selectedWeek = DetroitCalendar.weekStart(today),
+                selectedDay = today,
+                historyWeekSelected = true
+            )
+        }
+        loadHistory()
+    }
+
     fun selectHistoryWeek(sunday: LocalDate) {
         val start = DetroitCalendar.weekStart(sunday)
         _uiState.update { it.copy(selectedWeek = start, historyWeekSelected = true) }

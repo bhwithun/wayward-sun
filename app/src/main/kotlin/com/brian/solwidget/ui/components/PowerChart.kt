@@ -307,9 +307,9 @@ fun PowerChart(
             }
             val label = DayLabel.format(day.atStartOfDay(zone))
             val labelX = xOf(noon)
-            if (labelX in left..right) {
+            if (labelX in left..right && !hourAxis) {
                 native.drawText(label, labelX, dayBaseline, gridPaint)
-                if (layers.power && !hourAxis) {
+                if (layers.power) {
                     val totals = dayTotals[day]
                     if (totals?.complete == true) {
                         native.drawText(
@@ -545,13 +545,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFreezeReference
         cap = StrokeCap.Round,
         pathEffect = PathEffect.dashPathEffect(floatArrayOf(1.5.dp.toPx(), 3.dp.toPx()))
     )
+    val text = "32°"
     val label = android.graphics.Paint().apply {
-        color = 0x40FFFFFF
+        color = 0xEBFFFFFF.toInt()
         textSize = 22f
         isAntiAlias = true
-        textAlign = android.graphics.Paint.Align.RIGHT
+        textAlign = android.graphics.Paint.Align.LEFT
     }
-    native.drawText("32°", right - 4f, y - 6f, label)
+    val textWidth = label.measureText(text)
+    val boxLeft = left + 6f
+    val boxTop = y - 18f
+    drawRoundRect(
+        color = Color(0xFF0B1220).copy(alpha = 0.88f),
+        topLeft = Offset(boxLeft, boxTop),
+        size = Size(textWidth + 12f, 20f),
+        cornerRadius = CornerRadius(4f, 4f)
+    )
+    native.drawText(text, boxLeft + 6f, y - 3f, label)
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(

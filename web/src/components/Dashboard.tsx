@@ -333,7 +333,20 @@ export function Dashboard() {
             <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month.year, month.month, -1))}>
               ‹
             </button>
-            <h2>{monthName}</h2>
+            <h2>
+              <button
+                type="button"
+                className="month-jump"
+                onClick={() => {
+                  setMonth({ year: todayParts.year, month: todayParts.month });
+                  setFocus("week");
+                  setWeekId(null);
+                  setDayId(null);
+                }}
+              >
+                {monthName}
+              </button>
+            </h2>
             <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month.year, month.month, 1))}>
               ›
             </button>
@@ -381,6 +394,7 @@ export function Dashboard() {
                       }}
                     >
                       {day.day}
+                      {key === todayKey && <i className="today-dot" />}
                     </button>
                   );
                 })}

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -283,6 +284,7 @@ fun HomeScreen(
                                 onSelectWeek = viewModel::selectHistoryWeek,
                                 onShiftDay = viewModel::shiftHistoryDay,
                                 onSelectDay = viewModel::selectHistoryDay,
+                                onShowToday = viewModel::showCurrentHistory,
                                 gasDollarsPerHour = state.gasDollarsPerHour
                             )
                         }
@@ -534,6 +536,7 @@ internal fun HistoryPane(
     onSelectWeek: (LocalDate) -> Unit,
     onShiftDay: (Int) -> Unit,
     onSelectDay: (LocalDate) -> Unit,
+    onShowToday: () -> Unit,
     gasDollarsPerHour: Double,
     modifier: Modifier = Modifier
 ) {
@@ -562,8 +565,7 @@ internal fun HistoryPane(
             Text(
                 text = historyPeriodLabel(weekSelected, shownDay, shownWeek),
                 color = SolColors.Ink,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 4.dp)
+                style = MaterialTheme.typography.titleMedium
             )
             ChartFrame(
                 modifier = Modifier
@@ -640,7 +642,8 @@ internal fun HistoryPane(
                 today = today,
                 onShiftMonth = onShiftMonth,
                 onSelectWeek = onSelectWeek,
-                onSelectDay = onSelectDay
+                onSelectDay = onSelectDay,
+                onShowToday = onShowToday
             )
         }
     }
@@ -732,7 +735,8 @@ internal fun HistoryCalendar(
     today: LocalDate,
     onShiftMonth: (Int) -> Unit,
     onSelectWeek: (LocalDate) -> Unit,
-    onSelectDay: ((LocalDate) -> Unit)?
+    onSelectDay: ((LocalDate) -> Unit)?,
+    onShowToday: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -759,7 +763,12 @@ internal fun HistoryCalendar(
             Text(
                 text = MonthLabel.format(month),
                 color = SolColors.Ink,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onShowToday)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .semantics { contentDescription = "Back to this week" }
             )
             TextButton(
                 onClick = { onShiftMonth(1) },
@@ -769,7 +778,7 @@ internal fun HistoryCalendar(
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Wk",
-                modifier = Modifier.width(36.dp),
+                modifier = Modifier.width(44.dp),
                 color = SolColors.Muted,
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.labelSmall
@@ -800,29 +809,27 @@ internal fun HistoryCalendar(
             ) {
                 Box(
                     modifier = Modifier
-                        .width(36.dp)
+                        .width(44.dp)
+                        .heightIn(min = 40.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { onSelectWeek(week.id) }
-                        .padding(vertical = 8.dp)
                         .semantics { contentDescription = "Week ${DetroitCalendar.weekNumber(week.id)}" },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = DetroitCalendar.weekNumber(week.id).toString(),
-                        color = if (weekOn) SolColors.Ink else SolColors.Muted,
-                        style = MaterialTheme.typography.labelMedium
+                        color = SolColors.Ink,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 week.days.forEach { day ->
                     val dayOn = !weekOn && day.date == selectedDay
-                    val color = when {
-                        day.date == today -> SolColors.Forecast
-                        !day.inMonth -> Color(0xFF5C6B82)
-                        else -> SolColors.Ink
-                    }
+                    val color = if (!day.inMonth) Color(0xFF5C6B82) else SolColors.Ink
                     Box(
                         modifier = Modifier
                             .weight(1f)
+                            .heightIn(min = 40.dp)
                             .padding(horizontal = 1.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (dayOn) SolColors.TableStripe else Color.Transparent)
@@ -834,16 +841,26 @@ internal fun HistoryCalendar(
                                 }
                             )
                             .clickable { onSelectDay?.invoke(day.date) }
-                            .padding(vertical = 8.dp)
                             .semantics { contentDescription = "Day ${day.date}" },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = day.date.dayOfMonth.toString(),
-                            color = color,
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = day.date.dayOfMonth.toString(),
+                                color = color,
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            if (day.date == today) {
+                                Box(
+                                    Modifier
+                                        .padding(top = 2.dp)
+                                        .size(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(SolColors.Forecast)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -878,13 +895,20 @@ private fun LayerChip(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
             .background(if (selected) SolColors.PanelAlt else SolColors.Panel)
+            .then(
+                if (selected) {
+                    Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(18.dp))
+                } else {
+                    Modifier
+                }
+            )
             .clickable { onClick(!selected) }
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            color = if (selected) SolColors.Ink else SolColors.Muted,
+            color = if (selected) Color.White else SolColors.Muted,
             style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
             maxLines = 1
         )

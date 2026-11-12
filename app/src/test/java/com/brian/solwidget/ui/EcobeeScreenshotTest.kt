@@ -194,7 +194,7 @@ class EcobeeScreenshotTest {
             to = fetchTo,
             points = historyHours(fetchFrom, fetchTo),
             sun = emptyList(),
-            ecobee = coldEasternDay()
+            ecobee = coldEasternDay() + earlierWeekRuntime()
         )
         val key = historyFetchKey(fetchFrom, fetchTo)
         val layers = ChartLayers(
@@ -207,10 +207,10 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "history-day-2.8.0.png") {
+        captureSized(width, height, "history-day-2.8.0b.png") {
             historyScreen(day, month, page, key, layers, weekSelected = false)
         }
-        captureSized(width, height, "calendar-closeup-2.8.0.png") {
+        captureSized(width, (420 * density).roundToInt(), "weeknum-closeup-2.8.0b.png") {
             SolWidgetTheme {
                 Column(Modifier.fillMaxSize().background(SolColors.Navy).padding(16.dp)) {
                     Text("Wayward Sun", color = SolColors.Ink)
@@ -223,12 +223,13 @@ class EcobeeScreenshotTest {
                         today = day,
                         onShiftMonth = {},
                         onSelectWeek = {},
-                        onSelectDay = {}
+                        onSelectDay = {},
+                        onShowToday = {}
                     )
                 }
             }
         }
-        captureSized(width, height, "history-week-2.8.0.png") {
+        captureSized(width, height, "history-week-2.8.0b.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true)
         }
     }
@@ -263,8 +264,11 @@ class EcobeeScreenshotTest {
                     onSelectWeek = {},
                     onShiftDay = {},
                     onSelectDay = {},
+                    onShowToday = {},
                     gasDollarsPerHour = 0.60,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 16.dp)
                 )
             }
         }
@@ -288,6 +292,34 @@ class EcobeeScreenshotTest {
                 coolSec = 0,
                 fanSec = if (aux || pump) 280 else 20,
                 outdoorF = if (aux) 22.0 else 30.0
+            )
+            cursor = cursor.plusSeconds(5 * 60)
+        }
+        return samples
+    }
+
+    /** Extra runtime on Monday and Tuesday so a week total is not the Wednesday total. */
+    private fun earlierWeekRuntime(): List<EcobeeSample> {
+        val monday = runtimeBlock(LocalDate.of(2026, 11, 9), 0, 4, aux = true)
+        val tuesday = runtimeBlock(LocalDate.of(2026, 11, 10), 6, 14, aux = false)
+        return monday + tuesday
+    }
+
+    private fun runtimeBlock(date: LocalDate, fromHour: Int, untilHour: Int, aux: Boolean): List<EcobeeSample> {
+        val start = DetroitCalendar.dayRange(date).first.plusSeconds(fromHour * 3600L)
+        val end = DetroitCalendar.dayRange(date).first.plusSeconds(untilHour * 3600L)
+        val samples = ArrayList<EcobeeSample>()
+        var cursor = start
+        while (cursor.isBefore(end)) {
+            samples += EcobeeSample(
+                at = cursor,
+                indoorF = if (aux) 63.0 else 68.0,
+                coolSetF = 75.0,
+                heatSetF = 66.0,
+                heatPumpSec = if (aux) 0 else 300,
+                auxHeatSec = if (aux) 300 else 0,
+                coolSec = 0,
+                fanSec = 300
             )
             cursor = cursor.plusSeconds(5 * 60)
         }

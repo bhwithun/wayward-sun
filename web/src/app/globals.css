@@ -36,7 +36,7 @@ code { color: #F5C542; }
 .cal-nav button { min-width: 44px; font-size: 1.2rem; }
 .cal-dow, .week, .cal-week {
   display: grid;
-  grid-template-columns: 36px repeat(7, 1fr);
+  grid-template-columns: 44px repeat(7, 1fr);
   text-align: center;
   align-items: center;
 }
@@ -49,13 +49,18 @@ code { color: #F5C542; }
 }
 .week.selected { outline: 1px solid #F5C542; background: #2A4163; }
 .week .out, .cal-week .out { color: #5C6B82; }
-.week .today, .cal-week .today { color: #F5C542; }
+.week .today { color: #F5C542; }
 .cal-week { margin-top: 4px; border-radius: 8px; }
 .cal-week.selected { outline: 1px solid #F5C542; background: #2A4163; }
-.cal-week button { background: transparent; min-width: 0; padding: 8px 0; }
+.cal-week button { background: transparent; min-width: 0; min-height: 40px; padding: 8px 0; cursor: pointer; }
+.cal-week button.day:hover { background: #1C2B45; border-radius: 8px; }
 .cal-week button.day.selected { outline: 1px solid #F5C542; background: #2A4163; border-radius: 8px; }
-.cal-week .wk { color: #9AA8BF; font-size: 0.78rem; }
-.cal-week.selected .wk { color: #E8EEF7; }
+.cal-week .wk { color: #E8EEF7; font-size: 0.92rem; font-weight: 650; }
+.cal-week .wk:hover { background: #1C2B45; border-radius: 8px; }
+.cal-week.selected .wk:hover { background: transparent; }
+.today-dot { display: block; width: 4px; height: 4px; border-radius: 50%; background: #F5C542; margin: 2px auto 0; }
+.month-jump { background: transparent; color: inherit; font: inherit; font-weight: 650; padding: 4px 8px; cursor: pointer; }
+.month-jump:hover { background: #1C2B45; }
 .period { color: #E8EEF7; font-size: 1.05rem; font-weight: 650; margin: 0 0 8px; }
 button, input {
   background: #1C2B45;
@@ -66,7 +71,7 @@ button, input {
   font-weight: 600;
 }
 button { cursor: pointer; }
-button.on, button.chip.on { background: #2A4163; }
+button.on, button.chip.on { background: #2A4163; color: #fff; outline: 1px solid #F5C542; }
 button.gold { background: #F5C542; color: #1A1403; }
 .panel {
   background: #152036;

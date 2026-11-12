@@ -49,6 +49,29 @@ class EcobeeTest {
     }
 
     @Test
+    fun weekSummarySumsEveryDayAndADayWindowKeepsTheOthersOut() {
+        val sunday = java.time.LocalDate.of(2026, 11, 8)
+        val wednesday = java.time.LocalDate.of(2026, 11, 11)
+        val (weekFrom, weekTo) = DetroitCalendar.weekRange(sunday)
+        val (dayFrom, dayTo) = DetroitCalendar.dayRange(wednesday)
+        val now = Instant.parse("2026-11-11T17:00:00Z")
+        val mondayPump = sample(weekFrom.plusSeconds(6 * 3600), 68.0, 75.0, 66.0)
+            .copy(heatPumpSec = 3600, auxHeatSec = 0)
+        val wednesdayAux = sample(dayFrom.plusSeconds(2 * 3600), 64.0, 75.0, 66.0)
+            .copy(heatPumpSec = 0, auxHeatSec = 1800)
+        val samples = listOf(mondayPump, wednesdayAux)
+        val week = hvacSummary(samples, weekFrom, weekTo, now)
+        val day = hvacSummary(samples, dayFrom, dayTo, now)
+        assertEquals(1.0, week.heatPumpHours, 0.001)
+        assertEquals(0.5, week.auxHours, 0.001)
+        assertEquals(0.0, day.heatPumpHours, 0.001)
+        assertEquals(0.5, day.auxHours, 0.001)
+        assertTrue(hvacSummaryLabel(week).contains("Heat pump 1.0 h"))
+        assertTrue(hvacSummaryLabel(day).startsWith("Aux heat"))
+        assertTrue(!hvacSummaryLabel(day).contains("Heat pump"))
+    }
+
+    @Test
     fun aboveCoolSetpointIsACoolingGap() {
         val mark = sample(t0, indoor = 75.0, cool = 74.0, heat = 68.0).classify()
         assertEquals(EcobeeBand.COOLING, mark.band)

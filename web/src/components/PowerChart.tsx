@@ -101,8 +101,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
   const showDegrees = props.layers.temp || props.layers.ecobee;
   const oneDay = props.to - props.from > 0 && props.to - props.from <= 26 * 60 * 60 * 1000;
-  const top = (showDegrees ? 28 : 16) + (oneDay ? 22 : 0);
-  const bottom = plotHeight - (oneDay || showPower ? 36 : 28);
+  const weekColumns = !oneDay && props.to - props.from <= 10 * 24 * 60 * 60 * 1000;
+  const top = (showDegrees ? 28 : 16) + (weekColumns ? 20 : 0);
+  const bottom = plotHeight - (oneDay || showPower || weekColumns ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -226,12 +227,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
 
   if (oneDay) {
     drawHourAxis(ctx, props.from, props.to, xOf, left, right, top, bottom, height);
-    ctx.fillStyle = INK;
-    ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    const dateY = props.layers.hvac ? laneTop - 14 : 16;
-    const noon = detroitParts(new Date(props.from + 12 * 60 * 60 * 1000));
-    ctx.fillText(`${noon.weekday} ${noon.day}`, (left + right) / 2, dateY);
+  } else if (weekColumns) {
+    drawDayColumns(ctx, props.from, props.to, xOf, left, right, laneTop, props.points, props.now, height);
   }
 
   if (props.now >= props.from && props.now < props.to) {
@@ -244,6 +241,46 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     ctx.lineTo(nowX, bottom);
     ctx.stroke();
   }
+}
+
+function drawDayColumns(
+  ctx: CanvasRenderingContext2D,
+  from: number,
+  to: number,
+  xOf: (t: number) => number,
+  left: number,
+  right: number,
+  laneTop: number,
+  points: SeriesPoint[],
+  now: number,
+  height: number
+) {
+  ctx.save();
+  ctx.fillStyle = INK;
+  ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  const labelY = Math.max(14, laneTop - 10);
+  for (let midnight = from; midnight < to; midnight += 24 * 60 * 60 * 1000) {
+    const noon = midnight + 12 * 60 * 60 * 1000;
+    if (noon < from || noon >= to) continue;
+    const x = xOf(noon);
+    if (x <= left + 8 || x >= right - 8) continue;
+    const parts = detroitParts(new Date(noon));
+    ctx.fillText(`${parts.weekday} ${parts.day}`, x, labelY);
+    const next = midnight + 24 * 60 * 60 * 1000;
+    let kwh = 0;
+    let saw = false;
+    for (const point of points) {
+      if (point.kind !== "live" && point.kind !== "forecast") continue;
+      if (point.t <= midnight || point.t > next) continue;
+      if (point.kind === "forecast" && point.t <= now) continue;
+      if (point.kind === "live" && point.t > now) continue;
+      kwh += point.kw * point.hours;
+      saw = true;
+    }
+    if (saw) ctx.fillText(`${Math.round(kwh)} kWh`, x, height - 8);
+  }
+  ctx.restore();
 }
 
 function hourClock(hour: number): string {
