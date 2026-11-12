@@ -39,6 +39,15 @@ class ChartExpandTest {
     }
 
     @Test
+    fun liveFullscreenListsEveryOnCardAheadOfTheOpenOne() {
+        val cards = liveFullscreenCards(ChartLayers())
+        assertEquals(
+            listOf(MetaPanel.SOLAR, MetaPanel.TEMP, MetaPanel.PRECIP, MetaPanel.RATES),
+            cards
+        )
+    }
+
+    @Test
     fun liveFullscreenFollowsTheCardsThatAreOn() {
         val cards = liveFullscreenCards(
             ChartLayers(

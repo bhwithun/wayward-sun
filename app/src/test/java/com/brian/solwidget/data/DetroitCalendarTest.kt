@@ -95,6 +95,111 @@ class DetroitCalendarTest {
     }
 
     @Test
+    fun forwardReachesTodayWhenTheLoadedMonthEndsEarlier() {
+        val today = LocalDate.of(2026, 12, 15)
+        val octoberFrom = LocalDate.of(2026, 9, 27)
+        val octoberTo = LocalDate.of(2026, 11, 1)
+        val earliest = LocalDate.of(2026, 9, 28)
+        assertTrue(
+            DetroitCalendar.canStepWeek(
+                LocalDate.of(2026, 10, 25),
+                1,
+                today,
+                octoberFrom,
+                octoberTo,
+                earliest
+            )
+        )
+        val weeks = DetroitCalendar.fullscreenWeeks(
+            LocalDate.of(2026, 10, 25),
+            today,
+            octoberFrom,
+            octoberTo,
+            earliest
+        )
+        assertTrue(weeks.contains(LocalDate.of(2026, 11, 1)))
+        assertTrue(weeks.contains(LocalDate.of(2026, 12, 13)))
+        assertFalse(weeks.contains(LocalDate.of(2026, 12, 20)))
+        assertEquals(LocalDate.of(2026, 12, 13), weeks.last())
+        assertFalse(
+            DetroitCalendar.canStepWeek(
+                LocalDate.of(2026, 12, 13),
+                1,
+                today,
+                octoberFrom,
+                octoberTo,
+                earliest
+            )
+        )
+
+        val augustFrom = LocalDate.of(2026, 7, 26)
+        val augustTo = LocalDate.of(2026, 9, 6)
+        assertTrue(
+            DetroitCalendar.canStepWeek(
+                LocalDate.of(2026, 8, 30),
+                1,
+                today,
+                augustFrom,
+                augustTo,
+                LocalDate.of(2025, 8, 1)
+            )
+        )
+        val fromAugust = DetroitCalendar.fullscreenWeeks(
+            LocalDate.of(2026, 8, 30),
+            today,
+            augustFrom,
+            augustTo,
+            LocalDate.of(2025, 8, 1)
+        )
+        assertTrue(fromAugust.contains(LocalDate.of(2026, 9, 6)))
+        assertTrue(fromAugust.contains(LocalDate.of(2026, 10, 4)))
+        assertEquals(LocalDate.of(2026, 12, 13), fromAugust.last())
+
+        assertTrue(
+            DetroitCalendar.canStepDay(
+                LocalDate.of(2026, 10, 31),
+                1,
+                today,
+                octoberFrom,
+                octoberTo,
+                earliest
+            )
+        )
+        assertFalse(DetroitCalendar.canStepDay(today, 1, today, octoberFrom, octoberTo, earliest))
+        val days = DetroitCalendar.fullscreenDays(
+            LocalDate.of(2026, 10, 31),
+            today,
+            octoberFrom,
+            octoberTo,
+            earliest
+        )
+        assertTrue(days.contains(LocalDate.of(2026, 11, 1)))
+        assertEquals(today, days.last())
+        assertFalse(days.contains(today.plusDays(1)))
+
+        assertTrue(DetroitCalendar.canShiftMonth(YearMonth.of(2026, 10), 1, today))
+        assertTrue(DetroitCalendar.canShiftMonth(YearMonth.of(2026, 11), 1, today))
+        assertFalse(DetroitCalendar.canShiftMonth(YearMonth.of(2026, 12), 1, today))
+        assertTrue(DetroitCalendar.canShiftMonth(YearMonth.of(2026, 12), -1, today))
+        assertTrue(DetroitCalendar.canShiftMonth(YearMonth.of(2026, 10), -1, today))
+    }
+
+    @Test
+    fun dayPagerReachesTodayFromTheFirstEcobeeMonth() {
+        val today = LocalDate.of(2026, 12, 15)
+        val days = DetroitCalendar.fullscreenDays(
+            LocalDate.of(2025, 8, 30),
+            today,
+            LocalDate.of(2025, 7, 27),
+            LocalDate.of(2025, 9, 7),
+            LocalDate.of(2025, 8, 1)
+        )
+        assertEquals(today, days.last())
+        assertTrue(days.contains(LocalDate.of(2025, 8, 30)))
+        assertTrue(days.contains(LocalDate.of(2026, 11, 1)))
+    }
+
+    @Test
     fun weekRangeIsDetroitMidnightThroughTheNextSunday() {
         val (from, to) = DetroitCalendar.weekRange(LocalDate.of(2026, 9, 27))
         assertEquals(Instant.parse("2026-09-27T04:00:00Z"), from)

@@ -39,8 +39,7 @@ enum class HomeTab { LIVE, HISTORY }
 private data class HistoryBounds(
     val from: LocalDate,
     val toExclusive: LocalDate,
-    val earliest: LocalDate?,
-    val newest: LocalDate
+    val earliest: LocalDate?
 )
 
 fun homeTabStored(name: String?): HomeTab = when (name) {
@@ -194,8 +193,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun shiftHistoryMonth(delta: Int) {
         val today = DetroitCalendar.today(_uiState.value.now)
+        val current = _uiState.value.historyMonth ?: YearMonth.from(today)
+        if (!DetroitCalendar.canShiftMonth(current, delta, today)) return
         _uiState.update { state ->
-            val current = state.historyMonth ?: YearMonth.from(today)
             val next = current.plusMonths(delta.toLong())
             val weeks = DetroitCalendar.monthWeeks(next)
             val selected = weeks.find { it.id == state.selectedWeek }?.id
@@ -228,11 +228,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectHistoryWeek(sunday: LocalDate) {
+        val today = DetroitCalendar.today(_uiState.value.now)
         val start = DetroitCalendar.weekStart(sunday)
+        if (start.isAfter(DetroitCalendar.weekStart(today))) return
         _uiState.update { it.copy(selectedWeek = start, historyWeekSelected = true) }
     }
 
     fun selectHistoryDay(date: LocalDate) {
+        val today = DetroitCalendar.today(_uiState.value.now)
+        if (date.isAfter(today)) return
         val month = YearMonth.from(date)
         val monthChanged = _uiState.value.historyMonth != month
         _uiState.update { it.copy(selectedDay = date, historyMonth = month, historyWeekSelected = false) }
@@ -245,7 +249,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val today = DetroitCalendar.today(state.now)
         val day = state.selectedDay ?: today
         val window = state.history?.let { historyWindow(it) }
-        if (!DetroitCalendar.canStepDay(day, delta, window?.newest ?: today, window?.from, window?.toExclusive, window?.earliest)) {
+        if (!DetroitCalendar.canStepDay(day, delta, today, window?.from, window?.toExclusive, window?.earliest)) {
             return
         }
         selectHistoryDay(day.plusDays(delta.toLong()))
@@ -258,7 +262,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val month = state.historyMonth ?: YearMonth.from(today)
         val week = state.selectedWeek ?: DetroitCalendar.weekStart(today)
         val window = state.history?.let { historyWindow(it) }
-        if (!DetroitCalendar.canStepWeek(week, delta, window?.newest ?: today, window?.from, window?.toExclusive, window?.earliest)) {
+        if (!DetroitCalendar.canStepWeek(week, delta, today, window?.from, window?.toExclusive, window?.earliest)) {
             return
         }
         val focus = DetroitCalendar.shiftWeek(month, week, delta)
@@ -344,8 +348,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return HistoryBounds(
             from = page.from.atZone(zone).toLocalDate(),
             toExclusive = page.to.atZone(zone).toLocalDate(),
-            earliest = samples.minOrNull(),
-            newest = samples.maxOrNull() ?: DetroitCalendar.today(_uiState.value.now)
+            earliest = samples.minOrNull()
         )
     }
 
