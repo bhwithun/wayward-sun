@@ -34,9 +34,8 @@ import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
-import com.brian.solwidget.data.HvacBar
 import com.brian.solwidget.data.ecobeeFillSegments
-import com.brian.solwidget.data.hvacBars
+import com.brian.solwidget.data.hvacRuns
 import com.brian.solwidget.data.forecastStrokes
 import com.brian.solwidget.data.formatTempBound
 import com.brian.solwidget.data.prepareEcobee
@@ -103,7 +102,10 @@ fun PowerChart(
         val dayBaseline = 16.dp.toPx()
         val tempBaseline = 38.dp.toPx()
         val top = if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()
-        val bottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
+        val contentBottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
+        val runtimeHeader = if (layers.hvac) 16.dp.toPx() else 0f
+        val runtimeStrip = if (layers.hvac) 30.dp.toPx() else 0f
+        val bottom = contentBottom - runtimeHeader - runtimeStrip
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
@@ -174,16 +176,6 @@ fun PowerChart(
             val bands = DteTou.bands(from, to)
             if (layers.buy) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
             if (layers.sell) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
-        }
-
-        if (layers.hvac) {
-            drawHvacBars(
-                hvacBars(ecobee, from, to, width.toInt().coerceAtLeast(1), now),
-                ::xOf,
-                bottom,
-                height,
-                width
-            )
         }
 
         if (layers.precipitation && weather.size >= 2) {
@@ -331,6 +323,17 @@ fun PowerChart(
         if (isDemo) {
             drawDemoWatermark(native, left, top, right, bottom)
         }
+        if (layers.hvac) {
+            drawRuntimeStrip(
+                native,
+                hvacRuns(ecobee, from, to, now),
+                ::xOf,
+                left,
+                right,
+                bottom + runtimeHeader,
+                contentBottom
+            )
+        }
     }
 }
 
@@ -339,32 +342,23 @@ private fun drawTempRangeLabel(
     range: DayTempRange,
     centerX: Float,
     baselineY: Float,
-    textSize: Float
+    textSize: Float,
+    compact: Boolean = false
 ) {
     fun paint(color: Int) = Paint().apply {
         this.color = color
         this.textSize = textSize
         isAntiAlias = true
-        textAlign = Paint.Align.LEFT
+        textAlign = Paint.Align.CENTER
     }
-    val hyphenPaint = paint(SolColors.Ink.toArgb())
-    if (range.lowF == range.highF) {
-        hyphenPaint.textAlign = Paint.Align.CENTER
-        canvas.drawText("${range.lowF}", centerX, baselineY, hyphenPaint)
-        return
+    val text = if (!compact) {
+        range.label
+    } else if (range.lowF == range.highF) {
+        "${range.lowF}"
+    } else {
+        "${range.lowF}-${range.highF}"
     }
-    val low = "${range.lowF}"
-    val hyphen = "-"
-    val high = "${range.highF}"
-    val lowPaint = paint(SolColors.TempLow.toArgb())
-    val highPaint = paint(SolColors.TempHot.toArgb())
-    val total = lowPaint.measureText(low) + hyphenPaint.measureText(hyphen) + highPaint.measureText(high)
-    var x = centerX - total / 2f
-    canvas.drawText(low, x, baselineY, lowPaint)
-    x += lowPaint.measureText(low)
-    canvas.drawText(hyphen, x, baselineY, hyphenPaint)
-    x += hyphenPaint.measureText(hyphen)
-    canvas.drawText(high, x, baselineY, highPaint)
+    canvas.drawText(text, centerX, baselineY, paint(SolColors.Ink.toArgb()))
 }
 
 private fun drawDemoWatermark(
@@ -538,35 +532,54 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHvacBars(
-    bars: List<HvacBar>,
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRuntimeStrip(
+    native: AndroidCanvas,
+    runs: List<com.brian.solwidget.data.HvacRun>,
     xOf: (Instant) -> Float,
-    bottom: Float,
-    plotH: Float,
-    plotW: Float
+    left: Float,
+    right: Float,
+    stripTop: Float,
+    stripBottom: Float
 ) {
-    val columns = bars.size.coerceAtLeast(1)
-    val span = if (bars.size >= 2) abs(xOf(bars.last().at) - xOf(bars.first().at)) else plotW
-    val barW = ((if (bars.size >= 2) span / (columns - 1) else plotW) * 1.08f).coerceAtLeast(2f)
-    for (bar in bars) {
-        val total = bar.heatPumpMin + bar.auxMin + bar.coolMin
-        if (total <= 0.0 || bar.bucketMin <= 0.0) continue
-        val scale = if (total > bar.bucketMin) bar.bucketMin / total else 1.0
-        var cursor = bottom
+    val label = android.graphics.Paint().apply {
+        color = SolColors.Muted.toArgb()
+        textSize = 22f
+        isAntiAlias = true
+    }
+    native.drawText("Runtime", 4f, stripTop - 4f, label)
+    var swatchX = label.measureText("Runtime") + 12f
+    val sources = listOf(
+        Triple("Heat pump", SolColors.HeatPump, runs.any { it.heatPump > 0.02 }),
+        Triple("Gas aux", SolColors.AuxHeat, runs.any { it.aux > 0.02 }),
+        Triple("Cool", SolColors.CoolRun, runs.any { it.cool > 0.02 })
+    )
+    for ((name, color, present) in sources) {
+        if (!present) continue
+        drawRect(color, Offset(swatchX, stripTop - 14f), Size(8.dp.toPx(), 8.dp.toPx()))
+        swatchX += 8.dp.toPx() + 4f
+        native.drawText(name, swatchX, stripTop - 4f, label)
+        swatchX += label.measureText(name) + 10f
+    }
+    native.drawText("100%", 4f, stripTop + 16f, label)
+    drawLine(SolColors.Grid, Offset(left, stripTop), Offset(right, stripTop), strokeWidth = 1f)
+    val stripH = (stripBottom - stripTop).coerceAtLeast(1f)
+    for (run in runs) {
+        val total = (run.heatPump + run.aux + run.cool).coerceAtLeast(0.001)
+        val scale = if (total > 1.0) 1.0 / total else 1.0
+        var cursor = stripBottom
         val parts = listOf(
-            bar.heatPumpMin to SolColors.HeatPump,
-            bar.auxMin to SolColors.AuxHeat,
-            bar.coolMin to SolColors.CoolRun
+            run.heatPump to SolColors.HeatPump,
+            run.aux to SolColors.AuxHeat,
+            run.cool to SolColors.CoolRun
         )
-        for ((minutes, color) in parts) {
-            val bandH = ((minutes * scale / bar.bucketMin).toFloat() * plotH).coerceAtLeast(0f)
+        val x1 = xOf(run.start).coerceIn(left, right)
+        val x2 = xOf(run.end).coerceIn(left, right)
+        if (x2 - x1 < 1f) continue
+        for ((duty, color) in parts) {
+            val bandH = (duty * scale).toFloat() * stripH
             if (bandH <= 0.4f) continue
             cursor -= bandH
-            drawRect(
-                color = color.copy(alpha = 0.78f),
-                topLeft = Offset(xOf(bar.at) - barW / 2f, cursor),
-                size = Size(barW, bandH)
-            )
+            drawRect(color, Offset(x1, cursor), Size(x2 - x1, bandH))
         }
     }
 }
@@ -849,7 +862,7 @@ object ChartBitmapRenderer {
                 }
                 val temps = tempRanges[day]
                 if (temps != null) {
-                    drawTempRangeLabel(canvas, temps, labelX, tempBaseline, 40f)
+                    drawTempRangeLabel(canvas, temps, labelX, tempBaseline, 40f, compact = true)
                 }
             }
             day = day.plusDays(1)

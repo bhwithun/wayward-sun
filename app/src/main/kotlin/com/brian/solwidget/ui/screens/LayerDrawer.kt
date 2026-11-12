@@ -47,9 +47,11 @@ import com.brian.solwidget.ui.theme.SolColors
 fun ChartLegend(
     layers: ChartLayers,
     onOpen: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showTooWarm: Boolean = true,
+    showTooCool: Boolean = true
 ) {
-    val groups = legendGroups(layers)
+        val groups = legendGroups(layers, showTooWarm, showTooCool)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -214,7 +216,11 @@ private data class LegendItem(
     val mark: LegendMark = LegendMark.DOT
 )
 
-private fun legendGroups(layers: ChartLayers): List<List<LegendItem>> = buildList {
+private fun legendGroups(
+    layers: ChartLayers,
+    showTooWarm: Boolean,
+    showTooCool: Boolean
+): List<List<LegendItem>> = buildList {
     val trace = buildList {
         if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
         if (layers.enphase) add(LegendItem("Enphase", SolColors.Live))
@@ -222,13 +228,12 @@ private fun legendGroups(layers: ChartLayers): List<List<LegendItem>> = buildLis
     }
     if (trace.isNotEmpty()) add(trace)
     if (layers.ecobee) {
-        add(
-            listOf(
-                LegendItem("Setpoint", SolColors.Setpoint, LegendMark.HAIRLINE),
-                LegendItem("Too warm", SolColors.CoolGap.copy(alpha = 0.40f), LegendMark.SQUARE),
-                LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.50f), LegendMark.SQUARE)
-            )
-        )
+        val home = buildList {
+            add(LegendItem("Setpoint", SolColors.Setpoint, LegendMark.HAIRLINE))
+            if (showTooWarm) add(LegendItem("Too warm", SolColors.CoolGap.copy(alpha = 0.40f), LegendMark.SQUARE))
+            if (showTooCool) add(LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.50f), LegendMark.SQUARE))
+        }
+        add(home)
     }
     val other = buildList {
         if (layers.precipitation) add(LegendItem("Precip", SolColors.Precip.copy(alpha = 1f)))
@@ -236,15 +241,6 @@ private fun legendGroups(layers: ChartLayers): List<List<LegendItem>> = buildLis
         if (layers.sell) add(LegendItem("Sell", SolColors.Sell))
     }
     if (other.isNotEmpty()) add(other)
-    if (layers.hvac) {
-        add(
-            listOf(
-                LegendItem("Heat pump", SolColors.HeatPump, LegendMark.SQUARE),
-                LegendItem("Gas aux", SolColors.AuxHeat, LegendMark.SQUARE),
-                LegendItem("Cool", SolColors.CoolRun, LegendMark.SQUARE)
-            )
-        )
-    }
 }
 
 @Composable

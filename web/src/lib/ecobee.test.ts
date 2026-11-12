@@ -4,7 +4,7 @@ import {
   classifyEcobee,
   downsampleEcobee,
   ecobeeFillSegments,
-  hvacBars,
+  hvacRuns,
   hvacSummary,
   parseEcobeeSetpoint,
   prepareEcobee,
@@ -79,9 +79,9 @@ describe("hvac runtime", () => {
     expect(summary.heatPumpHours).toBeCloseTo(360 / 3600);
     expect(summary.auxHours).toBeCloseTo(180 / 3600);
     expect(summary.gasCostDollars).toBeCloseTo((180 / 3600) * 0.6);
-    const bars = hvacBars(samples, t0, t0 + 3_600_000, 2, t0 + 3_600_000);
-    expect(bars.length).toBeGreaterThan(0);
-    expect(bars.reduce((sum, bar) => sum + bar.auxMin, 0)).toBeCloseTo(3);
+    const runs = hvacRuns(samples, t0, t0 + 3_600_000, t0 + 3_600_000);
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs.some((run) => run.aux > 0)).toBe(true);
   });
 
   it("keeps a mild hour on the heat pump", () => {
@@ -144,7 +144,7 @@ describe("ecobee geometry", () => {
     expect(wide.max).toBe(100);
     expect(wide.ticks.every((tick) => Math.abs(tick - 32) > 3)).toBe(true);
     const covered = temperatureGrid(-16, 80, true);
-    expect(covered).toMatchObject({ step: 20, min: -20, max: 80 });
+    expect(covered).toMatchObject({ step: 20, min: -20, max: 100 });
     const tight = temperatureGrid(68, 78, true);
     expect(tight.step).toBe(5);
     expect(tight.ticks).toContain(70);

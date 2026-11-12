@@ -246,19 +246,16 @@ export function Dashboard() {
               <span>
                 <i className="swatch hairline" style={{ background: "#FFF176" }} /> Setpoint
               </span>
-              <span>
-                <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Too warm
-              </span>
-              <span>
-                <i className="swatch" style={{ background: "rgba(255,152,0,0.50)" }} /> Too cool
-              </span>
-            </div>
-          )}
-          {layers.hvac && (
-            <div className="legend-row">
-              <span><i className="swatch" style={{ background: "#00897B" }} /> Heat pump</span>
-              <span><i className="swatch" style={{ background: "#FF6E40" }} /> Gas aux</span>
-              <span><i className="swatch" style={{ background: "#90CAF9" }} /> Cool</span>
+              {chart.tooWarm && (
+                <span>
+                  <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Too warm
+                </span>
+              )}
+              {chart.tooCool && (
+                <span>
+                  <i className="swatch" style={{ background: "rgba(255,152,0,0.50)" }} /> Too cool
+                </span>
+              )}
             </div>
           )}
           {(layers.precip || layers.buy || layers.sell) && (
@@ -282,7 +279,7 @@ export function Dashboard() {
           ecobee={chart.ecobee}
         />
         {layers.hvac && (
-          <p className="muted">
+          <p className="muted" style={{ padding: "0 16px" }} title="Gas aux is about $0.60 per runtime hour">
             {hvacSummaryLabel(hvacSummary(chart.ecobee, chart.fromMs, chart.toMs, clock))}
           </p>
         )}
@@ -432,10 +429,19 @@ function chartModel(
     .map((day) => ({ sunrise: Date.parse(day.sunrise), sunset: Date.parse(day.sunset) }))
     .filter((day) => day.sunset >= fromMs && day.sunrise < toMs);
   const start = week ? parseYmd(week.id) : liveWindow(today).from;
+  let tooWarm = false;
+  let tooCool = false;
+  for (const sample of ecobee) {
+    if (sample.t > clock) continue;
+    if (sample.coolF != null && sample.indoorF > sample.coolF) tooWarm = true;
+    else if (sample.heatF != null && sample.indoorF < sample.heatF) tooCool = true;
+  }
   return {
     points,
     weather,
     sun,
+    tooWarm,
+    tooCool,
     fromMs,
     toMs,
     rates: rows,

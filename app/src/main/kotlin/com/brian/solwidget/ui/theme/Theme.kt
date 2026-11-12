@@ -30,7 +30,7 @@ object SolColors {
     val CoolGap = Color(0xFF4DA3FF)
     val HeatGap = Color(0xFFFF9800)
     val HeatPump = Color(0xFF00897B)
-    val AuxHeat = Color(0xFFFF6E40)
+    val AuxHeat = Color(0xFFEF5350)
     val CoolRun = Color(0xFF90CAF9)
 }
 

@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.ecobeeFillPresence
 import com.brian.solwidget.data.hvacSummary
 import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
@@ -142,6 +143,28 @@ class EcobeeScreenshotTest {
         }
         captureSized(width, height, "hvac-mild-2.6.0.png") {
             PhoneFrame(runtimeDay(aux = false), past, future, hvacLayers, drawerOpen = false)
+        }
+        val from = now.minus(48, ChronoUnit.HOURS)
+        val to = now.plus(72, ChronoUnit.HOURS)
+        val chart = ChartBitmapRenderer.render(
+            points = solar(from, now.plus(24, ChronoUnit.HOURS)),
+            now = now,
+            width = width,
+            height = 640,
+            rangeFrom = from,
+            rangeTo = to,
+            weather = outdoor(from, to),
+            layers = hvacLayers,
+            ecobee = runtimeDay(aux = true)
+        )
+        captureSized(width, (280 * density).roundToInt(), "widget-unchanged-2.6.0.png") {
+            Box(Modifier.fillMaxSize().background(SolColors.Navy).padding(12.dp)) {
+                Image(
+                    bitmap = chart.asImageBitmap(),
+                    contentDescription = "Widget chart without a runtime strip",
+                    modifier = Modifier.fillMaxWidth().height(220.dp)
+                )
+            }
         }
     }
 
@@ -405,12 +428,20 @@ class EcobeeScreenshotTest {
                             ecobee = indoor
                         )
                     }
-                    ChartLegend(layers = layers, onOpen = {}, modifier = Modifier.padding(horizontal = 16.dp))
+                    val (tooWarm, tooCool) = ecobeeFillPresence(indoor, from, to, now)
+                    ChartLegend(
+                        layers = layers,
+                        onOpen = {},
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        showTooWarm = tooWarm,
+                        showTooCool = tooCool
+                    )
                     if (layers.hvac) {
                         Text(
                             text = hvacSummaryLabel(hvacSummary(indoor, from, to, now)),
                             color = SolColors.Muted,
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
                 }

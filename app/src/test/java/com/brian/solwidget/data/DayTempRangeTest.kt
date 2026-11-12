@@ -21,14 +21,14 @@ class DayTempRangeTest {
         val range = dayTempRanges(points, zone).getValue(day)
         assertEquals(59, range.lowF)
         assertEquals(78, range.highF)
-        assertEquals("59-78", range.label)
+        assertEquals("Lo 59° · Hi 78°", range.label)
     }
 
     @Test
     fun equalLowHighDropsTheDash() {
         val points = listOf(point(12, 70.2), point(13, 69.6))
         val range = dayTempRanges(points, zone).getValue(day)
-        assertEquals("70", range.label)
+        assertEquals("70°", range.label)
     }
 
     private fun point(hour: Int, tempF: Double): WeatherPoint {

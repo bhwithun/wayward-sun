@@ -12,12 +12,12 @@ export type EcobeeSample = {
 
 export const GAS_AUX_DOLLARS_PER_HOUR = 0.6;
 
-export type HvacBar = {
-  t: number;
-  heatPumpMin: number;
-  auxMin: number;
-  coolMin: number;
-  bucketMin: number;
+export type HvacRun = {
+  start: number;
+  end: number;
+  heatPump: number;
+  aux: number;
+  cool: number;
 };
 
 export type HvacSummary = {
@@ -93,36 +93,59 @@ export function hvacSummary(samples: EcobeeSample[], from: number, to: number, n
   };
 }
 
-export function hvacSummaryLabel(summary: HvacSummary): string {
+export function hvacSummaryLabel(summary: HvacSummary, dollarsPerHour = GAS_AUX_DOLLARS_PER_HOUR): string {
   const hours = (value: number) => `${value.toFixed(1)} h`;
-  return `Heat pump ${hours(summary.heatPumpHours)} · Gas ${hours(summary.auxHours)} · Cool ${hours(summary.coolHours)} · Gas $${summary.gasCostDollars.toFixed(2)}`;
+  const parts: string[] = [];
+  if (summary.heatPumpHours >= 0.05) parts.push(`Heat pump ${hours(summary.heatPumpHours)}`);
+  if (summary.auxHours >= 0.05) parts.push(`Gas aux ${hours(summary.auxHours)}`);
+  if (summary.coolHours >= 0.05) parts.push(`Cool ${hours(summary.coolHours)}`);
+  if (summary.auxHours >= 0.05) parts.push(`Gas ≈ $${(summary.auxHours * dollarsPerHour).toFixed(2)}`);
+  return parts.join(" · ");
 }
 
-export function hvacBars(samples: EcobeeSample[], from: number, to: number, plotWidthPx: number, now?: number): HvacBar[] {
-  const end = now != null && now < to ? now : to;
-  if (plotWidthPx < 1 || end <= from) return [];
-  const span = end - from;
-  const bucketMin = span / plotWidthPx / 60_000;
-  const seconds = new Map<number, [number, number, number]>();
-  for (const sample of samples) {
-    if (sample.t < from || sample.t >= to) continue;
-    if (now != null && sample.t > now) continue;
-    const px = Math.min(plotWidthPx - 1, Math.max(0, Math.floor(((sample.t - from) / span) * plotWidthPx)));
-    const slot = seconds.get(px) ?? [0, 0, 0];
-    slot[0] += sample.heatPumpSec ?? 0;
-    slot[1] += sample.auxHeatSec ?? 0;
-    slot[2] += sample.coolSec ?? 0;
-    seconds.set(px, slot);
-  }
-  return [...seconds.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([px, slot]) => ({
-      t: from + ((px + 0.5) / plotWidthPx) * span,
-      heatPumpMin: slot[0] / 60,
-      auxMin: slot[1] / 60,
-      coolMin: slot[2] / 60,
-      bucketMin,
-    }));
+export function hvacRuns(samples: EcobeeSample[], from: number, to: number, now?: number): HvacRun[] {
+  const window = samples
+    .filter((sample) => sample.t >= from && sample.t < to && (now == null || sample.t <= now))
+    .sort((a, b) => a.t - b.t);
+  const runs: HvacRun[] = [];
+  let start: number | null = null;
+  let end = 0;
+  let heat = 0;
+  let aux = 0;
+  let cool = 0;
+  const flush = () => {
+    if (start != null && heat + aux + cool > 0.02 && end > start) runs.push({ start, end, heatPump: heat, aux, cool });
+    start = null;
+  };
+  window.forEach((sample, index) => {
+    const next = window[index + 1];
+    const previous = window[index - 1];
+    const slotSec = next ? Math.min(20 * 60, Math.max(60, (next.t - sample.t) / 1000)) : 300;
+    const duty = (seconds?: number | null) => Math.min(1, Math.max(0, (seconds ?? 0) / slotSec));
+    const nextHeat = duty(sample.heatPumpSec);
+    const nextAux = duty(sample.auxHeatSec);
+    const nextCool = duty(sample.coolSec);
+    const idle = nextHeat + nextAux + nextCool < 0.02;
+    const gap = previous != null && sample.t - previous.t > 15 * 60 * 1000;
+    const similar =
+      start != null &&
+      !gap &&
+      !idle &&
+      Math.abs(nextHeat - heat) < 0.08 &&
+      Math.abs(nextAux - aux) < 0.08 &&
+      Math.abs(nextCool - cool) < 0.08;
+    if (idle || gap || !similar) flush();
+    if (idle) return;
+    if (start == null) {
+      start = sample.t;
+      heat = nextHeat;
+      aux = nextAux;
+      cool = nextCool;
+    }
+    end = sample.t + slotSec * 1000;
+  });
+  flush();
+  return runs;
 }
 
 export function ecobeeFillSegments(run: EcobeeMark[]): EcobeeMark[][] {
@@ -273,13 +296,14 @@ export function tightestTempFit(dataMin: number, dataMax: number): { step: numbe
     return intervals >= 2 && intervals <= 6;
   });
   const pool = readable.length > 0 ? readable : fits;
-  return pool.reduce((best, fit) => {
-    const span = fit.max - fit.min;
+  const fit = pool.reduce((best, next) => {
+    const span = next.max - next.min;
     const bestSpan = best.max - best.min;
-    if (span < bestSpan - 1e-6) return fit;
-    if (Math.abs(span - bestSpan) <= 1e-6 && fit.step > best.step) return fit;
+    if (span < bestSpan - 1e-6) return next;
+    if (Math.abs(span - bestSpan) <= 1e-6 && next.step > best.step) return next;
     return best;
   });
+  return dataMax >= fit.max - 0.05 ? { ...fit, max: fit.max + fit.step } : fit;
 }
 
 export function chooseTempStep(span: number): number {

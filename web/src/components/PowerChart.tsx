@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
 import {
   ecobeeFillSegments,
-  hvacBars,
+  hvacRuns,
   prepareEcobee,
   sharedFahrenheitRange,
   temperatureGrid,
@@ -25,7 +25,7 @@ const SETPOINT = "#FFF176";
 const TOO_WARM = "#4DA3FF";
 const TOO_COOL = "#FF9800";
 const HEAT_PUMP = "rgba(0, 137, 123, 0.78)";
-const AUX_HEAT = "rgba(255, 110, 64, 0.78)";
+const AUX_HEAT = "rgba(239, 83, 80, 0.95)";
 const COOL_RUN = "rgba(144, 202, 249, 0.78)";
 
 const SOLAR_MAX = 8;
@@ -77,12 +77,16 @@ export function PowerChart(props: Props) {
 
 function paint(canvas: HTMLCanvasElement, props: Props) {
   const parent = canvas.parentElement;
-  const width = parent?.clientWidth ?? 640;
-  const height = 320;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = "100%";
+  const width = Math.max(1, parent?.clientWidth ?? 640);
+  const plotHeight = 320;
+  const runtimeHeader = props.layers.hvac ? 16 : 0;
+  const runtimeStrip = props.layers.hvac ? 32 : 0;
+  const height = plotHeight + runtimeHeader + runtimeStrip;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
-  canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -92,12 +96,12 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const units = axisUnits(props.layers);
   const showTempLabels = props.layers.temp || props.layers.ecobee;
   const left = showTempLabels || units !== "none" ? 52 : 12;
-  const right = width - 12;
+  const right = width - 18;
   const showPower = props.layers.solcast || props.layers.enphase;
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
   const showDegrees = props.layers.temp || props.layers.ecobee;
   const top = showDegrees ? 28 : 16;
-  const bottom = height - (showPower ? 36 : 28);
+  const bottom = plotHeight - (showPower ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -129,17 +133,6 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     const ceiling = yRate(RATE_MAX);
     if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, ceiling, BUY);
     if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, ceiling, SELL);
-  }
-
-  if (props.layers.hvac) {
-    const hvacEnd = Math.min(props.to, props.now);
-    drawHvacBars(
-      ctx,
-      hvacBars(ecobee, props.from, hvacEnd, Math.max(1, Math.round(plotW)), props.now),
-      xOf,
-      bottom,
-      plotH
-    );
   }
 
   if (props.layers.precip && props.weather.length >= 2) {
@@ -222,6 +215,18 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     ctx.moveTo(nowX, top);
     ctx.lineTo(nowX, bottom);
     ctx.stroke();
+  }
+
+  if (props.layers.hvac) {
+    drawRuntimeStrip(
+      ctx,
+      hvacRuns(ecobee, props.from, Math.min(props.to, props.now), props.now),
+      xOf,
+      left,
+      right,
+      plotHeight + runtimeHeader,
+      height - 4
+    );
   }
 }
 
@@ -441,32 +446,64 @@ function drawEcobee(
   }
 }
 
-function drawHvacBars(
+function drawRuntimeStrip(
   ctx: CanvasRenderingContext2D,
-  bars: ReturnType<typeof hvacBars>,
+  runs: ReturnType<typeof hvacRuns>,
   xOf: (t: number) => number,
-  bottom: number,
-  plotH: number
+  left: number,
+  right: number,
+  stripTop: number,
+  stripBottom: number
 ) {
-  if (bars.length === 0) return;
-  const span = bars.length >= 2 ? Math.abs(xOf(bars[bars.length - 1].t) - xOf(bars[0].t)) : 8;
-  const barW = Math.max(2, (bars.length >= 2 ? span / (bars.length - 1) : 8) * 1.08);
-  for (const bar of bars) {
-    const total = bar.heatPumpMin + bar.auxMin + bar.coolMin;
-    if (total <= 0 || bar.bucketMin <= 0) continue;
-    const scale = total > bar.bucketMin ? bar.bucketMin / total : 1;
-    let cursor = bottom;
-    const band = (minutes: number, color: string) => {
-      const bandH = (minutes * scale / bar.bucketMin) * plotH;
-      if (bandH <= 0.4) return;
+  ctx.save();
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  ctx.fillStyle = "#9AA8BF";
+  ctx.textAlign = "left";
+  ctx.fillText("Runtime", 4, stripTop - 4);
+  let swatchX = ctx.measureText("Runtime").width + 12;
+  const sources: Array<[string, string, boolean]> = [
+    ["Heat pump", "#00897B", runs.some((run) => run.heatPump > 0.02)],
+    ["Gas aux", "#EF5350", runs.some((run) => run.aux > 0.02)],
+    ["Cool", "#90CAF9", runs.some((run) => run.cool > 0.02)],
+  ];
+  for (const [name, color, present] of sources) {
+    if (!present) continue;
+    ctx.fillStyle = color;
+    ctx.fillRect(swatchX, stripTop - 12, 8, 8);
+    swatchX += 12;
+    ctx.fillStyle = "#9AA8BF";
+    ctx.fillText(name, swatchX, stripTop - 4);
+    swatchX += ctx.measureText(name).width + 10;
+  }
+  ctx.fillText("100%", 4, stripTop + 12);
+  ctx.strokeStyle = GRID;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(left, stripTop);
+  ctx.lineTo(right, stripTop);
+  ctx.stroke();
+  const stripH = Math.max(1, stripBottom - stripTop);
+  for (const run of runs) {
+    const total = Math.max(0.001, run.heatPump + run.aux + run.cool);
+    const scale = total > 1 ? 1 / total : 1;
+    let cursor = stripBottom;
+    const parts: Array<[number, string]> = [
+      [run.heatPump, HEAT_PUMP],
+      [run.aux, AUX_HEAT],
+      [run.cool, COOL_RUN],
+    ];
+    const x1 = Math.min(right, Math.max(left, xOf(run.start)));
+    const x2 = Math.min(right, Math.max(left, xOf(run.end)));
+    if (x2 - x1 < 1) continue;
+    for (const [duty, color] of parts) {
+      const bandH = duty * scale * stripH;
+      if (bandH <= 0.4) continue;
       cursor -= bandH;
       ctx.fillStyle = color;
-      ctx.fillRect(xOf(bar.t) - barW / 2, cursor, barW, bandH);
-    };
-    band(bar.heatPumpMin, HEAT_PUMP);
-    band(bar.auxMin, AUX_HEAT);
-    band(bar.coolMin, COOL_RUN);
+      ctx.fillRect(x1, cursor, x2 - x1, bandH);
+    }
   }
+  ctx.restore();
 }
 
 function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | "rates" {
