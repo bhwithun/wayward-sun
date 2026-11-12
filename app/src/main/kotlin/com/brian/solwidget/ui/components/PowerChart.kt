@@ -104,11 +104,16 @@ fun PowerChart(
         val left = if (showTempLabels || units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
         val right = size.width - 12.dp.toPx()
         val dayBaseline = 16.dp.toPx()
-        val tempBaseline = 38.dp.toPx()
         val laneHeight = if (layers.hvac) 9.dp.toPx() else 0f
-        val laneGap = if (layers.hvac) 3.dp.toPx() else 0f
-        val top = (if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()) + laneHeight + laneGap
-        val bottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
+        val laneGap = if (layers.hvac) 4.dp.toPx() else 0f
+        val hourAxis = rangeFrom != null && rangeTo != null &&
+            Duration.between(rangeFrom, rangeTo).toHours() in 20..30
+        val top = 28.dp.toPx() + laneHeight + laneGap
+        val bottom = size.height - when {
+            hourAxis -> 22.dp.toPx()
+            layers.power -> 28.dp.toPx()
+            else -> 12.dp.toPx()
+        }
         val laneTop = top - laneGap - laneHeight
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
@@ -285,7 +290,6 @@ fun PowerChart(
         } else {
             emptyMap()
         }
-        val tempRanges = if (layers.temperature) dayTempRanges(weather, zone) else emptyMap()
         val firstDay = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         var day = firstDay
@@ -305,7 +309,7 @@ fun PowerChart(
             val labelX = xOf(noon)
             if (labelX in left..right) {
                 native.drawText(label, labelX, dayBaseline, gridPaint)
-                if (layers.power) {
+                if (layers.power && !hourAxis) {
                     val totals = dayTotals[day]
                     if (totals?.complete == true) {
                         native.drawText(
@@ -316,12 +320,11 @@ fun PowerChart(
                         )
                     }
                 }
-                val temps = tempRanges[day]
-                if (temps != null) {
-                    drawTempRangeLabel(native, temps, labelX, tempBaseline, 26f)
-                }
             }
             day = day.plusDays(1)
+        }
+        if (hourAxis) {
+            drawHourAxis(native, rangeFrom, rangeTo, zone, ::xOf, left, right, top, bottom, size.height)
         }
 
         if (isDemo) {
@@ -352,6 +355,48 @@ fun PowerChart(
             }
         }
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHourAxis(
+    canvas: AndroidCanvas,
+    from: Instant,
+    to: Instant,
+    zone: ZoneId,
+    xOf: (Instant) -> Float,
+    left: Float,
+    right: Float,
+    top: Float,
+    bottom: Float,
+    height: Float
+) {
+    val paint = Paint().apply {
+        color = android.graphics.Color.parseColor("#E8EEF7")
+        textSize = 22f
+        isAntiAlias = true
+        textAlign = Paint.Align.CENTER
+    }
+    var cursor = from.atZone(zone).toLocalDate().atStartOfDay(zone).toInstant()
+    if (cursor.isBefore(from)) cursor = cursor.plus(Duration.ofHours(3))
+    while (cursor.isBefore(to)) {
+        val hour = cursor.atZone(zone).hour
+        if (hour % 3 == 0) {
+            val x = xOf(cursor)
+            if (x in left..right) {
+                drawLine(SolColors.Grid, Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
+                if (x > left + 28f && x < right - 28f) {
+                    canvas.drawText(hourClock(hour), x, height - 8f, paint)
+                }
+            }
+        }
+        cursor = cursor.plus(Duration.ofHours(3))
+    }
+}
+
+private fun hourClock(hour: Int): String = when (hour) {
+    0 -> "12a"
+    12 -> "12p"
+    in 1..11 -> "${hour}a"
+    else -> "${hour - 12}p"
 }
 
 private fun drawTempRangeLabel(

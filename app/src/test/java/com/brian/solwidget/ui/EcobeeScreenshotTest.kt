@@ -45,8 +45,16 @@ import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.ui.components.ChartBitmapRenderer
 import com.brian.solwidget.ui.components.PowerChart
+import com.brian.solwidget.data.DetroitCalendar
+import com.brian.solwidget.data.HistoryInterval
+import com.brian.solwidget.data.HistoryPage
+import com.brian.solwidget.data.historyFetchKey
 import com.brian.solwidget.ui.screens.ChartLegend
+import com.brian.solwidget.ui.screens.HistoryCalendar
+import com.brian.solwidget.ui.screens.HistoryPane
+import com.brian.solwidget.ui.screens.HomeTabs
 import com.brian.solwidget.ui.screens.LayerDrawerContent
+import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.ui.theme.SolWidgetTheme
 import androidx.activity.compose.BackHandler
@@ -59,6 +67,8 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Instant
+import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import org.junit.Test
@@ -139,10 +149,10 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "hvac-cold-2.6.0e.png") {
+        captureSized(width, height, "hvac-cold-2.7.0.png") {
             PhoneFrame(runtimeDay(aux = true), past, future, hvacLayers, drawerOpen = false)
         }
-        captureSized(width, height, "hvac-mild-2.6.0e.png") {
+        captureSized(width, height, "hvac-mild-2.7.0.png") {
             PhoneFrame(runtimeDay(aux = false), past, future, hvacLayers, drawerOpen = false)
         }
         val from = now.minus(48, ChronoUnit.HOURS)
@@ -167,6 +177,144 @@ class EcobeeScreenshotTest {
                 )
             }
         }
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w384dp-h900dp-420dpi")
+    fun historyDayAndWeekTabs() {
+        val density = 420f / 160f
+        val width = (384 * density).roundToInt()
+        val height = (900 * density).roundToInt()
+        val day = LocalDate.of(2026, 11, 11)
+        val month = YearMonth.of(2026, 11)
+        val weeks = DetroitCalendar.monthWeeks(month)
+        val (fetchFrom, fetchTo) = DetroitCalendar.monthFetchRange(weeks)
+        val page = HistoryPage(
+            from = fetchFrom,
+            to = fetchTo,
+            points = historyHours(fetchFrom, fetchTo),
+            sun = emptyList(),
+            ecobee = coldEasternDay()
+        )
+        val key = historyFetchKey(fetchFrom, fetchTo)
+        val layers = ChartLayers(
+            temperature = true,
+            solcast = true,
+            enphase = false,
+            ecobee = true,
+            hvac = true,
+            precipitation = false,
+            buy = false,
+            sell = false
+        )
+        captureSized(width, height, "day-view-2.7.0.png") {
+            historyScreen(HomeTab.HISTORY_DAY, day, month, page, key, layers, dayMode = true)
+        }
+        captureSized(width, height, "day-calendar-2.7.0.png") {
+            SolWidgetTheme {
+                Column(Modifier.fillMaxSize().background(SolColors.Navy).padding(16.dp)) {
+                    Text("Wayward Sun", color = SolColors.Ink)
+                    HomeTabs(tab = HomeTab.HISTORY_DAY, onSelect = {}, modifier = Modifier.padding(top = 8.dp))
+                    HistoryCalendar(
+                        month = month,
+                        weeks = weeks,
+                        selectedWeek = DetroitCalendar.weekStart(day),
+                        selectedDay = day,
+                        today = day,
+                        onShiftMonth = {},
+                        onSelectWeek = {},
+                        onSelectDay = {}
+                    )
+                }
+            }
+        }
+        captureSized(width, height, "week-tab-2.7.0.png") {
+            historyScreen(HomeTab.HISTORY, day, month, page, key, layers, dayMode = false)
+        }
+    }
+
+    @Composable
+    private fun historyScreen(
+        tab: HomeTab,
+        day: LocalDate,
+        month: YearMonth,
+        page: HistoryPage,
+        key: String,
+        layers: ChartLayers,
+        dayMode: Boolean
+    ) {
+        SolWidgetTheme {
+            Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
+                Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
+                HomeTabs(tab = tab, onSelect = {}, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                HistoryPane(
+                    month = month,
+                    selectedWeek = DetroitCalendar.weekStart(day),
+                    selectedDay = day,
+                    dayMode = dayMode,
+                    history = page,
+                    historyKey = key,
+                    historyLoading = false,
+                    historyError = null,
+                    layers = layers,
+                    now = now,
+                    onOpenLayers = {},
+                    onShiftMonth = {},
+                    onShiftWeek = {},
+                    onSelectWeek = {},
+                    onShiftDay = {},
+                    onSelectDay = {},
+                    gasDollarsPerHour = 0.60,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+
+    private fun coldEasternDay(): List<EcobeeSample> {
+        val start = DetroitCalendar.dayRange(LocalDate.of(2026, 11, 11)).first
+        val samples = ArrayList<EcobeeSample>()
+        var cursor = start
+        while (!cursor.isAfter(now)) {
+            val hour = cursor.atZone(zone).hour
+            val aux = hour < 6
+            val pump = !aux && hour < 11
+            samples += EcobeeSample(
+                at = cursor,
+                indoorF = if (hour < 8) 64.0 else if (hour < 12) 70.0 else 78.0,
+                coolSetF = if (hour < 12) 75.0 else 74.0,
+                heatSetF = if (hour < 12) 66.0 else 68.0,
+                heatPumpSec = if (pump) 240 else 0,
+                auxHeatSec = if (aux) 300 else 0,
+                coolSec = 0,
+                fanSec = if (aux || pump) 280 else 20,
+                outdoorF = if (aux) 22.0 else 30.0
+            )
+            cursor = cursor.plusSeconds(5 * 60)
+        }
+        return samples
+    }
+
+    private fun historyHours(from: Instant, to: Instant): List<HistoryInterval> {
+        val rows = ArrayList<HistoryInterval>()
+        var cursor = from.plusSeconds(30 * 60)
+        while (cursor.isBefore(to)) {
+            val local = cursor.atZone(zone)
+            val hour = local.hour + local.minute / 60.0
+            val temp = 20.0 + 36.0 * kotlin.math.sin((hour - 9.0) / 24.0 * Math.PI * 2)
+            val kw = if (hour in 8.0..18.0) kotlin.math.sin((hour - 8.0) / 10.0 * Math.PI) * 6.0 else 0.0
+            val future = cursor.isAfter(now)
+            rows += HistoryInterval(
+                periodEnd = cursor,
+                actualKw = if (future) null else kw,
+                forecastKw = kw,
+                periodHours = 0.5,
+                tempF = temp,
+                precipPct = null
+            )
+            cursor = cursor.plusSeconds(30 * 60)
+        }
+        return rows
     }
 
     @Test

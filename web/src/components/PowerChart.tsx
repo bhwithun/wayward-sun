@@ -12,6 +12,7 @@ import {
   type EcobeeSample,
 } from "@/lib/ecobee";
 import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
+import { detroitParts } from "@/lib/time";
 
 const LIVE = "#2EE6A6";
 const FORECAST = "#F5C542";
@@ -99,8 +100,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const showPower = props.layers.solcast || props.layers.enphase;
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
   const showDegrees = props.layers.temp || props.layers.ecobee;
-  const top = showDegrees ? 28 : 16;
-  const bottom = plotHeight - (showPower ? 36 : 28);
+  const oneDay = props.to - props.from > 0 && props.to - props.from <= 26 * 60 * 60 * 1000;
+  const top = (showDegrees ? 28 : 16) + (oneDay ? 22 : 0);
+  const bottom = plotHeight - (oneDay || showPower ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -222,6 +224,16 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     );
   }
 
+  if (oneDay) {
+    drawHourAxis(ctx, props.from, props.to, xOf, left, right, top, bottom, height);
+    ctx.fillStyle = INK;
+    ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    const dateY = props.layers.hvac ? laneTop - 14 : 16;
+    const noon = detroitParts(new Date(props.from + 12 * 60 * 60 * 1000));
+    ctx.fillText(`${noon.weekday} ${noon.day}`, (left + right) / 2, dateY);
+  }
+
   if (props.now >= props.from && props.now < props.to) {
     const nowX = xOf(props.now);
     ctx.strokeStyle = NOW;
@@ -232,6 +244,45 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     ctx.lineTo(nowX, bottom);
     ctx.stroke();
   }
+}
+
+function hourClock(hour: number): string {
+  if (hour === 0) return "12a";
+  if (hour === 12) return "12p";
+  if (hour < 12) return `${hour}a`;
+  return `${hour - 12}p`;
+}
+
+function drawHourAxis(
+  ctx: CanvasRenderingContext2D,
+  from: number,
+  to: number,
+  xOf: (t: number) => number,
+  left: number,
+  right: number,
+  top: number,
+  bottom: number,
+  height: number
+) {
+  ctx.save();
+  ctx.strokeStyle = GRID;
+  ctx.fillStyle = INK;
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  for (let t = from; t < to; t += 3 * 60 * 60 * 1000) {
+    const hour = detroitParts(new Date(t)).hour;
+    if (hour % 3 !== 0) continue;
+    const x = xOf(t);
+    if (x < left || x > right) continue;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+    if (x > left + 22 && x < right - 22) ctx.fillText(hourClock(hour), x, height - 8);
+  }
+  ctx.restore();
 }
 
 function strokeSeries(

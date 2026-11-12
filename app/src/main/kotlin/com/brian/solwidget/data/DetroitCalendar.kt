@@ -54,6 +54,16 @@ object DetroitCalendar {
 
     fun monthWeeks(month: YearMonth): List<CalendarWeek> = monthWeeks(month.year, month.monthValue)
 
+    /**
+     * Local midnight through the next midnight.
+     * America/Detroit shares this clock with America/New_York.
+     */
+    fun dayRange(date: LocalDate): Pair<Instant, Instant> {
+        val from = date.atStartOfDay(ZONE).toInstant()
+        val to = date.plusDays(1).atStartOfDay(ZONE).toInstant()
+        return from to to
+    }
+
     /** Sunday 00:00 through the next Sunday 00:00 in America/Detroit. */
     fun weekRange(sunday: LocalDate): Pair<Instant, Instant> {
         val start = weekStart(sunday)

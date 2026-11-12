@@ -34,12 +34,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
-enum class HomeTab { LIVE, HISTORY }
+enum class HomeTab { LIVE, HISTORY, HISTORY_DAY }
 
-fun homeTabStored(name: String?): HomeTab =
-    if (name == "history") HomeTab.HISTORY else HomeTab.LIVE
+fun homeTabStored(name: String?): HomeTab = when (name) {
+    "history" -> HomeTab.HISTORY
+    "history-day" -> HomeTab.HISTORY_DAY
+    else -> HomeTab.LIVE
+}
 
-fun HomeTab.storedName(): String = if (this == HomeTab.HISTORY) "history" else "live"
+fun HomeTab.storedName(): String = when (this) {
+    HomeTab.HISTORY -> "history"
+    HomeTab.HISTORY_DAY -> "history-day"
+    HomeTab.LIVE -> "live"
+}
 
 data class HomeUiState(
     val snapshot: ForecastSnapshot? = null,
@@ -51,6 +58,7 @@ data class HomeUiState(
     val tab: HomeTab = HomeTab.LIVE,
     val historyMonth: YearMonth? = null,
     val selectedWeek: LocalDate? = null,
+    val selectedDay: LocalDate? = null,
     val history: HistoryPage? = null,
     val historyKey: String? = null,
     val historyLoading: Boolean = false,
@@ -158,7 +166,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.tab == tab) return
         _uiState.update { it.copy(tab = tab) }
         viewModelScope.launch { storage.setLastHomeTab(tab.storedName()) }
-        if (tab == HomeTab.HISTORY) loadHistory()
+        if (tab == HomeTab.HISTORY || tab == HomeTab.HISTORY_DAY) loadHistory()
     }
 
     fun shiftHistoryMonth(delta: Int) {
@@ -170,13 +178,35 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val selected = weeks.find { it.id == state.selectedWeek }?.id
                 ?: weeks.find { week -> week.days.any { it.date == today } }?.id
                 ?: weeks.firstOrNull()?.id
-            state.copy(historyMonth = next, selectedWeek = selected)
+            val dayStillVisible = state.selectedDay != null &&
+                weeks.any { week -> week.days.any { it.date == state.selectedDay } }
+            val nextDay = when {
+                dayStillVisible -> state.selectedDay
+                weeks.any { week -> week.days.any { it.date == today && it.inMonth } } -> today
+                else -> LocalDate.of(next.year, next.monthValue, 1)
+            }
+            state.copy(historyMonth = next, selectedWeek = selected, selectedDay = nextDay)
         }
         loadHistory()
     }
 
     fun selectHistoryWeek(sunday: LocalDate) {
         _uiState.update { it.copy(selectedWeek = sunday) }
+    }
+
+    fun selectHistoryDay(date: LocalDate) {
+        val month = YearMonth.from(date)
+        val monthChanged = _uiState.value.historyMonth != month
+        _uiState.update { it.copy(selectedDay = date, historyMonth = month) }
+        if (monthChanged) loadHistory()
+    }
+
+    /** Swipe on the day chart. One step is the adjacent local day. */
+    fun shiftHistoryDay(delta: Int) {
+        if (delta == 0) return
+        val today = DetroitCalendar.today(_uiState.value.now)
+        val day = _uiState.value.selectedDay ?: today
+        selectHistoryDay(day.plusDays(delta.toLong()))
     }
 
     /** Swipe on the history chart. One step is the adjacent Sunday–Saturday week. */
@@ -204,8 +234,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val selected = _uiState.value.selectedWeek?.takeIf { sunday -> weeks.any { it.id == sunday } }
             ?: weeks.find { week -> week.days.any { it.date == today } }?.id
             ?: weeks.first().id
-        if (_uiState.value.historyMonth != month || _uiState.value.selectedWeek != selected) {
-            _uiState.update { it.copy(historyMonth = month, selectedWeek = selected) }
+        val day = _uiState.value.selectedDay ?: today
+        if (_uiState.value.historyMonth != month || _uiState.value.selectedWeek != selected || _uiState.value.selectedDay != day) {
+            _uiState.update { it.copy(historyMonth = month, selectedWeek = selected, selectedDay = day) }
         }
         val (from, to) = DetroitCalendar.monthFetchRange(weeks)
         val key = historyFetchKey(from, to)
