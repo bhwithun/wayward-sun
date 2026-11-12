@@ -13,6 +13,9 @@ import kotlin.math.abs
 
 internal const val CHART_EXPAND_MILLIS = 200
 
+/** A drag past this fraction of the page snaps. A slower, shorter drag springs back. */
+internal const val PAGER_POSITION_THRESHOLD = 0.30f
+
 /** A short unconsumed tap expands or restores. Swipes and long-presses do not. */
 internal fun chartTapFires(
     consumed: Boolean,
@@ -26,18 +29,13 @@ internal fun showChartExpandHint(seen: Boolean, expanded: Boolean): Boolean = !s
 /** 1 moves toward the next chart, -1 toward the previous. A short drag stays put. */
 internal fun pagerDelta(dx: Float, width: Float, canPrev: Boolean, canNext: Boolean): Int {
     if (width <= 0f) return 0
-    val threshold = width * 0.25f
+    val past = abs(dx) / width >= PAGER_POSITION_THRESHOLD - 0.005f
     return when {
-        dx <= -threshold && canNext -> 1
-        dx >= threshold && canPrev -> -1
+        !past -> 0
+        dx < 0f && canNext -> 1
+        dx > 0f && canPrev -> -1
         else -> 0
     }
-}
-
-internal fun resistedDrag(dx: Float, canPrev: Boolean, canNext: Boolean): Float = when {
-    dx > 0f && !canPrev -> dx * 0.2f
-    dx < 0f && !canNext -> dx * 0.2f
-    else -> dx
 }
 
 internal fun Modifier.chartTap(onTap: () -> Unit): Modifier = pointerInput(onTap) {
@@ -62,6 +60,35 @@ internal fun Modifier.chartTap(onTap: () -> Unit): Modifier = pointerInput(onTap
                     onTap()
                 }
                 return@awaitEachGesture
+            }
+        }
+    }
+}
+
+/**
+ * A tap on the fullscreen chart exits. Listens on the initial pass and does not
+ * consume the pointer, so a horizontal drag still reaches the pager.
+ */
+internal fun Modifier.fullscreenChartTap(enabled: Boolean, onTap: () -> Unit): Modifier {
+    if (!enabled) return this
+    return pointerInput(onTap) {
+        val slop = viewConfiguration.touchSlop
+        val longPress = viewConfiguration.longPressTimeoutMillis
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val start = down.uptimeMillis
+            val origin = down.position
+            var moved = false
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                if (!change.pressed) {
+                    if (!moved && change.uptimeMillis - start < longPress) onTap()
+                    return@awaitEachGesture
+                }
+                val dx = change.position.x - origin.x
+                val dy = change.position.y - origin.y
+                if (abs(dx) > slop || abs(dy) > slop) moved = true
             }
         }
     }

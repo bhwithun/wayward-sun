@@ -139,6 +139,81 @@ object DetroitCalendar {
         return true
     }
 
+    /**
+     * Weeks the fullscreen pager can land on. Includes every loaded week that is not
+     * entirely before the oldest sample, through [newest]'s week, plus one older week
+     * when [canStepWeek] allows it so a swipe can still cross into the previous month.
+     */
+    fun fullscreenWeeks(
+        anchor: LocalDate,
+        newest: LocalDate,
+        windowFrom: LocalDate?,
+        windowToExclusive: LocalDate?,
+        earliest: LocalDate?
+    ): List<LocalDate> {
+        val end = weekStart(newest)
+        var start = weekStart(windowFrom ?: anchor)
+        if (earliest != null) {
+            var guard = 0
+            while (start.plusDays(6).isBefore(earliest) && !start.isAfter(end) && guard++ < 400) {
+                start = start.plusDays(7)
+            }
+        }
+        if (start.isAfter(end)) start = end
+        val pages = ArrayList<LocalDate>()
+        var cursor = start
+        var guard = 0
+        while (!cursor.isAfter(end) && guard++ < 400) {
+            pages += cursor
+            cursor = cursor.plusDays(7)
+        }
+        val first = pages.firstOrNull() ?: weekStart(anchor)
+        if (canStepWeek(first, -1, newest, windowFrom, windowToExclusive, earliest)) {
+            val previous = first.minusDays(7)
+            if (pages.isEmpty() || pages.first() != previous) pages.add(0, previous)
+        }
+        val anchorWeek = weekStart(anchor)
+        if (anchorWeek !in pages) {
+            pages += anchorWeek
+            pages.sort()
+        }
+        return pages
+    }
+
+    /**
+     * Days the fullscreen pager can land on. Same window as [canStepDay], plus one
+     * older day when that step is legal.
+     */
+    fun fullscreenDays(
+        anchor: LocalDate,
+        newest: LocalDate,
+        windowFrom: LocalDate?,
+        windowToExclusive: LocalDate?,
+        earliest: LocalDate?
+    ): List<LocalDate> {
+        var start = windowFrom ?: earliest ?: anchor
+        if (earliest != null && start.isBefore(earliest)) start = earliest
+        var end = newest
+        if (start.isAfter(end)) start = end
+        val pages = ArrayList<LocalDate>()
+        var cursor = start
+        var guard = 0
+        while (!cursor.isAfter(end) && guard++ < 400) {
+            pages += cursor
+            cursor = cursor.plusDays(1)
+        }
+        val first = pages.firstOrNull() ?: anchor
+        if (canStepDay(first, -1, newest, windowFrom, windowToExclusive, earliest)) {
+            val previous = first.minusDays(1)
+            if (pages.isEmpty() || pages.first() != previous) pages.add(0, previous)
+        }
+        if (anchor !in pages) {
+            pages += anchor
+            pages.sort()
+        }
+        return pages
+    }
+
     /** First Sunday of the visible month through the day after its last Saturday. */
     fun monthFetchRange(weeks: List<CalendarWeek>): Pair<Instant, Instant> {
         val start = weeks.first().id

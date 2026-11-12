@@ -30,8 +30,9 @@ class ChartExpandTest {
     }
 
     @Test
-    fun aQuarterWidthDragTurnsThePageAndAShortDragDoesNot() {
+    fun aThirtyPercentDragTurnsThePageAndAShortDragDoesNot() {
         assertEquals(0, pagerDelta(dx = 40f, width = 400f, canPrev = true, canNext = true))
+        assertEquals(0, pagerDelta(dx = -100f, width = 400f, canPrev = true, canNext = true))
         assertEquals(1, pagerDelta(dx = -120f, width = 400f, canPrev = true, canNext = true))
         assertEquals(0, pagerDelta(dx = -120f, width = 400f, canPrev = true, canNext = false))
         assertEquals(-1, pagerDelta(dx = 120f, width = 400f, canPrev = true, canNext = false))

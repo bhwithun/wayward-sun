@@ -254,6 +254,18 @@ class EcobeeScreenshotTest {
         captureSized(width, height, "fullscreen-swipe-2.8.1b.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true, previewDragFraction = 0.42f)
         }
+        captureSized(width, height, "fullscreen-before-2.8.2.png", emulateCutout = true) {
+            historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
+        }
+        captureSized(width, height, "fullscreen-after-2.8.2.png", emulateCutout = true) {
+            historyScreen(LocalDate.of(2026, 11, 4), month, page, key, layers, weekSelected = true, expanded = true)
+        }
+        captureSized(width, height, "fullscreen-day-before-2.8.2.png", emulateCutout = true) {
+            historyScreen(day, month, page, key, layers, weekSelected = false, expanded = true)
+        }
+        captureSized(width, height, "fullscreen-day-after-2.8.2.png", emulateCutout = true) {
+            historyScreen(LocalDate.of(2026, 11, 10), month, page, key, layers, weekSelected = false, expanded = true)
+        }
         captureSized(width, (112 * density).roundToInt(), "tabs-closeup-2.8.0f.png") {
             SolWidgetTheme {
                 Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
