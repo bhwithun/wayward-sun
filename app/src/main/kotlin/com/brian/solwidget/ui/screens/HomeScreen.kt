@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -317,134 +318,75 @@ fun HomeScreen(
         onDismissLegend = { legendOpen = false },
         showExpandHint = showExpandHint && !covering
     )
-    Scaffold(
-        topBar = {
-            if (!covering) {
-                Box {
-                    TopAppBar(
-                        navigationIcon = {
-                            IconButton(onClick = { openDrawer() }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Menu,
-                                    contentDescription = "Open navigation",
-                                    tint = SolColors.Ink
-                                )
-                            }
-                        },
-                        title = {
-                            Text(
-                                text = "Wayward Sun",
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = SolColors.Navy,
-                            titleContentColor = SolColors.Ink
-                        )
-                    )
-                    if (legendOpen) {
-                        LegendScrim { legendOpen = false }
-                    }
-                }
+    HomeScaffold(
+        covering = covering,
+        legendOpen = legendOpen,
+        onOpenDrawer = { openDrawer() },
+        onDismissLegend = { legendOpen = false },
+        tab = state.tab,
+        onSelectTab = { viewModel.showTab(it) }
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (state.tab == HomeTab.LIVE) {
+                LivePane(
+                    snapshot = snapshot,
+                    weather = state.weather,
+                    livePast = state.livePast,
+                    ecobee = state.liveEcobee,
+                    layers = state.layers,
+                    now = state.now,
+                    zone = zone,
+                    isLoading = state.isLoading,
+                    onOpenSettings = onOpenSettings,
+                    expandedPanel = expandedPanel,
+                    onToggleExpand = { panel ->
+                        expandedPanel = if (expandedPanel == panel) null else panel
+                    },
+                    gasDollarsPerHour = state.gasDollarsPerHour,
+                    controls = chartControls
+                )
+            } else {
+                HistoryPane(
+                    month = state.historyMonth,
+                    selectedWeek = state.selectedWeek,
+                    selectedDay = state.selectedDay,
+                    weekSelected = state.historyWeekSelected,
+                    history = state.history,
+                    historyKey = state.historyKey,
+                    historyLoading = state.historyLoading,
+                    historyError = state.historyError,
+                    layers = state.layers,
+                    now = state.now,
+                    onShiftMonth = viewModel::shiftHistoryMonth,
+                    onShiftWeek = viewModel::shiftHistoryWeek,
+                    onSelectWeek = viewModel::selectHistoryWeek,
+                    onShiftDay = viewModel::shiftHistoryDay,
+                    onSelectDay = viewModel::selectHistoryDay,
+                    onShowToday = viewModel::showCurrentHistory,
+                    gasDollarsPerHour = state.gasDollarsPerHour,
+                    controls = chartControls
+                )
             }
-        },
-        containerColor = SolColors.Navy
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(if (covering) PaddingValues(0.dp) else padding)
-        ) {
-            Column(
+        }
+        if (showLiveOverlay && snapshot != null) {
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = if (covering) 0.dp else 16.dp)
+                    .background(SolColors.Navy)
+                    .clickable { expandedPanel = null }
             ) {
-                if (!covering) {
-                    Box {
-                        HomeTabs(
-                            tab = state.tab,
-                            onSelect = {
-                                legendOpen = false
-                                viewModel.showTab(it)
-                            },
-                            modifier = Modifier.padding(top = 12.dp)
-                        )
-                        if (legendOpen) {
-                            LegendScrim { legendOpen = false }
-                        }
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        if (state.tab == HomeTab.LIVE) {
-                            LivePane(
-                                snapshot = snapshot,
-                                weather = state.weather,
-                                livePast = state.livePast,
-                                ecobee = state.liveEcobee,
-                                layers = state.layers,
-                                now = state.now,
-                                zone = zone,
-                                isLoading = state.isLoading,
-                                onOpenSettings = onOpenSettings,
-                                expandedPanel = expandedPanel,
-                                onToggleExpand = { panel ->
-                                    expandedPanel = if (expandedPanel == panel) null else panel
-                                },
-                                gasDollarsPerHour = state.gasDollarsPerHour,
-                                controls = chartControls
-                            )
-                        } else {
-                            HistoryPane(
-                                month = state.historyMonth,
-                                selectedWeek = state.selectedWeek,
-                                selectedDay = state.selectedDay,
-                                weekSelected = state.historyWeekSelected,
-                                history = state.history,
-                                historyKey = state.historyKey,
-                                historyLoading = state.historyLoading,
-                                historyError = state.historyError,
-                                layers = state.layers,
-                                now = state.now,
-                                onShiftMonth = viewModel::shiftHistoryMonth,
-                                onShiftWeek = viewModel::shiftHistoryWeek,
-                                onSelectWeek = viewModel::selectHistoryWeek,
-                                onShiftDay = viewModel::shiftHistoryDay,
-                                onSelectDay = viewModel::selectHistoryDay,
-                                onShowToday = viewModel::showCurrentHistory,
-                                gasDollarsPerHour = state.gasDollarsPerHour,
-                                controls = chartControls
-                            )
-                        }
-                    }
-                    if (showLiveOverlay && snapshot != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(SolColors.Navy)
-                                .clickable { expandedPanel = null }
-                        ) {
-                            LayerMetaPanel(
-                                layers = state.layers,
-                                snapshot = snapshot,
-                                weather = state.weather,
-                                now = state.now,
-                                onOpenSettings = onOpenSettings,
-                                expandedPanel = expandedPanel,
-                                onToggleExpand = { panel ->
-                                    expandedPanel = if (expandedPanel == panel) null else panel
-                                },
-                                showOnly = expandedPanel
-                            )
-                        }
-                    }
-                }
+                LayerMetaPanel(
+                    layers = state.layers,
+                    snapshot = snapshot,
+                    weather = state.weather,
+                    now = state.now,
+                    onOpenSettings = onOpenSettings,
+                    expandedPanel = expandedPanel,
+                    onToggleExpand = { panel ->
+                        expandedPanel = if (expandedPanel == panel) null else panel
+                    },
+                    showOnly = expandedPanel
+                )
             }
         }
     }
@@ -531,6 +473,89 @@ private fun ReadyUpdateDialog(
             TextButton(onClick = onLater) { Text(stringResource(R.string.update_later)) }
         },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun HomeScaffold(
+    covering: Boolean,
+    legendOpen: Boolean,
+    onOpenDrawer: () -> Unit,
+    onDismissLegend: () -> Unit,
+    tab: HomeTab,
+    onSelectTab: (HomeTab) -> Unit,
+    pane: @Composable BoxScope.() -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            if (!covering) {
+                Box {
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = onOpenDrawer) {
+                                Icon(
+                                    imageVector = Icons.Filled.Menu,
+                                    contentDescription = "Open navigation",
+                                    tint = SolColors.Ink
+                                )
+                            }
+                        },
+                        title = {
+                            Text(
+                                text = "Wayward Sun",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = SolColors.Navy,
+                            titleContentColor = SolColors.Ink
+                        )
+                    )
+                    if (legendOpen) {
+                        LegendScrim(onDismissLegend)
+                    }
+                }
+            }
+        },
+        containerColor = SolColors.Navy
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(if (covering) PaddingValues(0.dp) else padding)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = if (covering) 0.dp else 16.dp)
+            ) {
+                if (!covering) {
+                    Box {
+                        HomeTabs(
+                            tab = tab,
+                            onSelect = {
+                                onDismissLegend()
+                                onSelectTab(it)
+                            },
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                        if (legendOpen) {
+                            LegendScrim(onDismissLegend)
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag("home-body")
+                ) {
+                    pane()
+                }
+            }
+        }
+    }
 }
 
 private val TabLabelActive = Color(0xFFE6E1F0)
@@ -716,7 +741,12 @@ internal fun LivePane(
         if (controls.showExpandHint) {
             Text("Tap chart to expand", color = SolColors.Muted, fontSize = 12.sp)
         }
-        ChartFrame(onTap = controls.onChartTap, onBounds = controls.onCardBounds, content = chartContent)
+        ChartFrame(
+            modifier = Modifier.testTag("live-chart"),
+            onTap = controls.onChartTap,
+            onBounds = controls.onCardBounds,
+            content = chartContent
+        )
         if (layers.hvac) {
             Text(
                 text = hvacSummaryLabel(hvacSummary(ecobee, rangeFrom, rangeTo, now), gasDollarsPerHour),
@@ -987,11 +1017,17 @@ private fun ChartHeading(title: String, controls: ChartControls, legend: LegendM
     }
 }
 
+/**
+ * Covers the surrounding [Box] only. [Modifier.matchParentSize] does not
+ * participate in measurement, so the top bar and the tab row stay their own
+ * height. [Modifier.fillMaxSize] in those unsized boxes takes the screen max
+ * and collapses the chart body to zero.
+ */
 @Composable
-private fun LegendScrim(onDismiss: () -> Unit) {
+private fun BoxScope.LegendScrim(onDismiss: () -> Unit) {
     Box(
         Modifier
-            .fillMaxSize()
+            .matchParentSize()
             .zIndex(1f)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
