@@ -104,10 +104,9 @@ fun PowerChart(
         val left = if (showTempLabels || units != AxisUnits.NONE) 52.dp.toPx() else 12.dp.toPx()
         val right = size.width - 12.dp.toPx()
         val dayBaseline = 16.dp.toPx()
-        val tempBaseline = 38.dp.toPx()
         val laneHeight = if (layers.hvac) 9.dp.toPx() else 0f
-        val laneGap = if (layers.hvac) 3.dp.toPx() else 0f
-        val top = (if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()) + laneHeight + laneGap
+        val laneGap = if (layers.hvac) 4.dp.toPx() else 0f
+        val top = 28.dp.toPx() + laneHeight + laneGap
         val bottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
         val laneTop = top - laneGap - laneHeight
         val width = (right - left).coerceAtLeast(1f)
@@ -285,7 +284,6 @@ fun PowerChart(
         } else {
             emptyMap()
         }
-        val tempRanges = if (layers.temperature) dayTempRanges(weather, zone) else emptyMap()
         val firstDay = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         var day = firstDay
@@ -315,10 +313,6 @@ fun PowerChart(
                             kwhPaint
                         )
                     }
-                }
-                val temps = tempRanges[day]
-                if (temps != null) {
-                    drawTempRangeLabel(native, temps, labelX, tempBaseline, 26f)
                 }
             }
             day = day.plusDays(1)

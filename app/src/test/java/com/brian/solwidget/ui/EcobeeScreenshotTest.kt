@@ -139,10 +139,10 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "hvac-cold-2.6.0e.png") {
+        captureSized(width, height, "hvac-cold-2.6.1.png") {
             PhoneFrame(runtimeDay(aux = true), past, future, hvacLayers, drawerOpen = false)
         }
-        captureSized(width, height, "hvac-mild-2.6.0e.png") {
+        captureSized(width, height, "hvac-mild-2.6.1.png") {
             PhoneFrame(runtimeDay(aux = false), past, future, hvacLayers, drawerOpen = false)
         }
         val from = now.minus(48, ChronoUnit.HOURS)
