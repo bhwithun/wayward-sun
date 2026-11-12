@@ -213,10 +213,10 @@ class EcobeeScreenshotTest {
         captureSized(width, (420 * density).roundToInt(), "weeknum-closeup-unselected-2.8.0d.png") {
             weekCalendar(day, month, weeks, selectedWeek = null, selectedDay = day)
         }
-        captureSized(width, (420 * density).roundToInt(), "weeknum-closeup-selected-2.8.0d.png") {
+        captureSized(width, (420 * density).roundToInt(), "weeknum-closeup-selected-2.8.0e.png") {
             weekCalendar(day, month, weeks, selectedWeek = DetroitCalendar.weekStart(day), selectedDay = null)
         }
-        captureSized(width, height, "history-week-2.8.0d.png") {
+        captureSized(width, height, "history-week-2.8.0e.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true)
         }
     }

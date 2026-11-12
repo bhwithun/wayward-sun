@@ -353,7 +353,7 @@ export function Dashboard() {
           </div>
           <div className="cal-grid">
           <div className="cal-dow">
-            <span>Wk</span>
+            <span aria-hidden="true" />
             {WEEKDAYS.map((label) => (
               <span key={label}>{label}</span>
             ))}

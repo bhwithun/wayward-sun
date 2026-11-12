@@ -90,9 +90,9 @@ code { color: #F5C542; }
 }
 .cal-week .wk:hover .wk-chip,
 .cal-week .wk:active .wk-chip { background: rgba(255, 255, 255, 0.14); }
-.cal-week.selected .wk-chip { background: #3A5680; }
+.cal-week.selected .wk-chip { background: #3A5680; color: #fff; }
 .cal-week.selected .wk:hover .wk-chip,
-.cal-week.selected .wk:active .wk-chip { background: #4A6896; }
+.cal-week.selected .wk:active .wk-chip { background: #4A6896; color: #fff; }
 .cal-week button.day { position: relative; }
 .today-dot {
   position: absolute;

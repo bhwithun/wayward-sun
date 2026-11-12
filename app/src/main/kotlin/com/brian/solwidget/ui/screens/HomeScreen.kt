@@ -790,13 +790,7 @@ internal fun HistoryCalendar(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Wk",
-                modifier = Modifier.width(44.dp),
-                color = SolColors.Muted,
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelSmall
-            )
+            Box(Modifier.width(44.dp))
             WeekdayLabels.forEach { label ->
                 Text(
                     text = label,
@@ -854,7 +848,7 @@ internal fun HistoryCalendar(
                     ) {
                         Text(
                             text = "W$number",
-                            color = WeekNumberGold,
+                            color = if (weekOn) Color.White else WeekNumberGold,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1
