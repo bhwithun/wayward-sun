@@ -269,6 +269,8 @@ fun HomeScreen(
                             HistoryPane(
                                 month = state.historyMonth,
                                 selectedWeek = state.selectedWeek,
+                                selectedDay = state.selectedDay,
+                                dayMode = state.tab == HomeTab.HISTORY_DAY,
                                 history = state.history,
                                 historyKey = state.historyKey,
                                 historyLoading = state.historyLoading,
@@ -279,6 +281,8 @@ fun HomeScreen(
                                 onShiftMonth = viewModel::shiftHistoryMonth,
                                 onShiftWeek = viewModel::shiftHistoryWeek,
                                 onSelectWeek = viewModel::selectHistoryWeek,
+                                onShiftDay = viewModel::shiftHistoryDay,
+                                onSelectDay = viewModel::selectHistoryDay,
                                 gasDollarsPerHour = state.gasDollarsPerHour
                             )
                         }
@@ -394,7 +398,7 @@ private fun ReadyUpdateDialog(
 }
 
 @Composable
-private fun HomeTabs(
+internal fun HomeTabs(
     tab: HomeTab,
     onSelect: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
@@ -406,8 +410,11 @@ private fun HomeTabs(
         LayerChip("Live", tab == HomeTab.LIVE, Modifier.weight(1f)) {
             if (it) onSelect(HomeTab.LIVE)
         }
-        LayerChip("History", tab == HomeTab.HISTORY, Modifier.weight(1f)) {
+        LayerChip("History/week", tab == HomeTab.HISTORY, Modifier.weight(1.3f)) {
             if (it) onSelect(HomeTab.HISTORY)
+        }
+        LayerChip("History/day", tab == HomeTab.HISTORY_DAY, Modifier.weight(1.2f)) {
+            if (it) onSelect(HomeTab.HISTORY_DAY)
         }
     }
 }
@@ -513,9 +520,11 @@ private fun LivePane(
 }
 
 @Composable
-private fun HistoryPane(
+internal fun HistoryPane(
     month: YearMonth?,
     selectedWeek: LocalDate?,
+    selectedDay: LocalDate?,
+    dayMode: Boolean,
     history: HistoryPage?,
     historyKey: String?,
     historyLoading: Boolean,
@@ -526,6 +535,8 @@ private fun HistoryPane(
     onShiftMonth: (Int) -> Unit,
     onShiftWeek: (Int) -> Unit,
     onSelectWeek: (LocalDate) -> Unit,
+    onShiftDay: (Int) -> Unit,
+    onSelectDay: (LocalDate) -> Unit,
     gasDollarsPerHour: Double,
     modifier: Modifier = Modifier
 ) {
@@ -542,15 +553,23 @@ private fun HistoryPane(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         historyError?.let { StatusBanner(it) }
-        if (week != null) {
-            val (from, to) = DetroitCalendar.weekRange(week.id)
+        val shownDay = selectedDay ?: today
+        if (dayMode || week != null) {
+            val (from, to) = if (dayMode) {
+                DetroitCalendar.dayRange(shownDay)
+            } else {
+                DetroitCalendar.weekRange(week!!.id)
+            }
             val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
             ChartFrame(
                 modifier = Modifier
-                    .adjacentSwipe(onShiftWeek)
+                    .adjacentSwipe(if (dayMode) onShiftDay else onShiftWeek)
                     .semantics {
-                        contentDescription =
+                        contentDescription = if (dayMode) {
+                            "History day. Swipe left for the next day or right for the previous day."
+                        } else {
                             "History week. Swipe left for the next week or right for the previous week."
+                        }
                     }
             ) {
                 if (chart != null) {
@@ -613,9 +632,11 @@ private fun HistoryPane(
                 month = shownMonth,
                 weeks = weeks,
                 selectedWeek = week?.id,
+                selectedDay = if (dayMode) shownDay else null,
                 today = today,
                 onShiftMonth = onShiftMonth,
-                onSelectWeek = onSelectWeek
+                onSelectWeek = onSelectWeek,
+                onSelectDay = if (dayMode) onSelectDay else null
             )
         }
     }
@@ -687,13 +708,15 @@ private val WeekdayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sa
 private val MonthLabel = DateTimeFormatter.ofPattern("MMMM yyyy")
 
 @Composable
-private fun HistoryCalendar(
+internal fun HistoryCalendar(
     month: YearMonth,
     weeks: List<com.brian.solwidget.data.CalendarWeek>,
     selectedWeek: LocalDate?,
+    selectedDay: LocalDate?,
     today: LocalDate,
     onShiftMonth: (Int) -> Unit,
-    onSelectWeek: (LocalDate) -> Unit
+    onSelectWeek: (LocalDate) -> Unit,
+    onSelectDay: ((LocalDate) -> Unit)?
 ) {
     Column(
         modifier = Modifier
@@ -738,7 +761,46 @@ private fun HistoryCalendar(
                 )
             }
         }
-        weeks.forEach { week ->
+        if (onSelectDay != null) {
+            weeks.forEach { week ->
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    week.days.forEach { day ->
+                        val selected = day.date == selectedDay
+                        val color = when {
+                            day.date == today -> SolColors.Forecast
+                            !day.inMonth -> Color(0xFF5C6B82)
+                            else -> SolColors.Ink
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(2.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) SolColors.TableStripe else Color.Transparent)
+                                .then(
+                                    if (selected) {
+                                        Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable { onSelectDay(day.date) }
+                                .padding(vertical = 8.dp)
+                                .semantics { contentDescription = "Day ${day.date}" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = day.date.dayOfMonth.toString(),
+                                color = color,
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (onSelectDay == null) weeks.forEach { week ->
             val selected = week.id == selectedWeek
             Row(
                 modifier = Modifier
@@ -808,7 +870,7 @@ private fun LayerChip(
         Text(
             text = label,
             color = if (selected) SolColors.Ink else SolColors.Muted,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
             maxLines = 1
         )
     }

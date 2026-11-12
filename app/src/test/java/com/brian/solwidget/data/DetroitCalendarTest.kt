@@ -38,6 +38,13 @@ class DetroitCalendarTest {
     }
 
     @Test
+    fun dayRangeIsEasternMidnightThroughTheNextMidnight() {
+        val (from, to) = DetroitCalendar.dayRange(LocalDate.of(2026, 11, 11))
+        assertEquals(Instant.parse("2026-11-11T05:00:00Z"), from)
+        assertEquals(Instant.parse("2026-11-12T05:00:00Z"), to)
+    }
+
+    @Test
     fun weekRangeIsDetroitMidnightThroughTheNextSunday() {
         val (from, to) = DetroitCalendar.weekRange(LocalDate.of(2026, 9, 27))
         assertEquals(Instant.parse("2026-09-27T04:00:00Z"), from)

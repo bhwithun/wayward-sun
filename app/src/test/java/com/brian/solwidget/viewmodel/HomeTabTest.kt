@@ -14,7 +14,9 @@ class HomeTabTest {
     @Test
     fun historyNameRestoresHistory() {
         assertEquals(HomeTab.HISTORY, homeTabStored("history"))
+        assertEquals(HomeTab.HISTORY_DAY, homeTabStored("history-day"))
         assertEquals("history", HomeTab.HISTORY.storedName())
+        assertEquals("history-day", HomeTab.HISTORY_DAY.storedName())
         assertEquals("live", HomeTab.LIVE.storedName())
     }
 }

@@ -29,7 +29,6 @@ import {
   shiftMonth,
   ymdKey,
   zonedTimeToUtc,
-  type CalendarWeek,
   type Ymd,
 } from "@/lib/time";
 
@@ -110,7 +109,7 @@ type HistoryBody = {
   error?: string;
 };
 
-type Tab = "live" | "history";
+type Tab = "live" | "week" | "day";
 
 const RATES: Array<[string, string, string, string]> = [
   ["Import base", cents(BASE_OFF_PEAK_CENTS), cents(BASE_MID_PEAK_CENTS), cents(BASE_PEAK_CENTS)],
@@ -134,6 +133,7 @@ export function Dashboard() {
   const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
   const [layersReady, setLayersReady] = useState(false);
   const [tab, setTab] = useState<Tab>("live");
+  const [dayId, setDayId] = useState<string | null>(null);
   const [cache, setCache] = useState<CacheBody | null>(null);
   const [history, setHistory] = useState<HistoryBody | null>(null);
   const [status, setStatus] = useState("");
@@ -163,6 +163,15 @@ export function Dashboard() {
       weeks[0],
     [weeks, weekId, todayKey]
   );
+
+  const selectedDay = useMemo(() => {
+    const picked = dayId ? parseYmd(dayId) : null;
+    if (picked) return picked;
+    if (todayParts.year === month.year && todayParts.month === month.month) {
+      return { year: todayParts.year, month: todayParts.month, day: todayParts.day };
+    }
+    return { year: month.year, month: month.month, day: 1 };
+  }, [dayId, month, todayParts]);
 
   const range = useMemo(() => {
     const today = parseYmd(todayKey);
@@ -201,7 +210,13 @@ export function Dashboard() {
     void load();
   }, [load]);
 
-  const chart = chartModel(history, clock, tab === "history" ? selectedWeek : null, todayParts);
+  const chartFocus =
+    tab === "week" && selectedWeek
+      ? { from: parseYmd(selectedWeek.id) ?? selectedDay, days: 7 }
+      : tab === "day"
+        ? { from: selectedDay, days: 1 }
+        : null;
+  const chart = chartModel(history, clock, chartFocus, todayParts);
   const runtime = hvacPresence(chart.ecobee, chart.fromMs, chart.toMs, clock);
   const monthName = MONTH_LABEL.format(new Date(Date.UTC(month.year, month.month - 1, 1)));
 
@@ -216,8 +231,11 @@ export function Dashboard() {
         <button type="button" role="tab" aria-selected={tab === "live"} className={tab === "live" ? "on" : ""} onClick={() => setTab("live")}>
           Live
         </button>
-        <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>
-          History
+        <button type="button" role="tab" aria-selected={tab === "week"} className={tab === "week" ? "on" : ""} onClick={() => setTab("week")}>
+          History/week
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "day"} className={tab === "day" ? "on" : ""} onClick={() => setTab("day")}>
+          History/day
         </button>
       </div>
 
@@ -306,14 +324,30 @@ export function Dashboard() {
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
 
-      {tab === "history" && (
+      {(tab === "week" || tab === "day") && (
         <section className="panel calendar">
           <div className="cal-nav">
-            <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month.year, month.month, -1))}>
+            <button
+              type="button"
+              aria-label="Previous month"
+              onClick={() => {
+                const next = shiftMonth(month.year, month.month, -1);
+                setMonth(next);
+                if (tab === "day") setDayId(ymdKey(next));
+              }}
+            >
               ‹
             </button>
             <h2>{monthName}</h2>
-            <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month.year, month.month, 1))}>
+            <button
+              type="button"
+              aria-label="Next month"
+              onClick={() => {
+                const next = shiftMonth(month.year, month.month, 1);
+                setMonth(next);
+                if (tab === "day") setDayId(ymdKey(next));
+              }}
+            >
               ›
             </button>
           </div>
@@ -322,25 +356,55 @@ export function Dashboard() {
               <span key={label}>{label}</span>
             ))}
           </div>
-          {weeks.map((week) => (
-            <button
-              key={week.id}
-              type="button"
-              className={week.id === selectedWeek?.id ? "week selected" : "week"}
-              aria-pressed={week.id === selectedWeek?.id}
-              onClick={() => setWeekId(week.id)}
-            >
-              {week.days.map((day) => {
-                const key = ymdKey(day);
-                const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : ""].filter(Boolean).join(" ");
-                return (
-                  <span key={key} className={className}>
-                    {day.day}
-                  </span>
-                );
-              })}
-            </button>
-          ))}
+          {tab === "week" &&
+            weeks.map((week) => (
+              <button
+                key={week.id}
+                type="button"
+                className={week.id === selectedWeek?.id ? "week selected" : "week"}
+                aria-pressed={week.id === selectedWeek?.id}
+                onClick={() => setWeekId(week.id)}
+              >
+                {week.days.map((day) => {
+                  const key = ymdKey(day);
+                  const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : ""].filter(Boolean).join(" ");
+                  return (
+                    <span key={key} className={className}>
+                      {day.day}
+                    </span>
+                  );
+                })}
+              </button>
+            ))}
+          {tab === "day" && (
+            <div className="day-grid">
+              {weeks.flatMap((week) =>
+                week.days.map((day) => {
+                  const key = ymdKey(day);
+                  const selected = key === ymdKey(selectedDay);
+                  const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : "", selected ? "selected" : ""]
+                    .filter(Boolean)
+                    .join(" ");
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={className}
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setDayId(key);
+                        if (day.year !== month.year || day.month !== month.month) {
+                          setMonth({ year: day.year, month: day.month });
+                        }
+                      }}
+                    >
+                      {day.day}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -412,11 +476,11 @@ export function Dashboard() {
 function chartModel(
   history: HistoryBody | null,
   clock: number,
-  week: CalendarWeek | null,
+  focus: { from: Ymd; days: number } | null,
   today: Ymd
 ) {
-  const bounds = week
-    ? span(parseYmd(week.id) ?? { year: today.year, month: today.month, day: today.day }, addDays(parseYmd(week.id) ?? today, 7))
+  const bounds = focus
+    ? span(focus.from, addDays(focus.from, focus.days))
     : span(liveWindow(today).from, liveWindow(today).to);
   const fromMs = Date.parse(bounds.from);
   const toMs = Date.parse(bounds.to);
@@ -448,7 +512,8 @@ function chartModel(
   const sun: SunSpan[] = (history?.sun ?? [])
     .map((day) => ({ sunrise: Date.parse(day.sunrise), sunset: Date.parse(day.sunset) }))
     .filter((day) => day.sunset >= fromMs && day.sunrise < toMs);
-  const start = week ? parseYmd(week.id) : liveWindow(today).from;
+  const start = focus ? focus.from : liveWindow(today).from;
+  const totalDays = focus ? focus.days : 7;
   let tooWarm = false;
   let tooCool = false;
   for (const sample of ecobee) {
@@ -466,7 +531,7 @@ function chartModel(
     toMs,
     rates: rows,
     ecobee,
-    totals: filledTotals(start ?? today, 7, points, clock),
+    totals: filledTotals(start ?? today, totalDays, points, clock),
     empty: history != null && rows.length === 0 && !history.error,
   };
 }

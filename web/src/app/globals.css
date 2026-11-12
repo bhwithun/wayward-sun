@@ -29,7 +29,7 @@ code { color: #F5C542; }
 }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
 .tabs { display: flex; gap: 8px; margin-top: 16px; }
-.tabs button { min-width: 88px; }
+.tabs button { min-width: 0; flex: 1; padding: 8px 6px; font-size: 0.82rem; }
 .calendar { margin-top: 12px; }
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cal-nav h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 1rem; color: #E8EEF7; }
@@ -49,6 +49,19 @@ code { color: #F5C542; }
 .week.selected { outline: 1px solid #F5C542; background: #2A4163; }
 .week .out { color: #5C6B82; }
 .week .today { color: #F5C542; }
+.day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.day-grid button {
+  background: transparent;
+  padding: 8px 0;
+  min-width: 0;
+}
+.day-grid button.out { color: #5C6B82; }
+.day-grid button.today { color: #F5C542; }
+.day-grid button.selected { background: #2A4163; outline: 1px solid #F5C542; }
 button, input {
   background: #1C2B45;
   color: #E8EEF7;
