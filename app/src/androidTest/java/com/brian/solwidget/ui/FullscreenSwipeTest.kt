@@ -146,7 +146,8 @@ class FullscreenSwipeTest {
 
     @Composable
     private fun HistoryHost(weekSelected: Boolean) {
-        val now = Instant.parse("2026-11-11T17:00:00Z")
+        // Noon in Detroit on Wednesday of Nov 15–21, so that week is the last page.
+        val now = Instant.parse("2026-11-18T17:00:00Z")
         val month = YearMonth.of(2026, 11)
         val weeks = DetroitCalendar.monthWeeks(month)
         val (from, to) = DetroitCalendar.monthFetchRange(weeks)

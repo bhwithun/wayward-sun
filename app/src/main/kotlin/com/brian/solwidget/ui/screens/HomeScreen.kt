@@ -75,6 +75,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -836,12 +837,11 @@ internal fun HistoryPane(
         history?.ecobee?.forEach { add(it.at.atZone(zoneDate).toLocalDate()) }
     }
     val earliest = sampleDates.minOrNull()
-    val newest = sampleDates.maxOrNull() ?: today
     val anchor = if (weekSelected) shownWeek else shownDay
     fun canStep(delta: Int) = if (weekSelected) {
-        DetroitCalendar.canStepWeek(anchor, delta, newest, windowFrom, windowTo, earliest)
+        DetroitCalendar.canStepWeek(anchor, delta, today, windowFrom, windowTo, earliest)
     } else {
-        DetroitCalendar.canStepDay(anchor, delta, newest, windowFrom, windowTo, earliest)
+        DetroitCalendar.canStepDay(anchor, delta, today, windowFrom, windowTo, earliest)
     }
     fun pageFor(start: LocalDate): @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         val (pageFrom, pageTo) = if (weekSelected) DetroitCalendar.weekRange(start) else DetroitCalendar.dayRange(start)
@@ -860,11 +860,14 @@ internal fun HistoryPane(
             )
         }
     }
-    val anchors = if (weekSelected) {
-        DetroitCalendar.fullscreenWeeks(shownWeek, newest, windowFrom, windowTo, earliest)
-    } else {
-        DetroitCalendar.fullscreenDays(shownDay, newest, windowFrom, windowTo, earliest)
-    }
+    val anchors = rememberStableSpan(
+        weekSelected,
+        if (weekSelected) {
+            DetroitCalendar.fullscreenWeeks(shownWeek, today, windowFrom, windowTo, earliest)
+        } else {
+            DetroitCalendar.fullscreenDays(shownDay, today, windowFrom, windowTo, earliest)
+        }
+    )
     val pages = anchors.map { start -> FullscreenChartPage(start, pageFor(start)) }
     if (controls.expanded) {
         ExpandedChart(
@@ -905,7 +908,11 @@ internal fun HistoryPane(
             }
             ChartFrame(
                 modifier = Modifier
-                    .adjacentSwipe(if (weekSelected) onShiftWeek else onShiftDay)
+                    .testTag("history-chart")
+                    .adjacentSwipe { delta ->
+                        if (!canStep(delta)) return@adjacentSwipe
+                        if (weekSelected) onShiftWeek(delta) else onShiftDay(delta)
+                    }
                     .semantics {
                         contentDescription = if (weekSelected) {
                             "History week. Swipe left for the next week or right for the previous week."
@@ -995,6 +1002,31 @@ private fun LegendScrim(onDismiss: () -> Unit) {
     )
 }
 
+/**
+ * Keeps every period already opened, through the latest one. Moving into a later
+ * month must not drop the earlier pages and shift the pager's index.
+ */
+@Composable
+private fun rememberStableSpan(weekMode: Boolean, computed: List<LocalDate>): List<LocalDate> {
+    var earliest by remember(weekMode) { mutableStateOf<LocalDate?>(null) }
+    var latest by remember(weekMode) { mutableStateOf<LocalDate?>(null) }
+    val start = listOfNotNull(earliest, computed.firstOrNull()).minOrNull() ?: return computed
+    val end = listOfNotNull(latest, computed.lastOrNull()).maxOrNull() ?: return computed
+    SideEffect {
+        if (start != earliest) earliest = start
+        if (end != latest) latest = end
+    }
+    val step = if (weekMode) 7L else 1L
+    val pages = ArrayList<LocalDate>()
+    var cursor = start
+    var guard = 0
+    while (!cursor.isAfter(end) && guard++ < 2000) {
+        pages += cursor
+        cursor = cursor.plusDays(step)
+    }
+    return pages
+}
+
 internal class FullscreenChartPage(
     val key: Any,
     val content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
@@ -1023,6 +1055,14 @@ private fun ExpandedChart(
     )
     LaunchedEffect(pagerState.settledPage) {
         onSettled(pagerState.settledPage)
+    }
+    // A loaded month can drop earlier pages. Keep the settled date on its own page.
+    LaunchedEffect(pages.map { it.key }, safeStart) {
+        val anchorKey = pages.getOrNull(safeStart)?.key ?: return@LaunchedEffect
+        if (pagerState.isScrollInProgress) return@LaunchedEffect
+        if (pages.getOrNull(pagerState.settledPage)?.key != anchorKey) {
+            pagerState.scrollToPage(safeStart)
+        }
     }
     if (controls.previewDragFraction != 0f) {
         SideEffect {
@@ -1187,10 +1227,12 @@ private fun ChartFrame(
 /**
  * Finger moving left opens the next page. Finger moving right opens the previous.
  * Watches the initial pass so a sideways swipe is not also a week tap, and a vertical
- * drag still scrolls the page.
+ * drag still scrolls the page. The callback stays current without restarting the gesture.
  */
-private fun Modifier.adjacentSwipe(onAdjacent: (Int) -> Unit): Modifier =
-    pointerInput(onAdjacent) {
+@Composable
+private fun Modifier.adjacentSwipe(onAdjacent: (Int) -> Unit): Modifier {
+    val current by rememberUpdatedState(onAdjacent)
+    return pointerInput(Unit) {
         val distance = 36.dp.toPx()
         val speed = 900.dp.toPx()
         val slop = viewConfiguration.touchSlop
@@ -1226,9 +1268,10 @@ private fun Modifier.adjacentSwipe(onAdjacent: (Int) -> Unit): Modifier =
                 velocity >= speed -> -1
                 else -> 0
             }
-            if (delta != 0) onAdjacent(delta)
+            if (delta != 0) current(delta)
         }
     }
+}
 
 private val WeekdayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 private val MonthLabel = DateTimeFormatter.ofPattern("MMMM yyyy")
@@ -1274,12 +1317,17 @@ internal fun HistoryCalendar(
     onSelectDay: ((LocalDate) -> Unit)?,
     onShowToday: () -> Unit
 ) {
+    val currentWeek = DetroitCalendar.weekStart(today)
+    fun shiftMonth(delta: Int) {
+        if (DetroitCalendar.canShiftMonth(month, delta, today)) onShiftMonth(delta)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("history-calendar")
             .clip(RoundedCornerShape(14.dp))
             .background(SolColors.Panel)
-            .adjacentSwipe(onShiftMonth)
+            .adjacentSwipe { shiftMonth(it) }
             .semantics {
                 contentDescription =
                     "Month calendar. Swipe left for the next month or right for the previous month."
@@ -1293,7 +1341,7 @@ internal fun HistoryCalendar(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             TextButton(
-                onClick = { onShiftMonth(-1) },
+                onClick = { shiftMonth(-1) },
                 modifier = Modifier.semantics { contentDescription = "Previous month" }
             ) { Text("‹", style = MaterialTheme.typography.titleLarge) }
             Text(
@@ -1307,7 +1355,8 @@ internal fun HistoryCalendar(
                     .semantics { contentDescription = "Back to this week" }
             )
             TextButton(
-                onClick = { onShiftMonth(1) },
+                onClick = { shiftMonth(1) },
+                enabled = DetroitCalendar.canShiftMonth(month, 1, today),
                 modifier = Modifier.semantics { contentDescription = "Next month" }
             ) { Text("›", style = MaterialTheme.typography.titleLarge) }
         }
@@ -1352,7 +1401,8 @@ internal fun HistoryCalendar(
                         .clip(RoundedCornerShape(8.dp))
                         .clickable(
                             interactionSource = interaction,
-                            indication = LocalIndication.current
+                            indication = LocalIndication.current,
+                            enabled = !week.id.isAfter(currentWeek)
                         ) { onSelectWeek(week.id) }
                         .semantics { contentDescription = "Week ${DetroitCalendar.weekNumber(week.id)}" },
                     contentAlignment = Alignment.Center
@@ -1399,7 +1449,9 @@ internal fun HistoryCalendar(
                                     Modifier
                                 }
                             )
-                            .clickable { onSelectDay?.invoke(day.date) }
+                            .clickable(enabled = onSelectDay != null && !day.date.isAfter(today)) {
+                                onSelectDay?.invoke(day.date)
+                            }
                             .semantics { contentDescription = "Day ${day.date}" },
                         contentAlignment = Alignment.Center
                     ) {
