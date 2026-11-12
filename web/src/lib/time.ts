@@ -101,6 +101,26 @@ export function weekStart(ymd: Ymd): Ymd {
   return addDays(ymd, -dow);
 }
 
+/**
+ * US Sunday-start week-of-year. The Sunday–Saturday row that contains January 1 is week 1.
+ */
+export function usWeekNumber(sunday: Ymd): number {
+  const start = weekStart(sunday);
+  let year = start.year;
+  for (let offset = 0; offset < 7; offset += 1) {
+    const day = addDays(start, offset);
+    if (day.month === 1 && day.day === 1) year = day.year;
+  }
+  if (year === start.year && start.month === 12) {
+    const saturday = addDays(start, 6);
+    if (saturday.year !== start.year) year = saturday.year;
+  }
+  const first = weekStart({ year, month: 1, day: 1 });
+  const startUtc = Date.UTC(start.year, start.month - 1, start.day);
+  const firstUtc = Date.UTC(first.year, first.month - 1, first.day);
+  return Math.round((startUtc - firstUtc) / (7 * 24 * 60 * 60 * 1000)) + 1;
+}
+
 export type CalendarDay = Ymd & { inMonth: boolean };
 
 export type CalendarWeek = {

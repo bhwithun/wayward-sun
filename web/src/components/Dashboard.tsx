@@ -26,6 +26,7 @@ import {
   liveWindow,
   monthWeeks,
   parseYmd,
+  usWeekNumber,
   shiftMonth,
   ymdKey,
   zonedTimeToUtc,
@@ -109,7 +110,8 @@ type HistoryBody = {
   error?: string;
 };
 
-type Tab = "live" | "week" | "day";
+type Tab = "live" | "history";
+type HistoryFocus = "week" | "day";
 
 const RATES: Array<[string, string, string, string]> = [
   ["Import base", cents(BASE_OFF_PEAK_CENTS), cents(BASE_MID_PEAK_CENTS), cents(BASE_PEAK_CENTS)],
@@ -133,6 +135,7 @@ export function Dashboard() {
   const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
   const [layersReady, setLayersReady] = useState(false);
   const [tab, setTab] = useState<Tab>("live");
+  const [focus, setFocus] = useState<HistoryFocus>("week");
   const [dayId, setDayId] = useState<string | null>(null);
   const [cache, setCache] = useState<CacheBody | null>(null);
   const [history, setHistory] = useState<HistoryBody | null>(null);
@@ -211,9 +214,9 @@ export function Dashboard() {
   }, [load]);
 
   const chartFocus =
-    tab === "week" && selectedWeek
+    tab === "history" && focus === "week" && selectedWeek
       ? { from: parseYmd(selectedWeek.id) ?? selectedDay, days: 7 }
-      : tab === "day"
+      : tab === "history"
         ? { from: selectedDay, days: 1 }
         : null;
   const chart = chartModel(history, clock, chartFocus, todayParts);
@@ -231,11 +234,8 @@ export function Dashboard() {
         <button type="button" role="tab" aria-selected={tab === "live"} className={tab === "live" ? "on" : ""} onClick={() => setTab("live")}>
           Live
         </button>
-        <button type="button" role="tab" aria-selected={tab === "week"} className={tab === "week" ? "on" : ""} onClick={() => setTab("week")}>
-          History/week
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "day"} className={tab === "day" ? "on" : ""} onClick={() => setTab("day")}>
-          History/day
+        <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>
+          History
         </button>
       </div>
 
@@ -253,6 +253,9 @@ export function Dashboard() {
       {status && <p className="banner">{status}</p>}
 
       <section className="panel chart-wrap">
+        {tab === "history" && selectedWeek && (
+          <p className="period">{historyPeriod(focus, selectedWeek.id, selectedDay)}</p>
+        )}
         <div className="legend">
           <div className="legend-row">
             {layers.solcast && <span style={{ color: "#F5C542" }}>● Solcast</span>}
@@ -324,65 +327,43 @@ export function Dashboard() {
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
 
-      {(tab === "week" || tab === "day") && (
+      {tab === "history" && (
         <section className="panel calendar">
           <div className="cal-nav">
-            <button
-              type="button"
-              aria-label="Previous month"
-              onClick={() => {
-                const next = shiftMonth(month.year, month.month, -1);
-                setMonth(next);
-                if (tab === "day") setDayId(ymdKey(next));
-              }}
-            >
+            <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month.year, month.month, -1))}>
               ‹
             </button>
             <h2>{monthName}</h2>
-            <button
-              type="button"
-              aria-label="Next month"
-              onClick={() => {
-                const next = shiftMonth(month.year, month.month, 1);
-                setMonth(next);
-                if (tab === "day") setDayId(ymdKey(next));
-              }}
-            >
+            <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month.year, month.month, 1))}>
               ›
             </button>
           </div>
           <div className="cal-dow">
+            <span>Wk</span>
             {WEEKDAYS.map((label) => (
               <span key={label}>{label}</span>
             ))}
           </div>
-          {tab === "week" &&
-            weeks.map((week) => (
-              <button
-                key={week.id}
-                type="button"
-                className={week.id === selectedWeek?.id ? "week selected" : "week"}
-                aria-pressed={week.id === selectedWeek?.id}
-                onClick={() => setWeekId(week.id)}
-              >
+          {weeks.map((week) => {
+            const weekOn = focus === "week" && week.id === selectedWeek?.id;
+            return (
+              <div key={week.id} className={weekOn ? "cal-week selected" : "cal-week"}>
+                <button
+                  type="button"
+                  className="wk"
+                  aria-pressed={weekOn}
+                  aria-label={`Week ${usWeekNumber(parseYmd(week.id) ?? { year: month.year, month: month.month, day: 1 })}`}
+                  onClick={() => {
+                    setWeekId(week.id);
+                    setFocus("week");
+                  }}
+                >
+                  {usWeekNumber(parseYmd(week.id) ?? { year: month.year, month: month.month, day: 1 })}
+                </button>
                 {week.days.map((day) => {
                   const key = ymdKey(day);
-                  const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : ""].filter(Boolean).join(" ");
-                  return (
-                    <span key={key} className={className}>
-                      {day.day}
-                    </span>
-                  );
-                })}
-              </button>
-            ))}
-          {tab === "day" && (
-            <div className="day-grid">
-              {weeks.flatMap((week) =>
-                week.days.map((day) => {
-                  const key = ymdKey(day);
-                  const selected = key === ymdKey(selectedDay);
-                  const className = [day.inMonth ? "" : "out", key === todayKey ? "today" : "", selected ? "selected" : ""]
+                  const dayOn = focus === "day" && key === ymdKey(selectedDay);
+                  const className = ["day", day.inMonth ? "" : "out", key === todayKey ? "today" : "", dayOn ? "selected" : ""]
                     .filter(Boolean)
                     .join(" ");
                   return (
@@ -390,9 +371,10 @@ export function Dashboard() {
                       key={key}
                       type="button"
                       className={className}
-                      aria-pressed={selected}
+                      aria-pressed={dayOn}
                       onClick={() => {
                         setDayId(key);
+                        setFocus("day");
                         if (day.year !== month.year || day.month !== month.month) {
                           setMonth({ year: day.year, month: day.month });
                         }
@@ -401,10 +383,10 @@ export function Dashboard() {
                       {day.day}
                     </button>
                   );
-                })
-              )}
-            </div>
-          )}
+                })}
+              </div>
+            );
+          })}
         </section>
       )}
 
@@ -542,6 +524,20 @@ function filledTotals(start: Ymd, count: number, points: SeriesPoint[], nowMs: n
     const label = ymdKey(addDays(start, index)).slice(5);
     return byLabel.get(label) ?? { label, kwh: 0, liveKwh: 0, forecastKwh: 0 };
   });
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function historyPeriod(focus: HistoryFocus, weekId: string, day: Ymd): string {
+  if (focus === "day") {
+    const noon = zonedTimeToUtc(day.year, day.month, day.day, 12);
+    const parts = detroitParts(noon);
+    return `${parts.weekday}, ${MONTHS[day.month - 1]} ${day.day}`;
+  }
+  const start = parseYmd(weekId) ?? day;
+  const end = addDays(start, 6);
+  if (start.month === end.month) return `${MONTHS[start.month - 1]} ${start.day} – ${end.day}`;
+  return `${MONTHS[start.month - 1]} ${start.day} – ${MONTHS[end.month - 1]} ${end.day}`;
 }
 
 function span(from: Ymd, to: Ymd): { from: string; to: string } {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { liveWindow, monthWeeks, weekStart } from "./time";
+import { liveWindow, monthWeeks, usWeekNumber, weekStart } from "./time";
 
 describe("weekStart", () => {
   it("returns the Sunday on or before a Thursday", () => {
@@ -24,6 +24,15 @@ describe("weekStart", () => {
       month: 12,
       day: 28,
     });
+  });
+});
+
+describe("usWeekNumber", () => {
+  it("counts the Sunday row that contains January 1 as week 1", () => {
+    expect(usWeekNumber({ year: 2025, month: 12, day: 28 })).toBe(1);
+    expect(usWeekNumber({ year: 2025, month: 12, day: 21 })).toBe(52);
+    expect(usWeekNumber({ year: 2026, month: 1, day: 4 })).toBe(2);
+    expect(usWeekNumber({ year: 2026, month: 11, day: 8 })).toBe(46);
   });
 });
 

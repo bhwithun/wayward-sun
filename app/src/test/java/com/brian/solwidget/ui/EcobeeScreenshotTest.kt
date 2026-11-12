@@ -207,19 +207,19 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "day-view-2.7.0.png") {
-            historyScreen(HomeTab.HISTORY_DAY, day, month, page, key, layers, dayMode = true)
+        captureSized(width, height, "history-day-2.8.0.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = false)
         }
-        captureSized(width, height, "day-calendar-2.7.0.png") {
+        captureSized(width, height, "calendar-closeup-2.8.0.png") {
             SolWidgetTheme {
                 Column(Modifier.fillMaxSize().background(SolColors.Navy).padding(16.dp)) {
                     Text("Wayward Sun", color = SolColors.Ink)
-                    HomeTabs(tab = HomeTab.HISTORY_DAY, onSelect = {}, modifier = Modifier.padding(top = 8.dp))
+                    HomeTabs(tab = HomeTab.HISTORY, onSelect = {}, modifier = Modifier.padding(top = 8.dp))
                     HistoryCalendar(
                         month = month,
                         weeks = weeks,
                         selectedWeek = DetroitCalendar.weekStart(day),
-                        selectedDay = day,
+                        selectedDay = null,
                         today = day,
                         onShiftMonth = {},
                         onSelectWeek = {},
@@ -228,30 +228,29 @@ class EcobeeScreenshotTest {
                 }
             }
         }
-        captureSized(width, height, "week-tab-2.7.0.png") {
-            historyScreen(HomeTab.HISTORY, day, month, page, key, layers, dayMode = false)
+        captureSized(width, height, "history-week-2.8.0.png") {
+            historyScreen(day, month, page, key, layers, weekSelected = true)
         }
     }
 
     @Composable
     private fun historyScreen(
-        tab: HomeTab,
         day: LocalDate,
         month: YearMonth,
         page: HistoryPage,
         key: String,
         layers: ChartLayers,
-        dayMode: Boolean
+        weekSelected: Boolean
     ) {
         SolWidgetTheme {
             Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
                 Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
-                HomeTabs(tab = tab, onSelect = {}, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                HomeTabs(tab = HomeTab.HISTORY, onSelect = {}, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 HistoryPane(
                     month = month,
                     selectedWeek = DetroitCalendar.weekStart(day),
                     selectedDay = day,
-                    dayMode = dayMode,
+                    weekSelected = weekSelected,
                     history = page,
                     historyKey = key,
                     historyLoading = false,

@@ -270,7 +270,7 @@ fun HomeScreen(
                                 month = state.historyMonth,
                                 selectedWeek = state.selectedWeek,
                                 selectedDay = state.selectedDay,
-                                dayMode = state.tab == HomeTab.HISTORY_DAY,
+                                weekSelected = state.historyWeekSelected,
                                 history = state.history,
                                 historyKey = state.historyKey,
                                 historyLoading = state.historyLoading,
@@ -410,11 +410,8 @@ internal fun HomeTabs(
         LayerChip("Live", tab == HomeTab.LIVE, Modifier.weight(1f)) {
             if (it) onSelect(HomeTab.LIVE)
         }
-        LayerChip("History/week", tab == HomeTab.HISTORY, Modifier.weight(1.3f)) {
+        LayerChip("History", tab == HomeTab.HISTORY, Modifier.weight(1f)) {
             if (it) onSelect(HomeTab.HISTORY)
-        }
-        LayerChip("History/day", tab == HomeTab.HISTORY_DAY, Modifier.weight(1.2f)) {
-            if (it) onSelect(HomeTab.HISTORY_DAY)
         }
     }
 }
@@ -524,7 +521,7 @@ internal fun HistoryPane(
     month: YearMonth?,
     selectedWeek: LocalDate?,
     selectedDay: LocalDate?,
-    dayMode: Boolean,
+    weekSelected: Boolean,
     history: HistoryPage?,
     historyKey: String?,
     historyLoading: Boolean,
@@ -554,21 +551,28 @@ internal fun HistoryPane(
     ) {
         historyError?.let { StatusBanner(it) }
         val shownDay = selectedDay ?: today
-        if (dayMode || week != null) {
-            val (from, to) = if (dayMode) {
-                DetroitCalendar.dayRange(shownDay)
+        val shownWeek = week?.id ?: DetroitCalendar.weekStart(shownDay)
+        if (weekSelected || week != null) {
+            val (from, to) = if (weekSelected) {
+                DetroitCalendar.weekRange(shownWeek)
             } else {
-                DetroitCalendar.weekRange(week!!.id)
+                DetroitCalendar.dayRange(shownDay)
             }
             val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
+            Text(
+                text = historyPeriodLabel(weekSelected, shownDay, shownWeek),
+                color = SolColors.Ink,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
             ChartFrame(
                 modifier = Modifier
-                    .adjacentSwipe(if (dayMode) onShiftDay else onShiftWeek)
+                    .adjacentSwipe(if (weekSelected) onShiftWeek else onShiftDay)
                     .semantics {
-                        contentDescription = if (dayMode) {
-                            "History day. Swipe left for the next day or right for the previous day."
-                        } else {
+                        contentDescription = if (weekSelected) {
                             "History week. Swipe left for the next week or right for the previous week."
+                        } else {
+                            "History day. Swipe left for the next day or right for the previous day."
                         }
                     }
             ) {
@@ -631,12 +635,12 @@ internal fun HistoryPane(
             HistoryCalendar(
                 month = shownMonth,
                 weeks = weeks,
-                selectedWeek = week?.id,
-                selectedDay = if (dayMode) shownDay else null,
+                selectedWeek = if (weekSelected) shownWeek else null,
+                selectedDay = if (weekSelected) null else shownDay,
                 today = today,
                 onShiftMonth = onShiftMonth,
                 onSelectWeek = onSelectWeek,
-                onSelectDay = if (dayMode) onSelectDay else null
+                onSelectDay = onSelectDay
             )
         }
     }
@@ -706,6 +710,18 @@ private fun Modifier.adjacentSwipe(onAdjacent: (Int) -> Unit): Modifier =
 
 private val WeekdayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 private val MonthLabel = DateTimeFormatter.ofPattern("MMMM yyyy")
+private val PeriodDay = DateTimeFormatter.ofPattern("EEE, MMM d")
+private val PeriodMonthDay = DateTimeFormatter.ofPattern("MMM d")
+
+private fun historyPeriodLabel(weekSelected: Boolean, day: LocalDate, weekStart: LocalDate): String {
+    if (!weekSelected) return PeriodDay.format(day)
+    val end = weekStart.plusDays(6)
+    return if (weekStart.month == end.month) {
+        "${PeriodMonthDay.format(weekStart)} – ${end.dayOfMonth}"
+    } else {
+        "${PeriodMonthDay.format(weekStart)} – ${PeriodMonthDay.format(end)}"
+    }
+}
 
 @Composable
 internal fun HistoryCalendar(
@@ -750,7 +766,14 @@ internal fun HistoryCalendar(
                 modifier = Modifier.semantics { contentDescription = "Next month" }
             ) { Text("›", style = MaterialTheme.typography.titleLarge) }
         }
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Wk",
+                modifier = Modifier.width(36.dp),
+                color = SolColors.Muted,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelSmall
+            )
             WeekdayLabels.forEach { label ->
                 Text(
                     text = label,
@@ -761,75 +784,67 @@ internal fun HistoryCalendar(
                 )
             }
         }
-        if (onSelectDay != null) {
-            weeks.forEach { week ->
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    week.days.forEach { day ->
-                        val selected = day.date == selectedDay
-                        val color = when {
-                            day.date == today -> SolColors.Forecast
-                            !day.inMonth -> Color(0xFF5C6B82)
-                            else -> SolColors.Ink
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(2.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected) SolColors.TableStripe else Color.Transparent)
-                                .then(
-                                    if (selected) {
-                                        Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                                .clickable { onSelectDay(day.date) }
-                                .padding(vertical = 8.dp)
-                                .semantics { contentDescription = "Day ${day.date}" },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = day.date.dayOfMonth.toString(),
-                                color = color,
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        if (onSelectDay == null) weeks.forEach { week ->
-            val selected = week.id == selectedWeek
+        weeks.forEach { week ->
+            val weekOn = week.id == selectedWeek
+            val shape = RoundedCornerShape(8.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (selected) SolColors.TableStripe else SolColors.PanelAlt)
+                    .clip(shape)
+                    .background(if (weekOn) SolColors.TableStripe else Color.Transparent)
                     .then(
-                        if (selected) {
-                            Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
-                        } else {
-                            Modifier
-                        }
+                        if (weekOn) Modifier.border(1.dp, SolColors.Forecast, shape) else Modifier
                     )
-                    .clickable { onSelectWeek(week.id) }
-                    .padding(vertical = 8.dp)
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onSelectWeek(week.id) }
+                        .padding(vertical = 8.dp)
+                        .semantics { contentDescription = "Week ${DetroitCalendar.weekNumber(week.id)}" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = DetroitCalendar.weekNumber(week.id).toString(),
+                        color = if (weekOn) SolColors.Ink else SolColors.Muted,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
                 week.days.forEach { day ->
+                    val dayOn = !weekOn && day.date == selectedDay
                     val color = when {
                         day.date == today -> SolColors.Forecast
                         !day.inMonth -> Color(0xFF5C6B82)
                         else -> SolColors.Ink
                     }
-                    Text(
-                        text = day.date.dayOfMonth.toString(),
-                        modifier = Modifier.weight(1f),
-                        color = color,
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 1.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (dayOn) SolColors.TableStripe else Color.Transparent)
+                            .then(
+                                if (dayOn) {
+                                    Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(8.dp))
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .clickable { onSelectDay?.invoke(day.date) }
+                            .padding(vertical = 8.dp)
+                            .semantics { contentDescription = "Day ${day.date}" },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = day.date.dayOfMonth.toString(),
+                            color = color,
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
                 }
             }
         }
