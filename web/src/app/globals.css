@@ -58,7 +58,18 @@ code { color: #F5C542; }
 .cal-week .wk { color: #E8EEF7; font-size: 0.92rem; font-weight: 650; }
 .cal-week .wk:hover { background: #1C2B45; border-radius: 8px; }
 .cal-week.selected .wk:hover { background: transparent; }
-.today-dot { display: block; width: 4px; height: 4px; border-radius: 50%; background: #F5C542; margin: 2px auto 0; }
+.cal-week button.day { position: relative; }
+.today-dot {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  margin: 0;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #F5C542;
+}
 .month-jump { background: transparent; color: inherit; font: inherit; font-weight: 650; padding: 4px 8px; cursor: pointer; }
 .month-jump:hover { background: #1C2B45; }
 .period { color: #E8EEF7; font-size: 1.05rem; font-weight: 650; margin: 0 0 8px; }
@@ -71,7 +82,7 @@ button, input {
   font-weight: 600;
 }
 button { cursor: pointer; }
-button.on, button.chip.on { background: #2A4163; color: #fff; outline: 1px solid #F5C542; }
+button.on, button.chip.on { background: #2A4163; color: #fff; outline: none; }
 button.gold { background: #F5C542; color: #1A1403; }
 .panel {
   background: #152036;

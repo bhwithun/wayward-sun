@@ -207,7 +207,7 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "history-day-2.8.0b.png") {
+        captureSized(width, height, "history-day-2.8.0c.png") {
             historyScreen(day, month, page, key, layers, weekSelected = false)
         }
         captureSized(width, (420 * density).roundToInt(), "weeknum-closeup-2.8.0b.png") {
@@ -229,7 +229,7 @@ class EcobeeScreenshotTest {
                 }
             }
         }
-        captureSized(width, height, "history-week-2.8.0b.png") {
+        captureSized(width, height, "history-week-2.8.0c.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true)
         }
     }

@@ -487,8 +487,7 @@ private fun LivePane(
             Text(
                 text = hvacSummaryLabel(hvacSummary(ecobee, rangeFrom, rangeTo, now), gasDollarsPerHour),
                 color = SolColors.Muted,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                style = MaterialTheme.typography.bodySmall
             )
         }
         Column(
@@ -615,7 +614,6 @@ internal fun HistoryPane(
                     text = hvacSummaryLabel(hvacSummary(chart.ecobee, from, to, now), gasDollarsPerHour),
                     color = SolColors.Muted,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
             if (pageMatches && history != null && chart != null &&
@@ -844,22 +842,22 @@ internal fun HistoryCalendar(
                             .semantics { contentDescription = "Day ${day.date}" },
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = day.date.dayOfMonth.toString(),
-                                color = color,
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.labelLarge
+                        Text(
+                            text = day.date.dayOfMonth.toString(),
+                            color = color,
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                        if (day.date == today) {
+                            Box(
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 4.dp)
+                                    .size(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(SolColors.Forecast)
                             )
-                            if (day.date == today) {
-                                Box(
-                                    Modifier
-                                        .padding(top = 2.dp)
-                                        .size(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(SolColors.Forecast)
-                                )
-                            }
                         }
                     }
                 }
@@ -894,14 +892,7 @@ private fun LayerChip(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) SolColors.PanelAlt else SolColors.Panel)
-            .then(
-                if (selected) {
-                    Modifier.border(1.dp, SolColors.Forecast, RoundedCornerShape(18.dp))
-                } else {
-                    Modifier
-                }
-            )
+            .background(if (selected) SolColors.TableStripe else SolColors.Panel)
             .clickable { onClick(!selected) }
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center

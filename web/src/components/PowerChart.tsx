@@ -228,7 +228,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   if (oneDay) {
     drawHourAxis(ctx, props.from, props.to, xOf, left, right, top, bottom, height);
   } else if (weekColumns) {
-    drawDayColumns(ctx, props.from, props.to, xOf, left, right, laneTop, props.points, props.now, height);
+    drawDayColumns(ctx, props.from, props.to, xOf, left, right, laneTop, props.points, props.now, height, width);
   }
 
   if (props.now >= props.from && props.now < props.to) {
@@ -253,13 +253,16 @@ function drawDayColumns(
   laneTop: number,
   points: SeriesPoint[],
   now: number,
-  height: number
+  height: number,
+  chartWidth: number
 ) {
   ctx.save();
   ctx.fillStyle = INK;
   ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
   ctx.textAlign = "center";
   const labelY = Math.max(14, laneTop - 10);
+  const kwhY = height - 8;
+  let anyEnergy = false;
   for (let midnight = from; midnight < to; midnight += 24 * 60 * 60 * 1000) {
     const noon = midnight + 12 * 60 * 60 * 1000;
     if (noon < from || noon >= to) continue;
@@ -278,7 +281,14 @@ function drawDayColumns(
       kwh += point.kw * point.hours;
       saw = true;
     }
-    if (saw) ctx.fillText(`${Math.round(kwh)} kWh`, x, height - 8);
+    if (saw) {
+      anyEnergy = true;
+      ctx.fillText(`${Math.round(kwh)}`, x, kwhY);
+    }
+  }
+  if (anyEnergy && chartWidth >= 400) {
+    ctx.textAlign = "left";
+    ctx.fillText("kWh", 4, kwhY);
   }
   ctx.restore();
 }
