@@ -40,6 +40,9 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -63,9 +66,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
@@ -82,11 +82,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -100,6 +98,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -673,29 +672,35 @@ internal fun LivePane(
     }
     if (controls.expanded) {
         val cards = liveFullscreenCards(layers)
-        val pageCount = cards.size + 1
-        val index = controls.pageIndex.coerceIn(0, pageCount - 1)
+        val pages = buildList {
+            add(
+                FullscreenChartPage("power") {
+                    LiveFullscreenPage(0, cards, chartContent, layers, snapshot, weather, now, onOpenSettings)
+                }
+            )
+            cards.forEachIndexed { cardIndex, card ->
+                add(
+                    FullscreenChartPage(card) {
+                        LiveFullscreenPage(cardIndex + 1, cards, chartContent, layers, snapshot, weather, now, onOpenSettings)
+                    }
+                )
+            }
+        }
+        val index = controls.pageIndex.coerceIn(0, pages.lastIndex)
         ExpandedChart(
             modifier = modifier,
             controls = controls,
             legend = legend,
-            pageCount = pageCount,
-            pageIndex = index,
-            showDots = true,
-            title = livePeriodLabel(now, zone),
-            previous = if (index > 0) {
-                { LiveFullscreenPage(index - 1, cards, chartContent, layers, snapshot, weather, now, onOpenSettings) }
-            } else {
-                null
+            pages = pages,
+            startIndex = index,
+            pagerKey = "live",
+            onSettled = { settled ->
+                val delta = settled - controls.pageIndex
+                if (delta != 0) controls.onSwipe(delta)
             },
-            next = if (index < pageCount - 1) {
-                { LiveFullscreenPage(index + 1, cards, chartContent, layers, snapshot, weather, now, onOpenSettings) }
-            } else {
-                null
-            }
-        ) {
-            LiveFullscreenPage(index, cards, chartContent, layers, snapshot, weather, now, onOpenSettings)
-        }
+            showDots = true,
+            title = livePeriodLabel(now, zone)
+        )
         return
     }
     Box(modifier.fillMaxSize()) {
@@ -855,25 +860,42 @@ internal fun HistoryPane(
             )
         }
     }
-    val stepDays = if (weekSelected) 7L else 1L
-    val previousStart = if (canStep(-1)) anchor.minusDays(stepDays) else null
-    val nextStart = if (canStep(1)) anchor.plusDays(stepDays) else null
+    val anchors = if (weekSelected) {
+        DetroitCalendar.fullscreenWeeks(shownWeek, newest, windowFrom, windowTo, earliest)
+    } else {
+        DetroitCalendar.fullscreenDays(shownDay, newest, windowFrom, windowTo, earliest)
+    }
+    val pages = anchors.map { start -> FullscreenChartPage(start, pageFor(start)) }
     if (controls.expanded) {
         ExpandedChart(
             modifier = modifier,
             controls = controls,
             legend = legend,
-            pageCount = 1,
-            pageIndex = 0,
+            pages = pages,
+            startIndex = anchors.indexOf(anchor).coerceAtLeast(0),
+            pagerKey = weekSelected,
+            onSettled = { index ->
+                val target = anchors.getOrNull(index) ?: return@ExpandedChart
+                if (weekSelected) {
+                    val steps = ((target.toEpochDay() - shownWeek.toEpochDay()) / 7).toInt()
+                    if (steps != 0) {
+                        val step = if (steps > 0) 1 else -1
+                        repeat(abs(steps).coerceAtMost(12)) { onShiftWeek(step) }
+                    }
+                } else {
+                    val steps = (target.toEpochDay() - shownDay.toEpochDay()).toInt()
+                    if (steps != 0) {
+                        val step = if (steps > 0) 1 else -1
+                        repeat(abs(steps).coerceAtMost(31)) { onShiftDay(step) }
+                    }
+                }
+            },
             showDots = false,
-            title = historyPeriodLabel(weekSelected, shownDay, shownWeek),
-            previous = previousStart?.let { start -> pageFor(start) },
-            next = nextStart?.let { start -> pageFor(start) },
-            content = pageFor(anchor)
+            title = historyPeriodLabel(weekSelected, shownDay, shownWeek)
         )
         return
     }
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().testTag("history-pane")) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         historyError?.let { StatusBanner(it) }
         if (weekSelected || week != null) {
@@ -973,168 +995,118 @@ private fun LegendScrim(onDismiss: () -> Unit) {
     )
 }
 
+internal class FullscreenChartPage(
+    val key: Any,
+    val content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
+)
+
 @Composable
 private fun ExpandedChart(
     modifier: Modifier,
     controls: ChartControls,
     legend: LegendModel,
-    pageCount: Int,
-    pageIndex: Int,
+    pages: List<FullscreenChartPage>,
+    startIndex: Int,
+    pagerKey: Any,
+    onSettled: (Int) -> Unit,
     showDots: Boolean,
-    title: String,
-    previous: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)?,
-    next: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)?,
-    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
+    title: String
 ) {
-    var full by remember { mutableStateOf<Rect?>(null) }
-    var slide by remember { mutableFloatStateOf(0f) }
-    var widthPx by remember { mutableIntStateOf(0) }
-    LaunchedEffect(controls.previewDragFraction, widthPx) {
-        if (widthPx > 0 && controls.previewDragFraction != 0f) {
-            slide = controls.previewDragFraction * widthPx
+    if (pages.isEmpty()) return
+    val safeStart = startIndex.coerceIn(0, pages.lastIndex)
+    val pagerState = key(pagerKey) {
+        rememberPagerState(initialPage = safeStart) { pages.size }
+    }
+    val fling = PagerDefaults.flingBehavior(
+        state = pagerState,
+        snapPositionalThreshold = PAGER_POSITION_THRESHOLD
+    )
+    LaunchedEffect(pagerState.settledPage) {
+        onSettled(pagerState.settledPage)
+    }
+    if (controls.previewDragFraction != 0f) {
+        SideEffect {
+            pagerState.requestScrollToPage(
+                pagerState.settledPage.coerceIn(0, pages.lastIndex),
+                -controls.previewDragFraction.coerceIn(-0.5f, 0.5f)
+            )
         }
     }
+    var full by remember { mutableStateOf<Rect?>(null) }
     Box(
         modifier
             .fillMaxSize()
+            .testTag("fullscreen-chart")
             .background(SolColors.Navy)
             .onGloballyPositioned { full = it.boundsInRoot() }
             .scaleFromCard(controls.expandProgress, controls.cardBounds, full)
             .padding(fullscreenSafePadding())
     ) {
         Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(32.dp)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f).alignByBaseline(),
-                color = SolColors.Ink,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (showDots && pageCount in 2..6) {
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    repeat(pageCount) { index ->
-                        Box(
-                            Modifier
-                                .size(if (index == pageIndex) 7.dp else 5.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = if (index == pageIndex) 0.9f else 0.35f))
-                        )
-                    }
-                }
-            }
-            LegendButton(
-                open = controls.legendOpen,
-                onClick = controls.onToggleLegend,
-                compact = true,
-                modifier = Modifier.padding(start = 8.dp).alignByBaseline()
-            )
-        }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(SolColors.Panel)
-                .onSizeChanged { widthPx = it.width }
-                .pointerInput(previous != null, next != null, controls.legendOpen) {
-                    if (controls.legendOpen) return@pointerInput
-                    val slop = viewConfiguration.touchSlop
-                    val longPress = viewConfiguration.longPressTimeoutMillis
-                    while (true) {
-                        var dx = 0f
-                        var horizontal = false
-                        var tap = false
-                        val width = size.width.toFloat().coerceAtLeast(1f)
-                        awaitEachGesture {
-                            val down = awaitFirstDown()
-                            val start = down.uptimeMillis
-                            val origin = down.position
-                            var movedX = 0f
-                            var movedY = 0f
-                            var sideways = false
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
-                                if (!change.pressed) {
-                                    val held = change.uptimeMillis - start
-                                    if (!sideways && chartTapFires(false, false, held, longPress)) tap = true
-                                    dx = movedX
-                                    horizontal = sideways
-                                    return@awaitEachGesture
-                                }
-                                movedX = change.position.x - origin.x
-                                movedY = change.position.y - origin.y
-                                if (!sideways && (abs(movedX) > slop || abs(movedY) > slop)) {
-                                    if (abs(movedY) > abs(movedX)) return@awaitEachGesture
-                                    sideways = true
-                                }
-                                if (sideways) {
-                                    change.consume()
-                                    slide = resistedDrag(movedX, canPrev = previous != null, canNext = next != null)
-                                }
-                            }
-                        }
-                        if (tap) {
-                            controls.onChartTap()
-                        } else if (horizontal) {
-                            val delta = pagerDelta(dx, width, canPrev = previous != null, canNext = next != null)
-                            val target = if (delta == 0) 0f else -delta * width
-                            val from = slide
-                            val started = withFrameNanos { it }
-                            while (true) {
-                                val now = withFrameNanos { it }
-                                val t = ((now - started) / 1_000_000f / CHART_EXPAND_MILLIS).coerceIn(0f, 1f)
-                                slide = from + (target - from) * t
-                                if (t >= 1f) break
-                            }
-                            if (delta != 0) {
-                                controls.onSwipe(delta)
-                                slide = 0f
-                            }
-                        }
-                    }
-                }
-        ) {
-            Text("PLOT", color = Color.Yellow, fontSize = 48.sp, modifier = Modifier.align(Alignment.Center))
-            val width = widthPx.toFloat()
-            if (previous != null && width > 0f) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { translationX = slide - width }
-                        .background(SolColors.Panel),
-                    content = previous
-                )
-            }
-            Box(
+            Row(
                 Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { translationX = slide }
-                    .background(SolColors.Panel)
+                    .fillMaxWidth()
+                    .height(32.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                ChartFrame(expanded = true, modifier = Modifier.fillMaxSize(), content = content)
-            }
-            if (next != null && width > 0f) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { translationX = slide + width }
-                        .background(SolColors.Panel),
-                    content = next
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f).alignByBaseline(),
+                    color = SolColors.Ink,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (showDots && pages.size in 2..6) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        repeat(pages.size) { index ->
+                            val selected = index == pagerState.currentPage
+                            Box(
+                                Modifier
+                                    .size(if (selected) 7.dp else 5.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = if (selected) 0.9f else 0.35f))
+                            )
+                        }
+                    }
+                }
+                LegendButton(
+                    open = controls.legendOpen,
+                    onClick = controls.onToggleLegend,
+                    compact = true,
+                    modifier = Modifier.padding(start = 8.dp).alignByBaseline()
                 )
             }
-            if (previous != null) PagerChevron(pointsLeft = true, Modifier.align(Alignment.CenterStart))
-            if (next != null) PagerChevron(pointsLeft = false, Modifier.align(Alignment.CenterEnd))
-        }
-        }
+            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(SolColors.Panel)
+                        .fullscreenChartTap(
+                            enabled = !controls.legendOpen,
+                            onTap = controls.onChartTap
+                        ),
+                    beyondViewportPageCount = 1,
+                    flingBehavior = fling,
+                    userScrollEnabled = !controls.legendOpen,
+                    key = { index -> pages.getOrNull(index)?.key ?: index }
+                ) { index ->
+                    val page = pages.getOrNull(index) ?: return@HorizontalPager
+                    Box(
+                        Modifier.fillMaxSize().background(SolColors.Panel),
+                        content = page.content
+                    )
+                }
+                if (pagerState.canScrollBackward) {
+                    PagerChevron(pointsLeft = true, Modifier.align(Alignment.CenterStart))
+                }
+                if (pagerState.canScrollForward) {
+                    PagerChevron(pointsLeft = false, Modifier.align(Alignment.CenterEnd))
+                }
+            }
         }
         if (controls.legendOpen) {
             LegendScrim(controls.onDismissLegend)

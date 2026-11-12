@@ -74,6 +74,24 @@ class DetroitCalendarTest {
                 LocalDate.of(2026, 11, 1)
             )
         )
+        assertEquals(
+            listOf(LocalDate.of(2026, 11, 8)),
+            DetroitCalendar.fullscreenWeeks(LocalDate.of(2026, 11, 8), today, windowFrom, windowTo, earliest)
+        )
+        assertEquals(
+            listOf(LocalDate.of(2026, 10, 25), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 8)),
+            DetroitCalendar.fullscreenWeeks(
+                LocalDate.of(2026, 11, 8),
+                today,
+                windowFrom,
+                windowTo,
+                LocalDate.of(2026, 11, 1)
+            )
+        )
+        assertEquals(
+            listOf(LocalDate.of(2026, 11, 8), LocalDate.of(2026, 11, 9), LocalDate.of(2026, 11, 10), today),
+            DetroitCalendar.fullscreenDays(today, today, windowFrom, windowTo, earliest)
+        )
     }
 
     @Test
