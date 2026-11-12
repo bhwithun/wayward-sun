@@ -66,7 +66,12 @@ class HistoryApi {
                             at = at,
                             indoorF = indoor,
                             coolSetF = row.optionalDouble("coolF"),
-                            heatSetF = row.optionalDouble("heatF")
+                            heatSetF = row.optionalDouble("heatF"),
+                            heatPumpSec = row.optionalInt("heatPumpSec"),
+                            auxHeatSec = row.optionalInt("auxHeatSec"),
+                            coolSec = row.optionalInt("coolSec"),
+                            fanSec = row.optionalInt("fanSec"),
+                            outdoorF = row.optionalDouble("outdoorF")
                         )
                     )
                 }
@@ -98,6 +103,11 @@ class HistoryApi {
             connection.disconnect()
         }
     }
+}
+
+private fun JSONObject.optionalInt(name: String): Int? {
+    if (!has(name) || isNull(name)) return null
+    return optInt(name)
 }
 
 private fun JSONObject.optionalDouble(name: String): Double? {

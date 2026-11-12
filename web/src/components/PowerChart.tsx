@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
 import {
   ecobeeFillSegments,
+  hvacRuns,
+  type HvacRun,
   prepareEcobee,
   sharedFahrenheitRange,
   temperatureGrid,
@@ -23,6 +25,9 @@ const TEMP = "#E6E1F0";
 const SETPOINT = "#FFF176";
 const TOO_WARM = "#4DA3FF";
 const TOO_COOL = "#FF9800";
+const HEAT_PUMP = "#00897B";
+const AUX_HEAT = "#EF5350";
+const COOL_RUN = "#90CAF9";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;
@@ -37,6 +42,7 @@ export type ChartLayers = {
   buy: boolean;
   sell: boolean;
   ecobee: boolean;
+  hvac: boolean;
 };
 
 export type WeatherMark = { t: number; tempF: number; precipPct: number | null };
@@ -72,12 +78,14 @@ export function PowerChart(props: Props) {
 
 function paint(canvas: HTMLCanvasElement, props: Props) {
   const parent = canvas.parentElement;
-  const width = parent?.clientWidth ?? 640;
-  const height = 320;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = "100%";
+  const width = Math.max(1, parent?.clientWidth ?? 640);
+  const plotHeight = 320;
+  const height = plotHeight;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
-  canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -87,12 +95,12 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const units = axisUnits(props.layers);
   const showTempLabels = props.layers.temp || props.layers.ecobee;
   const left = showTempLabels || units !== "none" ? 52 : 12;
-  const right = width - 12;
+  const right = width - 18;
   const showPower = props.layers.solcast || props.layers.enphase;
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
   const showDegrees = props.layers.temp || props.layers.ecobee;
   const top = showDegrees ? 28 : 16;
-  const bottom = height - (showPower ? 36 : 28);
+  const bottom = plotHeight - (showPower ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -197,13 +205,30 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   }
   if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "line", props.now, dpr);
 
+  const laneH = props.layers.hvac ? 10 : 0;
+  const laneGap = props.layers.hvac ? 4 : 0;
+  const laneTop = top - laneGap - laneH;
+  if (props.layers.hvac) {
+    const trackRight = props.now < props.from ? left : props.now >= props.to ? right : xOf(props.now);
+    drawRuntimeLane(
+      ctx,
+      hvacRuns(ecobee, props.from, Math.min(props.to, props.now), props.now),
+      xOf,
+      left,
+      trackRight,
+      right,
+      laneTop,
+      laneH
+    );
+  }
+
   if (props.now >= props.from && props.now < props.to) {
     const nowX = xOf(props.now);
     ctx.strokeStyle = NOW;
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.moveTo(nowX, top);
+    ctx.moveTo(nowX, props.layers.hvac ? laneTop : top);
     ctx.lineTo(nowX, bottom);
     ctx.stroke();
   }
@@ -288,7 +313,6 @@ function drawFreezeReference(
   const y = yOf(32);
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 4]);
   ctx.beginPath();
@@ -296,9 +320,17 @@ function drawFreezeReference(
   ctx.lineTo(right, y);
   ctx.stroke();
   ctx.setLineDash([]);
+  const text = "32°";
   ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
-  ctx.textAlign = "right";
-  ctx.fillText("32°", right - 2, y - 4);
+  ctx.textAlign = "left";
+  const textWidth = ctx.measureText(text).width;
+  const boxLeft = left + 4;
+  ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
+  ctx.beginPath();
+  ctx.roundRect(boxLeft, y - 13, textWidth + 8, 14, 4);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.fillText(text, boxLeft + 4, y - 3);
   ctx.restore();
 }
 
@@ -423,6 +455,40 @@ function drawEcobee(
     ctx.stroke();
     ctx.restore();
   }
+}
+
+function drawRuntimeLane(
+  ctx: CanvasRenderingContext2D,
+  runs: HvacRun[],
+  xOf: (t: number) => number,
+  left: number,
+  trackRight: number,
+  right: number,
+  laneTop: number,
+  laneHeight: number
+) {
+  if (laneHeight < 1 || right <= left) return;
+  ctx.save();
+  const colorFor = (source: HvacRun["source"]) =>
+    source === "aux" ? AUX_HEAT : source === "cool" ? COOL_RUN : HEAT_PUMP;
+  const trackEnd = Math.min(right, Math.max(left, trackRight));
+  if (trackEnd - left >= 1) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.beginPath();
+    ctx.roundRect(left, laneTop, trackEnd - left, laneHeight, laneHeight / 2);
+    ctx.fill();
+  }
+  for (const run of runs) {
+    const x1 = Math.min(right, Math.max(left, xOf(run.start)));
+    const x2 = Math.min(right, Math.max(left, xOf(run.end)));
+    const span = x2 - x1;
+    if (span < 1) continue;
+    ctx.fillStyle = colorFor(run.source);
+    ctx.beginPath();
+    ctx.roundRect(x1, laneTop, span, laneHeight, Math.min(laneHeight / 2, span / 2));
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | "rates" {

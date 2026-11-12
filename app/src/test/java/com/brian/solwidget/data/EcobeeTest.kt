@@ -12,6 +12,43 @@ class EcobeeTest {
     private val t0: Instant = Instant.parse("2026-01-15T15:00:00Z")
 
     @Test
+    fun hvacSummaryPricesAuxGasAndKeepsHeatPumpSeparate() {
+        val cold = sample(t0, 65.0, 75.0, 66.0).copy(heatPumpSec = 300, auxHeatSec = 180, coolSec = 0, fanSec = 300)
+        val mild = sample(t0.plusSeconds(300), 68.0, 75.0, 66.0).copy(heatPumpSec = 240, auxHeatSec = 0, coolSec = 0)
+        val summary = hvacSummary(listOf(cold, mild), t0, t0.plusSeconds(3600), t0.plusSeconds(3600))
+        assertEquals(540.0 / 3600.0, summary.heatPumpHours, 0.0001)
+        assertEquals(180.0 / 3600.0, summary.auxHours, 0.0001)
+        assertEquals(summary.auxHours * 0.60, summary.gasCostDollars, 0.0001)
+        val coldRuns = hvacRuns(listOf(cold), t0, t0.plusSeconds(3600), t0.plusSeconds(3600))
+        assertEquals(1, coldRuns.size)
+        assertEquals(HvacSource.AUX, coldRuns.single().source)
+        val mildRuns = hvacRuns(listOf(mild), t0, t0.plusSeconds(3600), t0.plusSeconds(3600))
+        assertEquals(1, mildRuns.size)
+        assertEquals(HvacSource.HEAT_PUMP, mildRuns.single().source)
+        assertTrue(hvacSummaryLabel(summary).contains("Aux heat"))
+        assertTrue(hvacSummaryLabel(summary).contains("Gas ≈"))
+        assertTrue(hvacSummaryLabel(hvacSummary(listOf(mild), t0, t0.plusSeconds(3600))).startsWith("Heat pump"))
+        assertTrue(!hvacSummaryLabel(hvacSummary(listOf(mild), t0, t0.plusSeconds(3600))).contains("Gas"))
+    }
+
+    @Test
+    fun overlapSlotIsAuxAndContiguousAuxMerges() {
+        val samples = listOf(
+            sample(t0, 64.0, 75.0, 66.0).copy(heatPumpSec = 0, auxHeatSec = 300),
+            sample(t0.plusSeconds(300), 64.0, 75.0, 66.0).copy(heatPumpSec = 120, auxHeatSec = 180),
+            sample(t0.plusSeconds(600), 70.0, 75.0, 66.0).copy(heatPumpSec = 240, auxHeatSec = 0)
+        )
+        val runs = hvacRuns(samples, t0, t0.plusSeconds(3600), t0.plusSeconds(3600))
+        assertEquals(2, runs.size)
+        assertEquals(HvacSource.AUX, runs[0].source)
+        assertEquals(t0, runs[0].start)
+        assertEquals(t0.plusSeconds(600), runs[0].end)
+        assertEquals(HvacSource.HEAT_PUMP, runs[1].source)
+        assertEquals(t0.plusSeconds(600), runs[1].start)
+        assertEquals(t0.plusSeconds(900), runs[1].end)
+    }
+
+    @Test
     fun aboveCoolSetpointIsACoolingGap() {
         val mark = sample(t0, indoor = 75.0, cool = 74.0, heat = 68.0).classify()
         assertEquals(EcobeeBand.COOLING, mark.band)

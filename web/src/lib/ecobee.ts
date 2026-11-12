@@ -3,6 +3,36 @@ export type EcobeeSample = {
   indoorF: number;
   coolF: number | null;
   heatF: number | null;
+  heatPumpSec?: number | null;
+  auxHeatSec?: number | null;
+  coolSec?: number | null;
+  fanSec?: number | null;
+  outdoorF?: number | null;
+};
+
+export const GAS_AUX_DOLLARS_PER_HOUR = 0.6;
+
+/** Aux wins a slot that also ran the heat pump. */
+export type HvacSource = "heatPump" | "aux" | "cool";
+
+export type HvacRun = {
+  start: number;
+  end: number;
+  source: HvacSource;
+};
+
+export type HvacPresence = {
+  heatPump: boolean;
+  aux: boolean;
+  cool: boolean;
+};
+
+export type HvacSummary = {
+  heatPumpHours: number;
+  auxHours: number;
+  coolHours: number;
+  fanHours: number;
+  gasCostDollars: number;
 };
 
 export type EcobeeBand = "deadband" | "cooling" | "heating";
@@ -45,6 +75,93 @@ export function parseEcobeeSetpoint(raw: string | null | undefined): number | nu
   if (text === "" || text === "off" || text === "null" || text === "nan") return null;
   const value = Number(text);
   return Number.isFinite(value) ? value : null;
+}
+
+export function hvacSummary(samples: EcobeeSample[], from: number, to: number, now?: number): HvacSummary {
+  let heat = 0;
+  let aux = 0;
+  let cool = 0;
+  let fan = 0;
+  for (const sample of samples) {
+    if (sample.t < from || sample.t >= to) continue;
+    if (now != null && sample.t > now) continue;
+    heat += sample.heatPumpSec ?? 0;
+    aux += sample.auxHeatSec ?? 0;
+    cool += sample.coolSec ?? 0;
+    fan += sample.fanSec ?? 0;
+  }
+  const auxHours = aux / 3600;
+  return {
+    heatPumpHours: heat / 3600,
+    auxHours,
+    coolHours: cool / 3600,
+    fanHours: fan / 3600,
+    gasCostDollars: auxHours * GAS_AUX_DOLLARS_PER_HOUR,
+  };
+}
+
+export function hvacSummaryLabel(summary: HvacSummary, dollarsPerHour = GAS_AUX_DOLLARS_PER_HOUR): string {
+  const hours = (value: number) => `${value.toFixed(1)} h`;
+  const parts: string[] = [];
+  if (summary.heatPumpHours >= 0.05) parts.push(`Heat pump ${hours(summary.heatPumpHours)}`);
+  if (summary.auxHours >= 0.05) parts.push(`Aux heat ${hours(summary.auxHours)}`);
+  if (summary.coolHours >= 0.05) parts.push(`Cool ${hours(summary.coolHours)}`);
+  if (summary.auxHours >= 0.05) parts.push(`Gas ≈ $${(summary.auxHours * dollarsPerHour).toFixed(2)}`);
+  return parts.join(" · ");
+}
+
+export function hvacPresence(samples: EcobeeSample[], from: number, to: number, now?: number): HvacPresence {
+  let heatPump = false;
+  let aux = false;
+  let cool = false;
+  for (const sample of samples) {
+    if (sample.t < from || sample.t >= to) continue;
+    if (now != null && sample.t > now) continue;
+    if ((sample.heatPumpSec ?? 0) > 0) heatPump = true;
+    if ((sample.auxHeatSec ?? 0) > 0) aux = true;
+    if ((sample.coolSec ?? 0) > 0) cool = true;
+  }
+  return { heatPump, aux, cool };
+}
+
+/** Aux covers a slot that also ran the heat pump. */
+export function hvacSource(sample: EcobeeSample): HvacSource | null {
+  if ((sample.auxHeatSec ?? 0) > 0) return "aux";
+  if ((sample.coolSec ?? 0) > 0) return "cool";
+  if ((sample.heatPumpSec ?? 0) > 0) return "heatPump";
+  return null;
+}
+
+/** Contiguous samples of one source. Idle slots and holes longer than 15 minutes break the segment. */
+export function hvacRuns(samples: EcobeeSample[], from: number, to: number, now?: number): HvacRun[] {
+  const window = samples
+    .filter((sample) => sample.t >= from && sample.t < to && (now == null || sample.t <= now))
+    .sort((a, b) => a.t - b.t);
+  const runs: HvacRun[] = [];
+  let start: number | null = null;
+  let end = 0;
+  let source: HvacSource | null = null;
+  const flush = () => {
+    if (start != null && source != null && end > start) runs.push({ start, end, source });
+    start = null;
+    source = null;
+  };
+  window.forEach((sample, index) => {
+    const next = window[index + 1];
+    const previous = window[index - 1];
+    const slotSec = next ? Math.min(20 * 60, Math.max(60, (next.t - sample.t) / 1000)) : 300;
+    const nextSource = hvacSource(sample);
+    const gap = previous != null && sample.t - previous.t > 15 * 60 * 1000;
+    if (gap || nextSource == null || nextSource !== source) flush();
+    if (nextSource == null) return;
+    if (start == null) {
+      start = sample.t;
+      source = nextSource;
+    }
+    end = sample.t + slotSec * 1000;
+  });
+  flush();
+  return runs;
 }
 
 export function ecobeeFillSegments(run: EcobeeMark[]): EcobeeMark[][] {
@@ -195,13 +312,14 @@ export function tightestTempFit(dataMin: number, dataMax: number): { step: numbe
     return intervals >= 2 && intervals <= 6;
   });
   const pool = readable.length > 0 ? readable : fits;
-  return pool.reduce((best, fit) => {
-    const span = fit.max - fit.min;
+  const fit = pool.reduce((best, next) => {
+    const span = next.max - next.min;
     const bestSpan = best.max - best.min;
-    if (span < bestSpan - 1e-6) return fit;
-    if (Math.abs(span - bestSpan) <= 1e-6 && fit.step > best.step) return fit;
+    if (span < bestSpan - 1e-6) return next;
+    if (Math.abs(span - bestSpan) <= 1e-6 && next.step > best.step) return next;
     return best;
   });
+  return fit;
 }
 
 export function chooseTempStep(span: number): number {

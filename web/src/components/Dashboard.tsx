@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PowerChart, type ChartLayers } from "@/components/PowerChart";
-import type { EcobeeSample } from "@/lib/ecobee";
+import { hvacPresence, hvacSummary, hvacSummaryLabel, type EcobeeSample } from "@/lib/ecobee";
 import {
   BASE_MID_PEAK_CENTS,
   BASE_OFF_PEAK_CENTS,
@@ -44,6 +44,7 @@ const DEFAULT_LAYERS: ChartLayers = {
   buy: true,
   sell: true,
   ecobee: true,
+  hvac: false,
 };
 
 function readLayers(): ChartLayers {
@@ -60,6 +61,7 @@ function readLayers(): ChartLayers {
       buy: parsed.buy !== false,
       sell: parsed.sell !== false,
       ecobee: parsed.ecobee !== false,
+      hvac: parsed.hvac === true,
     };
   } catch {
     return DEFAULT_LAYERS;
@@ -89,7 +91,17 @@ type HistoryPoint = {
   outflowCents: number | null;
 };
 
-type EcobeeBody = { t: string; indoorF: number; coolF: number | null; heatF: number | null };
+type EcobeeBody = {
+  t: string;
+  indoorF: number;
+  coolF: number | null;
+  heatF: number | null;
+  heatPumpSec?: number | null;
+  auxHeatSec?: number | null;
+  coolSec?: number | null;
+  fanSec?: number | null;
+  outdoorF?: number | null;
+};
 
 type HistoryBody = {
   points?: HistoryPoint[];
@@ -190,6 +202,7 @@ export function Dashboard() {
   }, [load]);
 
   const chart = chartModel(history, clock, tab === "history" ? selectedWeek : null, todayParts);
+  const runtime = hvacPresence(chart.ecobee, chart.fromMs, chart.toMs, clock);
   const monthName = MONTH_LABEL.format(new Date(Date.UTC(month.year, month.month - 1, 1)));
 
   return (
@@ -216,6 +229,7 @@ export function Dashboard() {
         <Chip label="Buy" on={layers.buy} onClick={() => setLayers({ ...layers, buy: !layers.buy })} />
         <Chip label="Sell" on={layers.sell} onClick={() => setLayers({ ...layers, sell: !layers.sell })} />
         <Chip label="Ecobee" on={layers.ecobee} onClick={() => setLayers({ ...layers, ecobee: !layers.ecobee })} />
+        <Chip label="HVAC" on={layers.hvac} onClick={() => setLayers({ ...layers, hvac: !layers.hvac })} />
       </div>
 
       {status && <p className="banner">{status}</p>}
@@ -233,12 +247,35 @@ export function Dashboard() {
               <span>
                 <i className="swatch hairline" style={{ background: "#FFF176" }} /> Setpoint
               </span>
-              <span>
-                <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Too warm
-              </span>
-              <span>
-                <i className="swatch" style={{ background: "rgba(255,152,0,0.50)" }} /> Too cool
-              </span>
+              {chart.tooWarm && (
+                <span>
+                  <i className="swatch" style={{ background: "rgba(77,163,255,0.40)" }} /> Too warm
+                </span>
+              )}
+              {chart.tooCool && (
+                <span>
+                  <i className="swatch" style={{ background: "rgba(255,152,0,0.50)" }} /> Too cool
+                </span>
+              )}
+            </div>
+          )}
+          {layers.hvac && (runtime.heatPump || runtime.aux || runtime.cool) && (
+            <div className="legend-row">
+              {runtime.heatPump && (
+                <span>
+                  <i className="swatch" style={{ background: "#00897B" }} /> Heat pump
+                </span>
+              )}
+              {runtime.aux && (
+                <span>
+                  <i className="swatch" style={{ background: "#EF5350" }} /> Aux heat
+                </span>
+              )}
+              {runtime.cool && (
+                <span>
+                  <i className="swatch" style={{ background: "#90CAF9" }} /> Cool
+                </span>
+              )}
             </div>
           )}
           {(layers.precip || layers.buy || layers.sell) && (
@@ -261,6 +298,11 @@ export function Dashboard() {
           demo={cache?.source === "demo"}
           ecobee={chart.ecobee}
         />
+        {layers.hvac && (
+          <p className="muted hvac-summary" title="Aux heat is about $0.60 per runtime hour">
+            {hvacSummaryLabel(hvacSummary(chart.ecobee, chart.fromMs, chart.toMs, clock))}
+          </p>
+        )}
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
 
@@ -396,16 +438,30 @@ function chartModel(
       indoorF: sample.indoorF,
       coolF: sample.coolF,
       heatF: sample.heatF,
+      heatPumpSec: sample.heatPumpSec ?? null,
+      auxHeatSec: sample.auxHeatSec ?? null,
+      coolSec: sample.coolSec ?? null,
+      fanSec: sample.fanSec ?? null,
+      outdoorF: sample.outdoorF ?? null,
     }))
     .filter((sample) => Number.isFinite(sample.t) && sample.t >= fromMs && sample.t < toMs);
   const sun: SunSpan[] = (history?.sun ?? [])
     .map((day) => ({ sunrise: Date.parse(day.sunrise), sunset: Date.parse(day.sunset) }))
     .filter((day) => day.sunset >= fromMs && day.sunrise < toMs);
   const start = week ? parseYmd(week.id) : liveWindow(today).from;
+  let tooWarm = false;
+  let tooCool = false;
+  for (const sample of ecobee) {
+    if (sample.t > clock) continue;
+    if (sample.coolF != null && sample.indoorF > sample.coolF) tooWarm = true;
+    else if (sample.heatF != null && sample.indoorF < sample.heatF) tooCool = true;
+  }
   return {
     points,
     weather,
     sun,
+    tooWarm,
+    tooCool,
     fromMs,
     toMs,
     rates: rows,

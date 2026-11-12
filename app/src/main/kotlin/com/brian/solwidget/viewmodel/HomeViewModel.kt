@@ -8,6 +8,7 @@ import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.EcobeeSample
+import com.brian.solwidget.data.GAS_AUX_DOLLARS_PER_HOUR
 import com.brian.solwidget.data.ForecastRepository
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryApi
@@ -56,7 +57,8 @@ data class HomeUiState(
     val historyError: String? = null,
     val livePast: List<PowerPoint>? = null,
     val liveEcobee: List<EcobeeSample> = emptyList(),
-    val livePastKey: String? = null
+    val livePastKey: String? = null,
+    val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -86,7 +88,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     weather = weatherCached,
                     isLoading = false,
                     now = Instant.now(),
-                    layers = storage.chartLayersOnce()
+                    layers = storage.chartLayersOnce(),
+                    gasDollarsPerHour = storage.gasAuxDollarsOnce()
                 )
             }
             refresh(force = true)
@@ -233,6 +236,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
             }
+        }
+    }
+
+    fun reloadGasRate() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(gasDollarsPerHour = storage.gasAuxDollarsOnce()) }
         }
     }
 

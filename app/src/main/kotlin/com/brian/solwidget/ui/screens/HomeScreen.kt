@@ -73,8 +73,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brian.solwidget.R
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.hvacSummary
+import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.DetroitCalendar
+import com.brian.solwidget.data.ecobeeFillPresence
+import com.brian.solwidget.data.hvacPresence
 import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryPage
@@ -128,6 +132,7 @@ fun HomeScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event != Lifecycle.Event.ON_START) return@LifecycleEventObserver
             val activity = context as? Activity ?: return@LifecycleEventObserver
+            viewModel.reloadGasRate()
             AppUpdate.refreshAsync(activity) { offer ->
                 if (offer != null && AppUpdate.claimPrompt(activity, offer)) readyOffer = offer
             }
@@ -257,7 +262,8 @@ fun HomeScreen(
                                 expandedPanel = expandedPanel,
                                 onToggleExpand = { panel ->
                                     expandedPanel = if (expandedPanel == panel) null else panel
-                                }
+                                },
+                                gasDollarsPerHour = state.gasDollarsPerHour
                             )
                         } else {
                             HistoryPane(
@@ -272,7 +278,8 @@ fun HomeScreen(
                                 onOpenLayers = { openDrawer() },
                                 onShiftMonth = viewModel::shiftHistoryMonth,
                                 onShiftWeek = viewModel::shiftHistoryWeek,
-                                onSelectWeek = viewModel::selectHistoryWeek
+                                onSelectWeek = viewModel::selectHistoryWeek,
+                                gasDollarsPerHour = state.gasDollarsPerHour
                             )
                         }
                     }
@@ -419,6 +426,7 @@ private fun LivePane(
     onOpenSettings: () -> Unit,
     expandedPanel: MetaPanel?,
     onToggleExpand: (MetaPanel) -> Unit,
+    gasDollarsPerHour: Double,
     modifier: Modifier = Modifier
 ) {
     if (snapshot == null) {
@@ -458,7 +466,25 @@ private fun LivePane(
                 ecobee = ecobee
             )
         }
-        ChartLegend(layers = layers, onOpen = onOpenLayers)
+        val (tooWarm, tooCool) = ecobeeFillPresence(ecobee, rangeFrom, rangeTo, now)
+        val runtime = hvacPresence(ecobee, rangeFrom, rangeTo, now)
+        ChartLegend(
+            layers = layers,
+            onOpen = onOpenLayers,
+            showTooWarm = tooWarm,
+            showTooCool = tooCool,
+            showHeatPump = runtime.heatPump,
+            showGasAux = runtime.aux,
+            showCoolRun = runtime.cool
+        )
+        if (layers.hvac) {
+            Text(
+                text = hvacSummaryLabel(hvacSummary(ecobee, rangeFrom, rangeTo, now), gasDollarsPerHour),
+                color = SolColors.Muted,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -500,6 +526,7 @@ private fun HistoryPane(
     onShiftMonth: (Int) -> Unit,
     onShiftWeek: (Int) -> Unit,
     onSelectWeek: (LocalDate) -> Unit,
+    gasDollarsPerHour: Double,
     modifier: Modifier = Modifier
 ) {
     val today = DetroitCalendar.today(now)
@@ -543,7 +570,29 @@ private fun HistoryPane(
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
             }
-            ChartLegend(layers = layers, onOpen = onOpenLayers)
+            val (tooWarm, tooCool) = if (chart != null) {
+                ecobeeFillPresence(chart.ecobee, from, to, now)
+            } else {
+                false to false
+            }
+            val runtime = if (chart != null) hvacPresence(chart.ecobee, from, to, now) else null
+            ChartLegend(
+                layers = layers,
+                onOpen = onOpenLayers,
+                showTooWarm = tooWarm,
+                showTooCool = tooCool,
+                showHeatPump = runtime?.heatPump == true,
+                showGasAux = runtime?.aux == true,
+                showCoolRun = runtime?.cool == true
+            )
+            if (layers.hvac && chart != null) {
+                Text(
+                    text = hvacSummaryLabel(hvacSummary(chart.ecobee, from, to, now), gasDollarsPerHour),
+                    color = SolColors.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
             if (pageMatches && history != null && chart != null &&
                 chart.points.isEmpty() && chart.weather.isEmpty() && chart.ecobee.isEmpty() &&
                 historyError == null

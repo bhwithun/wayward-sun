@@ -47,9 +47,14 @@ import com.brian.solwidget.ui.theme.SolColors
 fun ChartLegend(
     layers: ChartLayers,
     onOpen: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showTooWarm: Boolean = true,
+    showTooCool: Boolean = true,
+    showHeatPump: Boolean = false,
+    showGasAux: Boolean = false,
+    showCoolRun: Boolean = false
 ) {
-    val groups = legendGroups(layers)
+        val groups = legendGroups(layers, showTooWarm, showTooCool, showHeatPump, showGasAux, showCoolRun)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -164,6 +169,12 @@ fun LayerDrawerContent(
             layers.ecobee,
             swatch = { EcobeeSwatch() }
         ) { onToggle(ChartLayer.ECOBEE, it) }
+        LayerSwitch(
+            "HVAC",
+            SolColors.HeatPump,
+            layers.hvac,
+            swatch = { HvacSwatch() }
+        ) { onToggle(ChartLayer.HVAC, it) }
         TextButton(
             onClick = onReset,
             modifier = Modifier.padding(start = 8.dp, top = 4.dp)
@@ -208,7 +219,14 @@ private data class LegendItem(
     val mark: LegendMark = LegendMark.DOT
 )
 
-private fun legendGroups(layers: ChartLayers): List<List<LegendItem>> = buildList {
+private fun legendGroups(
+    layers: ChartLayers,
+    showTooWarm: Boolean,
+    showTooCool: Boolean,
+    showHeatPump: Boolean,
+    showGasAux: Boolean,
+    showCoolRun: Boolean
+): List<List<LegendItem>> = buildList {
     val trace = buildList {
         if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
         if (layers.enphase) add(LegendItem("Enphase", SolColors.Live))
@@ -216,13 +234,20 @@ private fun legendGroups(layers: ChartLayers): List<List<LegendItem>> = buildLis
     }
     if (trace.isNotEmpty()) add(trace)
     if (layers.ecobee) {
-        add(
-            listOf(
-                LegendItem("Setpoint", SolColors.Setpoint, LegendMark.HAIRLINE),
-                LegendItem("Too warm", SolColors.CoolGap.copy(alpha = 0.40f), LegendMark.SQUARE),
-                LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.50f), LegendMark.SQUARE)
-            )
-        )
+        val home = buildList {
+            add(LegendItem("Setpoint", SolColors.Setpoint, LegendMark.HAIRLINE))
+            if (showTooWarm) add(LegendItem("Too warm", SolColors.CoolGap.copy(alpha = 0.40f), LegendMark.SQUARE))
+            if (showTooCool) add(LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.50f), LegendMark.SQUARE))
+        }
+        add(home)
+    }
+    if (layers.hvac) {
+        val runtime = buildList {
+            if (showHeatPump) add(LegendItem("Heat pump", SolColors.HeatPump, LegendMark.SQUARE))
+            if (showGasAux) add(LegendItem("Aux heat", SolColors.AuxHeat, LegendMark.SQUARE))
+            if (showCoolRun) add(LegendItem("Cool", SolColors.CoolRun, LegendMark.SQUARE))
+        }
+        if (runtime.isNotEmpty()) add(runtime)
     }
     val other = buildList {
         if (layers.precipitation) add(LegendItem("Precip", SolColors.Precip.copy(alpha = 1f)))
@@ -240,6 +265,15 @@ private fun LayerSubhead(title: String) {
         style = MaterialTheme.typography.labelSmall,
         modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp)
     )
+}
+
+@Composable
+private fun HvacSwatch() {
+    Row(horizontalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.size(14.dp)) {
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.HeatPump))
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.AuxHeat))
+        Box(Modifier.weight(1f).fillMaxHeight().background(SolColors.CoolRun))
+    }
 }
 
 @Composable

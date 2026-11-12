@@ -4,6 +4,8 @@ import {
   classifyEcobee,
   downsampleEcobee,
   ecobeeFillSegments,
+  hvacRuns,
+  hvacSummary,
   parseEcobeeSetpoint,
   prepareEcobee,
   sharedFahrenheitRange,
@@ -64,6 +66,42 @@ describe("ecobee bands", () => {
       [75, 76],
       [66, 65],
     ]);
+  });
+});
+
+describe("hvac runtime", () => {
+  it("stacks a cold aux hour and prices the gas", () => {
+    const samples = [
+      { ...sample(t0, 65, 75, 66), heatPumpSec: 300, auxHeatSec: 180, coolSec: 0, fanSec: 300 },
+      { ...sample(t0 + 300_000, 64, 75, 66), heatPumpSec: 60, auxHeatSec: 0, coolSec: 0, fanSec: 60 },
+    ];
+    const summary = hvacSummary(samples, t0, t0 + 3_600_000, t0 + 3_600_000);
+    expect(summary.heatPumpHours).toBeCloseTo(360 / 3600);
+    expect(summary.auxHours).toBeCloseTo(180 / 3600);
+    expect(summary.gasCostDollars).toBeCloseTo((180 / 3600) * 0.6);
+    const runs = hvacRuns(samples, t0, t0 + 3_600_000, t0 + 3_600_000);
+    expect(runs.map((run) => run.source)).toEqual(["aux", "heatPump"]);
+  });
+
+  it("merges contiguous aux and gives an overlap slot the aux color", () => {
+    const samples = [
+      { ...sample(t0, 64, 75, 66), heatPumpSec: 0, auxHeatSec: 300 },
+      { ...sample(t0 + 300_000, 64, 75, 66), heatPumpSec: 120, auxHeatSec: 180 },
+      { ...sample(t0 + 600_000, 70, 75, 66), heatPumpSec: 240, auxHeatSec: 0 },
+    ];
+    const runs = hvacRuns(samples, t0, t0 + 3_600_000, t0 + 3_600_000);
+    expect(runs).toEqual([
+      { start: t0, end: t0 + 600_000, source: "aux" },
+      { start: t0 + 600_000, end: t0 + 900_000, source: "heatPump" },
+    ]);
+  });
+
+  it("keeps a mild hour on the heat pump", () => {
+    const samples = [{ ...sample(t0, 68, 75, 66), heatPumpSec: 240, auxHeatSec: 0, coolSec: 0 }];
+    const summary = hvacSummary(samples, t0, t0 + 600_000);
+    expect(summary.auxHours).toBe(0);
+    expect(summary.heatPumpHours).toBeCloseTo(240 / 3600);
+    expect(summary.gasCostDollars).toBe(0);
   });
 });
 

@@ -324,6 +324,11 @@ export type EcobeeRow = {
   indoorF: number;
   coolF: number | null;
   heatF: number | null;
+  heatPumpSec?: number | null;
+  auxHeatSec?: number | null;
+  coolSec?: number | null;
+  fanSec?: number | null;
+  outdoorF?: number | null;
 };
 
 /**
@@ -333,22 +338,54 @@ export type EcobeeRow = {
 export async function loadEcobee(fromIso: string, toIso: string): Promise<EcobeeRow[]> {
   try {
     const rows = await sql()`
+      SELECT sampled_at, indoor_f, cool_set_f, heat_set_f,
+             heat_pump_sec, aux_heat_sec, cool_sec, fan_sec, outdoor_f
+      FROM ecobee_samples
+      WHERE sampled_at >= ${fromIso}::timestamptz
+        AND sampled_at < ${toIso}::timestamptz
+      ORDER BY sampled_at
+    `;
+    return (rows as Array<Record<string, unknown>>).map(mapEcobee);
+  } catch (error) {
+    if (isMissingEcobeeTable(error)) return [];
+    if (!isMissingEcobeeRuntime(error)) throw error;
+    const rows = await sql()`
       SELECT sampled_at, indoor_f, cool_set_f, heat_set_f
       FROM ecobee_samples
       WHERE sampled_at >= ${fromIso}::timestamptz
         AND sampled_at < ${toIso}::timestamptz
       ORDER BY sampled_at
     `;
-    return (rows as Array<Record<string, unknown>>).map((row) => ({
-      t: new Date(String(row.sampled_at)).toISOString(),
-      indoorF: Number(row.indoor_f),
-      coolF: num(row.cool_set_f),
-      heatF: num(row.heat_set_f),
-    }));
-  } catch (error) {
-    if (isMissingEcobeeTable(error)) return [];
-    throw error;
+    return (rows as Array<Record<string, unknown>>).map(mapEcobee);
   }
+}
+
+function mapEcobee(row: Record<string, unknown>): EcobeeRow {
+  return {
+    t: new Date(String(row.sampled_at)).toISOString(),
+    indoorF: Number(row.indoor_f),
+    coolF: num(row.cool_set_f),
+    heatF: num(row.heat_set_f),
+    heatPumpSec: intOrNull(row.heat_pump_sec),
+    auxHeatSec: intOrNull(row.aux_heat_sec),
+    coolSec: intOrNull(row.cool_sec),
+    fanSec: intOrNull(row.fan_sec),
+    outdoorF: num(row.outdoor_f),
+  };
+}
+
+function intOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+}
+
+export function isMissingEcobeeRuntime(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code) : "";
+  if (code === "42703") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /heat_pump_sec|aux_heat_sec|cool_sec|fan_sec|outdoor_f/i.test(message) && /does not exist/i.test(message);
 }
 
 export function isMissingEcobeeTable(error: unknown): boolean {

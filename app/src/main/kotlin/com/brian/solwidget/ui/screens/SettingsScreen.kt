@@ -80,6 +80,14 @@ fun SettingsScreen(
                 singleLine = true
             )
             OutlinedTextField(
+                value = state.gasDollars,
+                onValueChange = viewModel::onGasDollarsChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Aux heat, $ per runtime hour") },
+                singleLine = true,
+                supportingText = { Text("Gas cost for aux heat. About $0.60/h on Consumers Energy.") }
+            )
+            OutlinedTextField(
                 value = state.placeQuery,
                 onValueChange = viewModel::onPlaceQueryChange,
                 modifier = Modifier.fillMaxWidth(),

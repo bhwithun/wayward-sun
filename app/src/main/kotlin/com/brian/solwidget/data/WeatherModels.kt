@@ -44,7 +44,7 @@ data class DayTempRange(
     val lowF: Int,
     val highF: Int
 ) {
-    val label: String get() = if (lowF == highF) "$lowF" else "$lowF-$highF"
+    val label: String get() = if (lowF == highF) "$lowF°" else "Lo $lowF° · Hi $highF°"
 }
 
 fun dayTempRanges(weather: List<WeatherPoint>, zone: ZoneId): Map<LocalDate, DayTempRange> {

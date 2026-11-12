@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -35,6 +36,9 @@ import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.data.ecobeeFillSegments
+import com.brian.solwidget.data.HvacRun
+import com.brian.solwidget.data.HvacSource
+import com.brian.solwidget.data.hvacRuns
 import com.brian.solwidget.data.forecastStrokes
 import com.brian.solwidget.data.formatTempBound
 import com.brian.solwidget.data.prepareEcobee
@@ -52,6 +56,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 private val DayLabel = DateTimeFormatter.ofPattern("EEE d")
 
@@ -100,8 +105,11 @@ fun PowerChart(
         val right = size.width - 12.dp.toPx()
         val dayBaseline = 16.dp.toPx()
         val tempBaseline = 38.dp.toPx()
-        val top = if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()
+        val laneHeight = if (layers.hvac) 9.dp.toPx() else 0f
+        val laneGap = if (layers.hvac) 3.dp.toPx() else 0f
+        val top = (if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()) + laneHeight + laneGap
         val bottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
+        val laneTop = top - laneGap - laneHeight
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
@@ -319,6 +327,30 @@ fun PowerChart(
         if (isDemo) {
             drawDemoWatermark(native, left, top, right, bottom)
         }
+        if (layers.hvac) {
+            val trackRight = when {
+                now.isBefore(startInstant) -> left
+                !now.isBefore(endInstant) -> right
+                else -> xOf(now)
+            }
+            drawRuntimeLane(
+                hvacRuns(ecobee, from, to, now),
+                ::xOf,
+                left,
+                trackRight,
+                right,
+                laneTop,
+                laneHeight
+            )
+            if (!now.isBefore(startInstant) && now.isBefore(endInstant)) {
+                drawLine(
+                    color = SolColors.Now,
+                    start = Offset(xOf(now), laneTop),
+                    end = Offset(xOf(now), top),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
+        }
     }
 }
 
@@ -327,32 +359,23 @@ private fun drawTempRangeLabel(
     range: DayTempRange,
     centerX: Float,
     baselineY: Float,
-    textSize: Float
+    textSize: Float,
+    compact: Boolean = false
 ) {
     fun paint(color: Int) = Paint().apply {
         this.color = color
         this.textSize = textSize
         isAntiAlias = true
-        textAlign = Paint.Align.LEFT
+        textAlign = Paint.Align.CENTER
     }
-    val hyphenPaint = paint(SolColors.Ink.toArgb())
-    if (range.lowF == range.highF) {
-        hyphenPaint.textAlign = Paint.Align.CENTER
-        canvas.drawText("${range.lowF}", centerX, baselineY, hyphenPaint)
-        return
+    val text = if (!compact) {
+        range.label
+    } else if (range.lowF == range.highF) {
+        "${range.lowF}"
+    } else {
+        "${range.lowF}-${range.highF}"
     }
-    val low = "${range.lowF}"
-    val hyphen = "-"
-    val high = "${range.highF}"
-    val lowPaint = paint(SolColors.TempLow.toArgb())
-    val highPaint = paint(SolColors.TempHot.toArgb())
-    val total = lowPaint.measureText(low) + hyphenPaint.measureText(hyphen) + highPaint.measureText(high)
-    var x = centerX - total / 2f
-    canvas.drawText(low, x, baselineY, lowPaint)
-    x += lowPaint.measureText(low)
-    canvas.drawText(hyphen, x, baselineY, hyphenPaint)
-    x += hyphenPaint.measureText(hyphen)
-    canvas.drawText(high, x, baselineY, highPaint)
+    canvas.drawText(text, centerX, baselineY, paint(SolColors.Ink.toArgb()))
 }
 
 private fun drawDemoWatermark(
@@ -526,6 +549,46 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     }
 }
 
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRuntimeLane(
+    runs: List<HvacRun>,
+    xOf: (Instant) -> Float,
+    left: Float,
+    trackRight: Float,
+    right: Float,
+    laneTop: Float,
+    laneHeight: Float
+) {
+    if (laneHeight < 1f || right <= left) return
+    val trackEnd = trackRight.coerceIn(left, right)
+    if (trackEnd - left >= 1f) {
+        val trackRadius = CornerRadius(laneHeight / 2f, laneHeight / 2f)
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.08f),
+            topLeft = Offset(left, laneTop),
+            size = Size(trackEnd - left, laneHeight),
+            cornerRadius = trackRadius
+        )
+    }
+    for (run in runs) {
+        val x1 = xOf(run.start).coerceIn(left, right)
+        val x2 = xOf(run.end).coerceIn(left, right)
+        val span = x2 - x1
+        if (span < 1f) continue
+        val radius = min(laneHeight / 2f, span / 2f)
+        val color = when (run.source) {
+            HvacSource.HEAT_PUMP -> SolColors.HeatPump
+            HvacSource.AUX -> SolColors.AuxHeat
+            HvacSource.COOL -> SolColors.CoolRun
+        }
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(x1, laneTop),
+            size = Size(span, laneHeight),
+            cornerRadius = CornerRadius(radius, radius)
+        )
+    }
+}
+
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateArea(
     bands: List<DteTou.Band>,
     xOf: (Instant) -> Float,
@@ -686,7 +749,7 @@ object ChartBitmapRenderer {
             scaleToData = layers.ecobee,
             pad = !layers.ecobee
         )
-        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee)
+        val tempGrid = temperatureGrid(rawTemps.first, rawTemps.second, snapEnds = layers.ecobee, padTop = true)
         val tempMin = tempGrid.min
         val tempMax = tempGrid.max
         val tempSpan = (tempMax - tempMin).takeIf { it > 0.0 } ?: 1.0
@@ -804,7 +867,7 @@ object ChartBitmapRenderer {
                 }
                 val temps = tempRanges[day]
                 if (temps != null) {
-                    drawTempRangeLabel(canvas, temps, labelX, tempBaseline, 40f)
+                    drawTempRangeLabel(canvas, temps, labelX, tempBaseline, 40f, compact = true)
                 }
             }
             day = day.plusDays(1)

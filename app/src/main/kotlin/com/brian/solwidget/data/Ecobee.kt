@@ -14,7 +14,12 @@ data class EcobeeSample(
     val at: Instant,
     val indoorF: Double,
     val coolSetF: Double?,
-    val heatSetF: Double?
+    val heatSetF: Double?,
+    val heatPumpSec: Int? = null,
+    val auxHeatSec: Int? = null,
+    val coolSec: Int? = null,
+    val fanSec: Int? = null,
+    val outdoorF: Double? = null
 )
 
 /**
@@ -185,6 +190,147 @@ fun sharedFahrenheitRange(
 
 fun formatTempBound(value: Double): String = "${round(value).toInt()}°F"
 
+/** Consumers Energy gas furnace, about 60 cents per runtime hour. */
+const val GAS_AUX_DOLLARS_PER_HOUR = 0.60
+
+/** The equipment that owns a timeline segment. Aux wins a slot that also ran the heat pump. */
+enum class HvacSource { HEAT_PUMP, AUX, COOL }
+
+data class HvacRun(
+    val start: Instant,
+    val end: Instant,
+    val source: HvacSource
+)
+
+data class HvacPresence(
+    val heatPump: Boolean,
+    val aux: Boolean,
+    val cool: Boolean
+)
+
+data class HvacSummary(
+    val heatPumpHours: Double,
+    val auxHours: Double,
+    val coolHours: Double,
+    val fanHours: Double
+) {
+    val gasCostDollars: Double get() = auxHours * GAS_AUX_DOLLARS_PER_HOUR
+}
+
+fun hvacSummary(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Instant? = null): HvacSummary {
+    var heat = 0.0
+    var aux = 0.0
+    var cool = 0.0
+    var fan = 0.0
+    for (sample in samples) {
+        if (sample.at.isBefore(from) || !sample.at.isBefore(to)) continue
+        if (now != null && sample.at.isAfter(now)) continue
+        heat += sample.heatPumpSec ?: 0
+        aux += sample.auxHeatSec ?: 0
+        cool += sample.coolSec ?: 0
+        fan += sample.fanSec ?: 0
+    }
+    return HvacSummary(heat / 3600.0, aux / 3600.0, cool / 3600.0, fan / 3600.0)
+}
+
+fun hvacSummaryLabel(summary: HvacSummary, dollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR): String {
+    val parts = ArrayList<String>()
+    if (summary.heatPumpHours >= 0.05) parts.add("Heat pump ${hours(summary.heatPumpHours)}")
+    if (summary.auxHours >= 0.05) parts.add("Aux heat ${hours(summary.auxHours)}")
+    if (summary.coolHours >= 0.05) parts.add("Cool ${hours(summary.coolHours)}")
+    if (summary.auxHours >= 0.05) parts.add("Gas ≈ ${money(summary.auxHours * dollarsPerHour)}")
+    return parts.joinToString(" · ")
+}
+
+private fun hours(value: Double): String = String.format("%.1f h", value)
+
+private fun money(value: Double): String = String.format("$%.2f", value)
+
+/** Which equipment ran in the window, including a source that lost an overlap slot. */
+fun hvacPresence(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Instant? = null): HvacPresence {
+    var heat = false
+    var aux = false
+    var cool = false
+    for (sample in samples) {
+        if (sample.at.isBefore(from) || !sample.at.isBefore(to)) continue
+        if (now != null && sample.at.isAfter(now)) continue
+        if ((sample.heatPumpSec ?: 0) > 0) heat = true
+        if ((sample.auxHeatSec ?: 0) > 0) aux = true
+        if ((sample.coolSec ?: 0) > 0) cool = true
+    }
+    return HvacPresence(heat, aux, cool)
+}
+
+/** Aux covers a slot that also ran the heat pump. Cooling never shares a slot with heat in this data. */
+fun hvacSource(sample: EcobeeSample): HvacSource? = when {
+    (sample.auxHeatSec ?: 0) > 0 -> HvacSource.AUX
+    (sample.coolSec ?: 0) > 0 -> HvacSource.COOL
+    (sample.heatPumpSec ?: 0) > 0 -> HvacSource.HEAT_PUMP
+    else -> null
+}
+
+/**
+ * Contiguous samples of one source, as one timeline segment.
+ * A slot with no runtime, or a hole longer than [ECOBEE_GAP], breaks the segment.
+ */
+fun hvacRuns(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Instant? = null): List<HvacRun> {
+    val window = samples.filter { sample ->
+        !sample.at.isBefore(from) && sample.at.isBefore(to) && (now == null || !sample.at.isAfter(now))
+    }.sortedBy { it.at }
+    if (window.isEmpty()) return emptyList()
+    val runs = ArrayList<HvacRun>()
+    var start: Instant? = null
+    var end = Instant.EPOCH
+    var source: HvacSource? = null
+    fun flush() {
+        val opened = start ?: return
+        val kind = source ?: return
+        if (end.isAfter(opened)) runs.add(HvacRun(opened, end, kind))
+        start = null
+        source = null
+    }
+    for (index in window.indices) {
+        val sample = window[index]
+        val previous = window.getOrNull(index - 1)
+        val next = window.getOrNull(index + 1)
+        val slotSec = when {
+            next != null -> Duration.between(sample.at, next.at).seconds.toDouble().coerceIn(60.0, 20 * 60.0)
+            else -> 300.0
+        }
+        val nextSource = hvacSource(sample)
+        val gap = previous != null && Duration.between(previous.at, sample.at) > ECOBEE_GAP
+        if (gap || nextSource == null || nextSource != source) flush()
+        if (nextSource == null) continue
+        if (start == null) {
+            start = sample.at
+            source = nextSource
+        }
+        end = sample.at.plusMillis((slotSec * 1000.0).toLong())
+    }
+    flush()
+    return runs
+}
+
+fun ecobeeFillPresence(
+    samples: List<EcobeeSample>,
+    from: Instant,
+    to: Instant,
+    now: Instant? = null
+): Pair<Boolean, Boolean> {
+    var tooWarm = false
+    var tooCool = false
+    for (sample in samples) {
+        if (sample.at.isBefore(from) || !sample.at.isBefore(to)) continue
+        if (now != null && sample.at.isAfter(now)) continue
+        when (sample.classify().band) {
+            EcobeeBand.COOLING -> tooWarm = true
+            EcobeeBand.HEATING -> tooCool = true
+            EcobeeBand.DEADBAND -> Unit
+        }
+    }
+    return tooWarm to tooCool
+}
+
 data class TemperatureGrid(
     val min: Double,
     val max: Double,
@@ -198,7 +344,12 @@ data class TemperatureGrid(
  * to a much wider scale. A tick within 3° of freezing is omitted so the dotted
  * 32° line keeps that label.
  */
-fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): TemperatureGrid {
+fun temperatureGrid(
+    dataMin: Double,
+    dataMax: Double,
+    snapEnds: Boolean,
+    padTop: Boolean = false
+): TemperatureGrid {
     var lo = dataMin
     var hi = dataMax
     if (hi - lo < 1.0) {
@@ -206,7 +357,7 @@ fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): Temper
         hi += 5.0
     }
     val step = if (snapEnds) {
-        val fit = tightestTempFit(lo, hi)
+        val fit = tightestTempFit(lo, hi, padTop)
         lo = fit.min
         hi = fit.max
         fit.step
@@ -233,8 +384,11 @@ fun temperatureGrid(dataMin: Double, dataMax: Double, snapEnds: Boolean): Temper
 
 private data class TempFit(val step: Double, val min: Double, val max: Double)
 
-/** Smallest snapped range whose step still leaves a readable number of intervals. */
-private fun tightestTempFit(dataMin: Double, dataMax: Double): TempFit {
+/**
+ * Smallest snapped range whose step still leaves a readable number of intervals.
+ * [padTop] keeps the widget's extra step when the data sits on that top line.
+ */
+private fun tightestTempFit(dataMin: Double, dataMax: Double, padTop: Boolean): TempFit {
     val steps = doubleArrayOf(5.0, 10.0, 20.0, 25.0, 50.0, 100.0)
     val fits = steps.map { step ->
         val lo = floor(dataMin / step) * step
@@ -246,7 +400,8 @@ private fun tightestTempFit(dataMin: Double, dataMax: Double): TempFit {
         val intervals = (fit.max - fit.min) / fit.step
         intervals in 2.0..6.0
     }
-    return (readable.ifEmpty { fits }).minWith(compareBy({ it.max - it.min }, { -it.step }))
+    val fit = (readable.ifEmpty { fits }).minWith(compareBy({ it.max - it.min }, { -it.step }))
+    return if (padTop && dataMax >= fit.max - 0.05) fit.copy(max = fit.max + fit.step) else fit
 }
 
 fun chooseTempStep(span: Double): Double {

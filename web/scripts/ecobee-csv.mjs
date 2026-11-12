@@ -41,14 +41,34 @@ export function newYorkToUtc(year, month, day, hour, minute, second) {
   return new Date(utc);
 }
 
+function parseSeconds(raw) {
+  if (raw == null) return null;
+  const text = String(raw).trim();
+  if (text === "") return null;
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.round(value);
+}
+
 export function parseEcobeeCsv(text) {
-  const lines = text.split(/\r?\n/);
-  if (lines.length === 0) return [];
-  const header = splitCsv(lines[0]);
+  const stripped = String(text).replace(/^\uFEFF/, "");
+  const lines = stripped.split(/\r?\n/);
+  let headerLine = 0;
+  while (headerLine < lines.length) {
+    const trimmed = lines[headerLine].trim();
+    if (trimmed !== "" && !trimmed.startsWith("#")) break;
+    headerLine += 1;
+  }
+  if (headerLine >= lines.length) return Object.assign([], { hasRuntime: false });
+  const header = splitCsv(lines[headerLine]);
   const column = (name) => {
     const index = header.indexOf(name);
     if (index < 0) throw new Error(`Missing column ${name}`);
     return index;
+  };
+  const optional = (name) => {
+    const index = header.indexOf(name);
+    return index < 0 ? null : index;
   };
   const dateIndex = column("Date");
   const timeIndex = column("Time");
@@ -56,8 +76,14 @@ export function parseEcobeeCsv(text) {
   const coolIndex = column("Cool Set Temp (F)");
   const heatIndex = column("Heat Set Temp (F)");
   const indoorIndex = column("Current Temp (F)");
+  const heatPumpIndex = optional("Heat Stage 1 (sec)");
+  const auxIndex = optional("Aux Heat 1 (sec)");
+  const coolRunIndex = optional("Cool Stage 1 (sec)");
+  const fanIndex = optional("Fan (sec)");
+  const outdoorIndex = optional("Outdoor Temp (F)");
+  const hasRuntime = heatPumpIndex != null || auxIndex != null || coolRunIndex != null;
   const rows = [];
-  for (let lineNumber = 1; lineNumber < lines.length; lineNumber += 1) {
+  for (let lineNumber = headerLine + 1; lineNumber < lines.length; lineNumber += 1) {
     const line = lines[lineNumber];
     if (!line.trim()) continue;
     const cells = splitCsv(line);
@@ -78,17 +104,23 @@ export function parseEcobeeCsv(text) {
     );
     if (Number.isNaN(sampledAt.getTime())) continue;
     const mode = cells[modeIndex]?.trim() || null;
+    const cell = (index) => (index == null ? null : cells[index]);
     rows.push({
       sampledAt: sampledAt.toISOString(),
       indoorF: indoor,
       coolSetF: parseEcobeeSetpoint(cells[coolIndex]),
       heatSetF: parseEcobeeSetpoint(cells[heatIndex]),
       systemMode: mode,
+      heatPumpSec: parseSeconds(cell(heatPumpIndex)),
+      auxHeatSec: parseSeconds(cell(auxIndex)),
+      coolSec: parseSeconds(cell(coolRunIndex)),
+      fanSec: parseSeconds(cell(fanIndex)),
+      outdoorF: parseEcobeeSetpoint(cell(outdoorIndex)),
     });
   }
   const unique = new Map();
   for (const row of rows) unique.set(row.sampledAt, row);
-  return [...unique.values()];
+  return Object.assign([...unique.values()], { hasRuntime });
 }
 
 function splitCsv(line) {

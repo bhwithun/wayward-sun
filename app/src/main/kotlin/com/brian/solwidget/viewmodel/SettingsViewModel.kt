@@ -21,7 +21,8 @@ data class SettingsUiState(
     val placeLabel: String = "",
     val saved: Boolean = false,
     val isSaving: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val gasDollars: String = "0.60"
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,7 +40,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     cacheUrl = storage.cacheUrlOnce(),
                     resourceId = storage.resourceIdOnce(),
                     placeQuery = storage.placeQueryOnce(),
-                    placeLabel = storage.placeLabelOnce()
+                    placeLabel = storage.placeLabelOnce(),
+                    gasDollars = String.format("%.2f", storage.gasAuxDollarsOnce())
                 )
             }
         }
@@ -53,6 +55,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _uiState.update { it.copy(resourceId = value, saved = false, errorMessage = null) }
     }
 
+    fun onGasDollarsChange(value: String) {
+        _uiState.update { it.copy(gasDollars = value, saved = false, errorMessage = null) }
+    }
+
     fun onPlaceQueryChange(value: String) {
         _uiState.update { it.copy(placeQuery = value, saved = false, errorMessage = null) }
     }
@@ -61,6 +67,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             try {
+                val gas = _uiState.value.gasDollars.toDoubleOrNull()
+                if (gas == null || gas < 0.0) {
+                    _uiState.update { it.copy(isSaving = false, errorMessage = "Aux heat rate must be a number of dollars per hour.") }
+                    return@launch
+                }
+                storage.setGasAuxDollars(gas)
                 repo.saveSettings(_uiState.value.cacheUrl, _uiState.value.resourceId)
                 val query = _uiState.value.placeQuery.trim()
                 if (query.isBlank()) {

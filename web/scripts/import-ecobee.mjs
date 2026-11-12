@@ -57,32 +57,51 @@ if (actualBranch === PROD_BRANCH_ID && process.env.ECOBEE_CONFIRM_PRODUCTION !==
   process.exit(1);
 }
 
-const migration = readFileSync(resolve(here, "../db/004_ecobee.sql"), "utf8");
-const create = migration
-  .split("\n")
-  .filter((line) => !line.trim().startsWith("--"))
-  .join("\n")
-  .trim();
-await sql.query(create);
+for (const file of ["004_ecobee.sql", "005_ecobee_runtime.sql"]) {
+  const migration = readFileSync(resolve(here, "../db", file), "utf8");
+  const statement = migration
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .trim();
+  if (statement) await sql.query(statement);
+}
 
 const rows = parseEcobeeCsv(readFileSync(csvPath, "utf8"));
+const hasRuntime = rows.hasRuntime === true;
 let written = 0;
 for (let offset = 0; offset < rows.length; offset += BATCH) {
   const batch = rows.slice(offset, offset + BATCH);
   await sql`
-    INSERT INTO ecobee_samples (sampled_at, indoor_f, cool_set_f, heat_set_f, system_mode)
+    INSERT INTO ecobee_samples (
+      sampled_at, indoor_f, cool_set_f, heat_set_f, system_mode,
+      heat_pump_sec, aux_heat_sec, cool_sec, fan_sec, outdoor_f
+    )
     SELECT * FROM unnest(
       ${batch.map((row) => row.sampledAt)}::timestamptz[],
       ${batch.map((row) => row.indoorF)}::float8[],
       ${batch.map((row) => row.coolSetF)}::float8[],
       ${batch.map((row) => row.heatSetF)}::float8[],
-      ${batch.map((row) => row.systemMode)}::text[]
-    ) AS t(sampled_at, indoor_f, cool_set_f, heat_set_f, system_mode)
+      ${batch.map((row) => row.systemMode)}::text[],
+      ${batch.map((row) => row.heatPumpSec)}::int[],
+      ${batch.map((row) => row.auxHeatSec)}::int[],
+      ${batch.map((row) => row.coolSec)}::int[],
+      ${batch.map((row) => row.fanSec)}::int[],
+      ${batch.map((row) => row.outdoorF)}::float8[]
+    ) AS t(
+      sampled_at, indoor_f, cool_set_f, heat_set_f, system_mode,
+      heat_pump_sec, aux_heat_sec, cool_sec, fan_sec, outdoor_f
+    )
     ON CONFLICT (sampled_at) DO UPDATE SET
       indoor_f = EXCLUDED.indoor_f,
       cool_set_f = EXCLUDED.cool_set_f,
       heat_set_f = EXCLUDED.heat_set_f,
-      system_mode = EXCLUDED.system_mode
+      system_mode = EXCLUDED.system_mode,
+      heat_pump_sec = CASE WHEN ${hasRuntime}::boolean THEN EXCLUDED.heat_pump_sec ELSE ecobee_samples.heat_pump_sec END,
+      aux_heat_sec = CASE WHEN ${hasRuntime}::boolean THEN EXCLUDED.aux_heat_sec ELSE ecobee_samples.aux_heat_sec END,
+      cool_sec = CASE WHEN ${hasRuntime}::boolean THEN EXCLUDED.cool_sec ELSE ecobee_samples.cool_sec END,
+      fan_sec = CASE WHEN ${hasRuntime}::boolean THEN EXCLUDED.fan_sec ELSE ecobee_samples.fan_sec END,
+      outdoor_f = CASE WHEN ${hasRuntime}::boolean THEN EXCLUDED.outdoor_f ELSE ecobee_samples.outdoor_f END
   `;
   written += batch.length;
   if (written % 10000 === 0 || written === rows.length) {

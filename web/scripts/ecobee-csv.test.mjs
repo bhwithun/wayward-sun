@@ -33,5 +33,30 @@ describe("ecobee csv", () => {
     });
     expect(rows[1].coolSetF).toBeNull();
     expect(rows[1].indoorF).toBe(66);
+    expect(rows.hasRuntime).toBe(false);
+    expect(rows[0].heatPumpSec).toBeNull();
+  });
+
+  it("skips a portal comment header and reads runtime seconds", () => {
+    const csv = [
+      "\uFEFF#,Thermostat,name,HVAC",
+      "#,Start,date,2026-11-01",
+      "Date,Time,System Mode,Cool Set Temp (F),Heat Set Temp (F),Current Temp (F),Outdoor Temp (F),Cool Stage 1 (sec),Heat Stage 1 (sec),Aux Heat 1 (sec),Fan (sec)",
+      "2026-11-08,06:00:00,compressorHeatStage1On,75,66,65.0,28.4,0,300,120,300",
+      "2026-11-10,14:00:00,compressorHeatStage1On,75,66,68.0,48.0,0,180,0,180",
+    ].join("\n");
+    const rows = parseEcobeeCsv(csv);
+    expect(rows.hasRuntime).toBe(true);
+    expect(rows[0]).toMatchObject({
+      sampledAt: "2026-11-08T11:00:00.000Z",
+      indoorF: 65,
+      outdoorF: 28.4,
+      heatPumpSec: 300,
+      auxHeatSec: 120,
+      coolSec: 0,
+      fanSec: 300,
+    });
+    expect(rows[1].auxHeatSec).toBe(0);
+    expect(rows[1].heatPumpSec).toBe(180);
   });
 });
