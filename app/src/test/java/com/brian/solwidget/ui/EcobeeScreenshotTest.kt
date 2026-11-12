@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.ecobeeFillPresence
+import com.brian.solwidget.data.hvacPresence
 import com.brian.solwidget.data.hvacSummary
 import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
@@ -138,10 +139,10 @@ class EcobeeScreenshotTest {
             buy = false,
             sell = false
         )
-        captureSized(width, height, "hvac-cold-2.6.0.png") {
+        captureSized(width, height, "hvac-cold-2.6.0d.png") {
             PhoneFrame(runtimeDay(aux = true), past, future, hvacLayers, drawerOpen = false)
         }
-        captureSized(width, height, "hvac-mild-2.6.0.png") {
+        captureSized(width, height, "hvac-mild-2.6.0d.png") {
             PhoneFrame(runtimeDay(aux = false), past, future, hvacLayers, drawerOpen = false)
         }
         val from = now.minus(48, ChronoUnit.HOURS)
@@ -429,12 +430,16 @@ class EcobeeScreenshotTest {
                         )
                     }
                     val (tooWarm, tooCool) = ecobeeFillPresence(indoor, from, to, now)
+                    val runtime = hvacPresence(indoor, from, to, now)
                     ChartLegend(
                         layers = layers,
                         onOpen = {},
                         modifier = Modifier.padding(horizontal = 16.dp),
                         showTooWarm = tooWarm,
-                        showTooCool = tooCool
+                        showTooCool = tooCool,
+                        showHeatPump = runtime.heatPump,
+                        showGasAux = runtime.aux,
+                        showCoolRun = runtime.cool
                     )
                     if (layers.hvac) {
                         Text(
@@ -538,9 +543,10 @@ class EcobeeScreenshotTest {
         }.filter { !it.at.isAfter(now) }.map { sample ->
             val hour = sample.at.atZone(zone).hour
             when {
-                aux && hour < 8 -> sample.copy(heatPumpSec = 160, auxHeatSec = 240, coolSec = 0, fanSec = 280, outdoorF = 22.0)
+                aux && hour < 6 -> sample.copy(heatPumpSec = 0, auxHeatSec = 300, coolSec = 0, fanSec = 300, outdoorF = 22.0)
+                aux && hour < 11 -> sample.copy(heatPumpSec = 240, auxHeatSec = 0, coolSec = 0, fanSec = 260, outdoorF = 30.0)
                 !aux && hour in 5..10 -> sample.copy(heatPumpSec = 220, auxHeatSec = 0, coolSec = 0, fanSec = 240, outdoorF = 46.0)
-                else -> sample.copy(heatPumpSec = 0, auxHeatSec = 0, coolSec = 0, fanSec = 20, outdoorF = if (aux) 26.0 else 50.0)
+                else -> sample.copy(heatPumpSec = 0, auxHeatSec = 0, coolSec = 0, fanSec = 20, outdoorF = if (aux) 34.0 else 50.0)
             }
         }
     }

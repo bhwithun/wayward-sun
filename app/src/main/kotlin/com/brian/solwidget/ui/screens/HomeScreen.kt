@@ -78,6 +78,7 @@ import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.ecobeeFillPresence
+import com.brian.solwidget.data.hvacPresence
 import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryPage
@@ -466,11 +467,15 @@ private fun LivePane(
             )
         }
         val (tooWarm, tooCool) = ecobeeFillPresence(ecobee, rangeFrom, rangeTo, now)
+        val runtime = hvacPresence(ecobee, rangeFrom, rangeTo, now)
         ChartLegend(
             layers = layers,
             onOpen = onOpenLayers,
             showTooWarm = tooWarm,
-            showTooCool = tooCool
+            showTooCool = tooCool,
+            showHeatPump = runtime.heatPump,
+            showGasAux = runtime.aux,
+            showCoolRun = runtime.cool
         )
         if (layers.hvac) {
             Text(
@@ -570,11 +575,15 @@ private fun HistoryPane(
             } else {
                 false to false
             }
+            val runtime = if (chart != null) hvacPresence(chart.ecobee, from, to, now) else null
             ChartLegend(
                 layers = layers,
                 onOpen = onOpenLayers,
                 showTooWarm = tooWarm,
-                showTooCool = tooCool
+                showTooCool = tooCool,
+                showHeatPump = runtime?.heatPump == true,
+                showGasAux = runtime?.aux == true,
+                showCoolRun = runtime?.cool == true
             )
             if (layers.hvac && chart != null) {
                 Text(

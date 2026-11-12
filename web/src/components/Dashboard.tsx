@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PowerChart, type ChartLayers } from "@/components/PowerChart";
-import { hvacSummary, hvacSummaryLabel, type EcobeeSample } from "@/lib/ecobee";
+import { hvacPresence, hvacSummary, hvacSummaryLabel, type EcobeeSample } from "@/lib/ecobee";
 import {
   BASE_MID_PEAK_CENTS,
   BASE_OFF_PEAK_CENTS,
@@ -202,6 +202,7 @@ export function Dashboard() {
   }, [load]);
 
   const chart = chartModel(history, clock, tab === "history" ? selectedWeek : null, todayParts);
+  const runtime = hvacPresence(chart.ecobee, chart.fromMs, chart.toMs, clock);
   const monthName = MONTH_LABEL.format(new Date(Date.UTC(month.year, month.month - 1, 1)));
 
   return (
@@ -254,6 +255,25 @@ export function Dashboard() {
               {chart.tooCool && (
                 <span>
                   <i className="swatch" style={{ background: "rgba(255,152,0,0.50)" }} /> Too cool
+                </span>
+              )}
+            </div>
+          )}
+          {layers.hvac && (runtime.heatPump || runtime.aux || runtime.cool) && (
+            <div className="legend-row">
+              {runtime.heatPump && (
+                <span>
+                  <i className="swatch" style={{ background: "#00897B" }} /> Heat pump
+                </span>
+              )}
+              {runtime.aux && (
+                <span>
+                  <i className="swatch" style={{ background: "#EF5350" }} /> Gas aux
+                </span>
+              )}
+              {runtime.cool && (
+                <span>
+                  <i className="swatch" style={{ background: "#90CAF9" }} /> Cool
                 </span>
               )}
             </div>

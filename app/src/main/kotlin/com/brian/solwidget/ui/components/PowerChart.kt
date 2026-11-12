@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -23,7 +24,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DayTempRange
 import com.brian.solwidget.data.DteTou
@@ -36,6 +36,8 @@ import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.SunTimes
 import com.brian.solwidget.data.WeatherPoint
 import com.brian.solwidget.data.ecobeeFillSegments
+import com.brian.solwidget.data.HvacRun
+import com.brian.solwidget.data.HvacSource
 import com.brian.solwidget.data.hvacRuns
 import com.brian.solwidget.data.forecastStrokes
 import com.brian.solwidget.data.formatTempBound
@@ -54,6 +56,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 private val DayLabel = DateTimeFormatter.ofPattern("EEE d")
 
@@ -102,18 +105,11 @@ fun PowerChart(
         val right = size.width - 12.dp.toPx()
         val dayBaseline = 16.dp.toPx()
         val tempBaseline = 38.dp.toPx()
-        val top = if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()
-        val contentBottom = size.height - if (layers.hvac || !layers.power) 12.dp.toPx() else 28.dp.toPx()
-        val headerPaint = android.graphics.Paint().apply {
-            textSize = 11.sp.toPx()
-            isAntiAlias = true
-        }
-        val headerMetrics = headerPaint.fontMetrics
-        val runtimeGap = if (layers.hvac) 8.dp.toPx() else 0f
-        val runtimeHeader = if (layers.hvac) -headerMetrics.ascent + headerMetrics.descent else 0f
-        val runtimeStrip = if (layers.hvac) 36.dp.toPx() else 0f
-        val bottom = contentBottom - runtimeGap - runtimeHeader - runtimeStrip
-        val runtimeHeaderBaseline = bottom + runtimeGap - headerMetrics.ascent
+        val laneHeight = if (layers.hvac) 9.dp.toPx() else 0f
+        val laneGap = if (layers.hvac) 3.dp.toPx() else 0f
+        val top = (if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()) + laneHeight + laneGap
+        val bottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
+        val laneTop = top - laneGap - laneHeight
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
@@ -208,7 +204,7 @@ fun PowerChart(
                 drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
                 val labelY = when {
                     abs(tick - tempMax) < 0.01 -> top + 16f
-                    abs(tick - tempMin) < 0.01 -> if (layers.hvac) bottom - 2f else bottom + 6f
+                    abs(tick - tempMin) < 0.01 -> bottom + 6f
                     else -> y + 8f
                 }
                 native.drawText(formatTempBound(tick), 6f, labelY, unitPaint)
@@ -332,16 +328,22 @@ fun PowerChart(
             drawDemoWatermark(native, left, top, right, bottom)
         }
         if (layers.hvac) {
-            drawRuntimeStrip(
-                native,
+            drawRuntimeLane(
                 hvacRuns(ecobee, from, to, now),
                 ::xOf,
                 left,
                 right,
-                bottom + runtimeGap + runtimeHeader,
-                contentBottom,
-                runtimeHeaderBaseline
+                laneTop,
+                laneHeight
             )
+            if (!now.isBefore(startInstant) && now.isBefore(endInstant)) {
+                drawLine(
+                    color = SolColors.Now,
+                    start = Offset(xOf(now), laneTop),
+                    end = Offset(xOf(now), top),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
         }
     }
 }
@@ -541,62 +543,39 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempLine(
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRuntimeStrip(
-    native: AndroidCanvas,
-    runs: List<com.brian.solwidget.data.HvacRun>,
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRuntimeLane(
+    runs: List<HvacRun>,
     xOf: (Instant) -> Float,
     left: Float,
     right: Float,
-    stripTop: Float,
-    stripBottom: Float,
-    headerBaseline: Float
+    laneTop: Float,
+    laneHeight: Float
 ) {
-    val label = android.graphics.Paint().apply {
-        color = SolColors.Ink.toArgb()
-        textSize = 11.sp.toPx()
-        isAntiAlias = true
-    }
-    native.drawText("Runtime", left, headerBaseline, label)
-    var swatchX = left + label.measureText("Runtime") + 8.dp.toPx()
-    val swatch = 8.dp.toPx()
-    val sources = listOf(
-        Triple("Heat pump", SolColors.HeatPump, runs.any { it.heatPump > 0.02 }),
-        Triple("Gas aux", SolColors.AuxHeat, runs.any { it.aux > 0.02 }),
-        Triple("Cool", SolColors.CoolRun, runs.any { it.cool > 0.02 })
+    if (laneHeight < 1f || right <= left) return
+    val trackRadius = CornerRadius(laneHeight / 2f, laneHeight / 2f)
+    drawRoundRect(
+        color = Color.White.copy(alpha = 0.08f),
+        topLeft = Offset(left, laneTop),
+        size = Size(right - left, laneHeight),
+        cornerRadius = trackRadius
     )
-    for ((name, color, present) in sources) {
-        if (!present) continue
-        drawRect(color, Offset(swatchX, headerBaseline - swatch), Size(swatch, swatch))
-        swatchX += swatch + 4.dp.toPx()
-        native.drawText(name, swatchX, headerBaseline, label)
-        swatchX += label.measureText(name) + 8.dp.toPx()
-    }
-    val tick = android.graphics.Paint().apply {
-        color = android.graphics.Color.parseColor("#E8EEF7")
-        textSize = 10.sp.toPx()
-        isAntiAlias = true
-    }
-    native.drawText("100%", 6f, stripTop + 8f, tick)
-    drawLine(SolColors.Grid, Offset(left, stripTop), Offset(right, stripTop), strokeWidth = 1.dp.toPx())
-    val stripH = (stripBottom - stripTop).coerceAtLeast(1f)
     for (run in runs) {
-        val total = (run.heatPump + run.aux + run.cool).coerceAtLeast(0.001)
-        val scale = if (total > 1.0) 1.0 / total else 1.0
-        var cursor = stripBottom
-        val parts = listOf(
-            run.heatPump to SolColors.HeatPump,
-            run.aux to SolColors.AuxHeat,
-            run.cool to SolColors.CoolRun
-        )
         val x1 = xOf(run.start).coerceIn(left, right)
         val x2 = xOf(run.end).coerceIn(left, right)
-        if (x2 - x1 < 1f) continue
-        for ((duty, color) in parts) {
-            val bandH = (duty * scale).toFloat() * stripH
-            if (bandH <= 0.4f) continue
-            cursor -= bandH
-            drawRect(color, Offset(x1, cursor), Size(x2 - x1, bandH))
+        val span = x2 - x1
+        if (span < 1f) continue
+        val radius = min(laneHeight / 2f, span / 2f)
+        val color = when (run.source) {
+            HvacSource.HEAT_PUMP -> SolColors.HeatPump
+            HvacSource.AUX -> SolColors.AuxHeat
+            HvacSource.COOL -> SolColors.CoolRun
         }
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(x1, laneTop),
+            size = Size(span, laneHeight),
+            cornerRadius = CornerRadius(radius, radius)
+        )
     }
 }
 

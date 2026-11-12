@@ -49,9 +49,12 @@ fun ChartLegend(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     showTooWarm: Boolean = true,
-    showTooCool: Boolean = true
+    showTooCool: Boolean = true,
+    showHeatPump: Boolean = false,
+    showGasAux: Boolean = false,
+    showCoolRun: Boolean = false
 ) {
-        val groups = legendGroups(layers, showTooWarm, showTooCool)
+        val groups = legendGroups(layers, showTooWarm, showTooCool, showHeatPump, showGasAux, showCoolRun)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -219,7 +222,10 @@ private data class LegendItem(
 private fun legendGroups(
     layers: ChartLayers,
     showTooWarm: Boolean,
-    showTooCool: Boolean
+    showTooCool: Boolean,
+    showHeatPump: Boolean,
+    showGasAux: Boolean,
+    showCoolRun: Boolean
 ): List<List<LegendItem>> = buildList {
     val trace = buildList {
         if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
@@ -234,6 +240,14 @@ private fun legendGroups(
             if (showTooCool) add(LegendItem("Too cool", SolColors.HeatGap.copy(alpha = 0.50f), LegendMark.SQUARE))
         }
         add(home)
+    }
+    if (layers.hvac) {
+        val runtime = buildList {
+            if (showHeatPump) add(LegendItem("Heat pump", SolColors.HeatPump, LegendMark.SQUARE))
+            if (showGasAux) add(LegendItem("Gas aux", SolColors.AuxHeat, LegendMark.SQUARE))
+            if (showCoolRun) add(LegendItem("Cool", SolColors.CoolRun, LegendMark.SQUARE))
+        }
+        if (runtime.isNotEmpty()) add(runtime)
     }
     val other = buildList {
         if (layers.precipitation) add(LegendItem("Precip", SolColors.Precip.copy(alpha = 1f)))

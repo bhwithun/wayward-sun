@@ -12,12 +12,19 @@ export type EcobeeSample = {
 
 export const GAS_AUX_DOLLARS_PER_HOUR = 0.6;
 
+/** Aux wins a slot that also ran the heat pump. */
+export type HvacSource = "heatPump" | "aux" | "cool";
+
 export type HvacRun = {
   start: number;
   end: number;
-  heatPump: number;
-  aux: number;
-  cool: number;
+  source: HvacSource;
+};
+
+export type HvacPresence = {
+  heatPump: boolean;
+  aux: boolean;
+  cool: boolean;
 };
 
 export type HvacSummary = {
@@ -103,6 +110,29 @@ export function hvacSummaryLabel(summary: HvacSummary, dollarsPerHour = GAS_AUX_
   return parts.join(" · ");
 }
 
+export function hvacPresence(samples: EcobeeSample[], from: number, to: number, now?: number): HvacPresence {
+  let heatPump = false;
+  let aux = false;
+  let cool = false;
+  for (const sample of samples) {
+    if (sample.t < from || sample.t >= to) continue;
+    if (now != null && sample.t > now) continue;
+    if ((sample.heatPumpSec ?? 0) > 0) heatPump = true;
+    if ((sample.auxHeatSec ?? 0) > 0) aux = true;
+    if ((sample.coolSec ?? 0) > 0) cool = true;
+  }
+  return { heatPump, aux, cool };
+}
+
+/** Aux covers a slot that also ran the heat pump. */
+export function hvacSource(sample: EcobeeSample): HvacSource | null {
+  if ((sample.auxHeatSec ?? 0) > 0) return "aux";
+  if ((sample.coolSec ?? 0) > 0) return "cool";
+  if ((sample.heatPumpSec ?? 0) > 0) return "heatPump";
+  return null;
+}
+
+/** Contiguous samples of one source. Idle slots and holes longer than 15 minutes break the segment. */
 export function hvacRuns(samples: EcobeeSample[], from: number, to: number, now?: number): HvacRun[] {
   const window = samples
     .filter((sample) => sample.t >= from && sample.t < to && (now == null || sample.t <= now))
@@ -110,37 +140,23 @@ export function hvacRuns(samples: EcobeeSample[], from: number, to: number, now?
   const runs: HvacRun[] = [];
   let start: number | null = null;
   let end = 0;
-  let heat = 0;
-  let aux = 0;
-  let cool = 0;
+  let source: HvacSource | null = null;
   const flush = () => {
-    if (start != null && heat + aux + cool > 0.02 && end > start) runs.push({ start, end, heatPump: heat, aux, cool });
+    if (start != null && source != null && end > start) runs.push({ start, end, source });
     start = null;
+    source = null;
   };
   window.forEach((sample, index) => {
     const next = window[index + 1];
     const previous = window[index - 1];
     const slotSec = next ? Math.min(20 * 60, Math.max(60, (next.t - sample.t) / 1000)) : 300;
-    const duty = (seconds?: number | null) => Math.min(1, Math.max(0, (seconds ?? 0) / slotSec));
-    const nextHeat = duty(sample.heatPumpSec);
-    const nextAux = duty(sample.auxHeatSec);
-    const nextCool = duty(sample.coolSec);
-    const idle = nextHeat + nextAux + nextCool < 0.02;
+    const nextSource = hvacSource(sample);
     const gap = previous != null && sample.t - previous.t > 15 * 60 * 1000;
-    const similar =
-      start != null &&
-      !gap &&
-      !idle &&
-      Math.abs(nextHeat - heat) < 0.08 &&
-      Math.abs(nextAux - aux) < 0.08 &&
-      Math.abs(nextCool - cool) < 0.08;
-    if (idle || gap || !similar) flush();
-    if (idle) return;
+    if (gap || nextSource == null || nextSource !== source) flush();
+    if (nextSource == null) return;
     if (start == null) {
       start = sample.t;
-      heat = nextHeat;
-      aux = nextAux;
-      cool = nextCool;
+      source = nextSource;
     }
     end = sample.t + slotSec * 1000;
   });

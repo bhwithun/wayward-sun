@@ -193,12 +193,19 @@ fun formatTempBound(value: Double): String = "${round(value).toInt()}°F"
 /** Consumers Energy gas furnace, about 60 cents per runtime hour. */
 const val GAS_AUX_DOLLARS_PER_HOUR = 0.60
 
+/** The equipment that owns a timeline segment. Aux wins a slot that also ran the heat pump. */
+enum class HvacSource { HEAT_PUMP, AUX, COOL }
+
 data class HvacRun(
     val start: Instant,
     val end: Instant,
-    val heatPump: Double,
-    val aux: Double,
-    val cool: Double
+    val source: HvacSource
+)
+
+data class HvacPresence(
+    val heatPump: Boolean,
+    val aux: Boolean,
+    val cool: Boolean
 )
 
 data class HvacSummary(
@@ -239,9 +246,32 @@ private fun hours(value: Double): String = String.format("%.1f h", value)
 
 private fun money(value: Double): String = String.format("$%.2f", value)
 
+/** Which equipment ran in the window, including a source that lost an overlap slot. */
+fun hvacPresence(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Instant? = null): HvacPresence {
+    var heat = false
+    var aux = false
+    var cool = false
+    for (sample in samples) {
+        if (sample.at.isBefore(from) || !sample.at.isBefore(to)) continue
+        if (now != null && sample.at.isAfter(now)) continue
+        if ((sample.heatPumpSec ?: 0) > 0) heat = true
+        if ((sample.auxHeatSec ?: 0) > 0) aux = true
+        if ((sample.coolSec ?: 0) > 0) cool = true
+    }
+    return HvacPresence(heat, aux, cool)
+}
+
+/** Aux covers a slot that also ran the heat pump. Cooling never shares a slot with heat in this data. */
+fun hvacSource(sample: EcobeeSample): HvacSource? = when {
+    (sample.auxHeatSec ?: 0) > 0 -> HvacSource.AUX
+    (sample.coolSec ?: 0) > 0 -> HvacSource.COOL
+    (sample.heatPumpSec ?: 0) > 0 -> HvacSource.HEAT_PUMP
+    else -> null
+}
+
 /**
- * Contiguous runtime with a similar duty cycle, as one shape per stretch.
- * Each duty is seconds run divided by the sample's slot, from 0 to 1.
+ * Contiguous samples of one source, as one timeline segment.
+ * A slot with no runtime, or a hole longer than [ECOBEE_GAP], breaks the segment.
  */
 fun hvacRuns(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Instant? = null): List<HvacRun> {
     val window = samples.filter { sample ->
@@ -251,15 +281,13 @@ fun hvacRuns(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Insta
     val runs = ArrayList<HvacRun>()
     var start: Instant? = null
     var end = Instant.EPOCH
-    var heat = 0.0
-    var aux = 0.0
-    var cool = 0.0
+    var source: HvacSource? = null
     fun flush() {
         val opened = start ?: return
-        if (heat + aux + cool > 0.02 && end.isAfter(opened)) {
-            runs.add(HvacRun(opened, end, heat, aux, cool))
-        }
+        val kind = source ?: return
+        if (end.isAfter(opened)) runs.add(HvacRun(opened, end, kind))
         start = null
+        source = null
     }
     for (index in window.indices) {
         val sample = window[index]
@@ -269,21 +297,13 @@ fun hvacRuns(samples: List<EcobeeSample>, from: Instant, to: Instant, now: Insta
             next != null -> Duration.between(sample.at, next.at).seconds.toDouble().coerceIn(60.0, 20 * 60.0)
             else -> 300.0
         }
-        fun duty(seconds: Int?) = ((seconds ?: 0).toDouble() / slotSec).coerceIn(0.0, 1.0)
-        val nextHeat = duty(sample.heatPumpSec)
-        val nextAux = duty(sample.auxHeatSec)
-        val nextCool = duty(sample.coolSec)
-        val idle = nextHeat + nextAux + nextCool < 0.02
+        val nextSource = hvacSource(sample)
         val gap = previous != null && Duration.between(previous.at, sample.at) > ECOBEE_GAP
-        val similar = start != null && !gap && !idle &&
-            abs(nextHeat - heat) < 0.08 && abs(nextAux - aux) < 0.08 && abs(nextCool - cool) < 0.08
-        if (idle || gap || !similar) flush()
-        if (idle) continue
+        if (gap || nextSource == null || nextSource != source) flush()
+        if (nextSource == null) continue
         if (start == null) {
             start = sample.at
-            heat = nextHeat
-            aux = nextAux
-            cool = nextCool
+            source = nextSource
         }
         end = sample.at.plusMillis((slotSec * 1000.0).toLong())
     }

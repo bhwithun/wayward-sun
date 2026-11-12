@@ -80,8 +80,20 @@ describe("hvac runtime", () => {
     expect(summary.auxHours).toBeCloseTo(180 / 3600);
     expect(summary.gasCostDollars).toBeCloseTo((180 / 3600) * 0.6);
     const runs = hvacRuns(samples, t0, t0 + 3_600_000, t0 + 3_600_000);
-    expect(runs.length).toBeGreaterThan(0);
-    expect(runs.some((run) => run.aux > 0)).toBe(true);
+    expect(runs.map((run) => run.source)).toEqual(["aux", "heatPump"]);
+  });
+
+  it("merges contiguous aux and gives an overlap slot the aux color", () => {
+    const samples = [
+      { ...sample(t0, 64, 75, 66), heatPumpSec: 0, auxHeatSec: 300 },
+      { ...sample(t0 + 300_000, 64, 75, 66), heatPumpSec: 120, auxHeatSec: 180 },
+      { ...sample(t0 + 600_000, 70, 75, 66), heatPumpSec: 240, auxHeatSec: 0 },
+    ];
+    const runs = hvacRuns(samples, t0, t0 + 3_600_000, t0 + 3_600_000);
+    expect(runs).toEqual([
+      { start: t0, end: t0 + 600_000, source: "aux" },
+      { start: t0 + 600_000, end: t0 + 900_000, source: "heatPump" },
+    ]);
   });
 
   it("keeps a mild hour on the heat pump", () => {

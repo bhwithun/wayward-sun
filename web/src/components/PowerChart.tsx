@@ -5,6 +5,7 @@ import { rateSteps, type RateSample, type RateVertex } from "@/lib/dte";
 import {
   ecobeeFillSegments,
   hvacRuns,
+  type HvacRun,
   prepareEcobee,
   sharedFahrenheitRange,
   temperatureGrid,
@@ -24,9 +25,9 @@ const TEMP = "#E6E1F0";
 const SETPOINT = "#FFF176";
 const TOO_WARM = "#4DA3FF";
 const TOO_COOL = "#FF9800";
-const HEAT_PUMP = "rgba(0, 137, 123, 0.78)";
-const AUX_HEAT = "rgba(239, 83, 80, 0.95)";
-const COOL_RUN = "rgba(144, 202, 249, 0.78)";
+const HEAT_PUMP = "#00897B";
+const AUX_HEAT = "#EF5350";
+const COOL_RUN = "#90CAF9";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;
@@ -81,9 +82,7 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   canvas.style.maxWidth = "100%";
   const width = Math.max(1, parent?.clientWidth ?? 640);
   const plotHeight = 320;
-  const runtimeHeader = props.layers.hvac ? 16 : 0;
-  const runtimeStrip = props.layers.hvac ? 32 : 0;
-  const height = plotHeight + runtimeHeader + runtimeStrip;
+  const height = plotHeight;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
@@ -207,27 +206,30 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   }
   if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "line", props.now, dpr);
 
+  const laneH = props.layers.hvac ? 10 : 0;
+  const laneGap = props.layers.hvac ? 4 : 0;
+  const laneTop = top - laneGap - laneH;
+  if (props.layers.hvac) {
+    drawRuntimeLane(
+      ctx,
+      hvacRuns(ecobee, props.from, Math.min(props.to, props.now), props.now),
+      xOf,
+      left,
+      right,
+      laneTop,
+      laneH
+    );
+  }
+
   if (props.now >= props.from && props.now < props.to) {
     const nowX = xOf(props.now);
     ctx.strokeStyle = NOW;
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.moveTo(nowX, top);
+    ctx.moveTo(nowX, props.layers.hvac ? laneTop : top);
     ctx.lineTo(nowX, bottom);
     ctx.stroke();
-  }
-
-  if (props.layers.hvac) {
-    drawRuntimeStrip(
-      ctx,
-      hvacRuns(ecobee, props.from, Math.min(props.to, props.now), props.now),
-      xOf,
-      left,
-      right,
-      plotHeight + runtimeHeader,
-      height - 4
-    );
   }
 }
 
@@ -456,62 +458,32 @@ function drawEcobee(
   }
 }
 
-function drawRuntimeStrip(
+function drawRuntimeLane(
   ctx: CanvasRenderingContext2D,
-  runs: ReturnType<typeof hvacRuns>,
+  runs: HvacRun[],
   xOf: (t: number) => number,
   left: number,
   right: number,
-  stripTop: number,
-  stripBottom: number
+  laneTop: number,
+  laneHeight: number
 ) {
+  if (laneHeight < 1 || right <= left) return;
   ctx.save();
-  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
-  ctx.fillStyle = "#9AA8BF";
-  ctx.textAlign = "left";
-  ctx.fillText("Runtime", 4, stripTop - 4);
-  let swatchX = ctx.measureText("Runtime").width + 12;
-  const sources: Array<[string, string, boolean]> = [
-    ["Heat pump", "#00897B", runs.some((run) => run.heatPump > 0.02)],
-    ["Gas aux", "#EF5350", runs.some((run) => run.aux > 0.02)],
-    ["Cool", "#90CAF9", runs.some((run) => run.cool > 0.02)],
-  ];
-  for (const [name, color, present] of sources) {
-    if (!present) continue;
-    ctx.fillStyle = color;
-    ctx.fillRect(swatchX, stripTop - 12, 8, 8);
-    swatchX += 12;
-    ctx.fillStyle = "#9AA8BF";
-    ctx.fillText(name, swatchX, stripTop - 4);
-    swatchX += ctx.measureText(name).width + 10;
-  }
-  ctx.fillText("100%", 4, stripTop + 12);
-  ctx.strokeStyle = GRID;
-  ctx.lineWidth = 1;
+  const colorFor = (source: HvacRun["source"]) =>
+    source === "aux" ? AUX_HEAT : source === "cool" ? COOL_RUN : HEAT_PUMP;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
   ctx.beginPath();
-  ctx.moveTo(left, stripTop);
-  ctx.lineTo(right, stripTop);
-  ctx.stroke();
-  const stripH = Math.max(1, stripBottom - stripTop);
+  ctx.roundRect(left, laneTop, right - left, laneHeight, laneHeight / 2);
+  ctx.fill();
   for (const run of runs) {
-    const total = Math.max(0.001, run.heatPump + run.aux + run.cool);
-    const scale = total > 1 ? 1 / total : 1;
-    let cursor = stripBottom;
-    const parts: Array<[number, string]> = [
-      [run.heatPump, HEAT_PUMP],
-      [run.aux, AUX_HEAT],
-      [run.cool, COOL_RUN],
-    ];
     const x1 = Math.min(right, Math.max(left, xOf(run.start)));
     const x2 = Math.min(right, Math.max(left, xOf(run.end)));
-    if (x2 - x1 < 1) continue;
-    for (const [duty, color] of parts) {
-      const bandH = duty * scale * stripH;
-      if (bandH <= 0.4) continue;
-      cursor -= bandH;
-      ctx.fillStyle = color;
-      ctx.fillRect(x1, cursor, x2 - x1, bandH);
-    }
+    const span = x2 - x1;
+    if (span < 1) continue;
+    ctx.fillStyle = colorFor(run.source);
+    ctx.beginPath();
+    ctx.roundRect(x1, laneTop, span, laneHeight, Math.min(laneHeight / 2, span / 2));
+    ctx.fill();
   }
   ctx.restore();
 }
