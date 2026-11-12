@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DayTempRange
 import com.brian.solwidget.data.DteTou
@@ -102,10 +103,17 @@ fun PowerChart(
         val dayBaseline = 16.dp.toPx()
         val tempBaseline = 38.dp.toPx()
         val top = if (layers.temperature) 50.dp.toPx() else 28.dp.toPx()
-        val contentBottom = size.height - if (layers.power) 28.dp.toPx() else 12.dp.toPx()
-        val runtimeHeader = if (layers.hvac) 16.dp.toPx() else 0f
-        val runtimeStrip = if (layers.hvac) 30.dp.toPx() else 0f
-        val bottom = contentBottom - runtimeHeader - runtimeStrip
+        val contentBottom = size.height - if (layers.hvac || !layers.power) 12.dp.toPx() else 28.dp.toPx()
+        val headerPaint = android.graphics.Paint().apply {
+            textSize = 11.sp.toPx()
+            isAntiAlias = true
+        }
+        val headerMetrics = headerPaint.fontMetrics
+        val runtimeGap = if (layers.hvac) 8.dp.toPx() else 0f
+        val runtimeHeader = if (layers.hvac) -headerMetrics.ascent + headerMetrics.descent else 0f
+        val runtimeStrip = if (layers.hvac) 36.dp.toPx() else 0f
+        val bottom = contentBottom - runtimeGap - runtimeHeader - runtimeStrip
+        val runtimeHeaderBaseline = bottom + runtimeGap - headerMetrics.ascent
         val width = (right - left).coerceAtLeast(1f)
         val height = (bottom - top).coerceAtLeast(1f)
 
@@ -200,7 +208,7 @@ fun PowerChart(
                 drawLine(SolColors.Grid, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
                 val labelY = when {
                     abs(tick - tempMax) < 0.01 -> top + 16f
-                    abs(tick - tempMin) < 0.01 -> bottom + 6f
+                    abs(tick - tempMin) < 0.01 -> if (layers.hvac) bottom - 2f else bottom + 6f
                     else -> y + 8f
                 }
                 native.drawText(formatTempBound(tick), 6f, labelY, unitPaint)
@@ -330,8 +338,9 @@ fun PowerChart(
                 ::xOf,
                 left,
                 right,
-                bottom + runtimeHeader,
-                contentBottom
+                bottom + runtimeGap + runtimeHeader,
+                contentBottom,
+                runtimeHeaderBaseline
             )
         }
     }
@@ -539,15 +548,17 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRuntimeStrip(
     left: Float,
     right: Float,
     stripTop: Float,
-    stripBottom: Float
+    stripBottom: Float,
+    headerBaseline: Float
 ) {
     val label = android.graphics.Paint().apply {
-        color = SolColors.Muted.toArgb()
-        textSize = 22f
+        color = SolColors.Ink.toArgb()
+        textSize = 11.sp.toPx()
         isAntiAlias = true
     }
-    native.drawText("Runtime", 4f, stripTop - 4f, label)
-    var swatchX = label.measureText("Runtime") + 12f
+    native.drawText("Runtime", left, headerBaseline, label)
+    var swatchX = left + label.measureText("Runtime") + 8.dp.toPx()
+    val swatch = 8.dp.toPx()
     val sources = listOf(
         Triple("Heat pump", SolColors.HeatPump, runs.any { it.heatPump > 0.02 }),
         Triple("Gas aux", SolColors.AuxHeat, runs.any { it.aux > 0.02 }),
@@ -555,13 +566,18 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRuntimeStrip(
     )
     for ((name, color, present) in sources) {
         if (!present) continue
-        drawRect(color, Offset(swatchX, stripTop - 14f), Size(8.dp.toPx(), 8.dp.toPx()))
-        swatchX += 8.dp.toPx() + 4f
-        native.drawText(name, swatchX, stripTop - 4f, label)
-        swatchX += label.measureText(name) + 10f
+        drawRect(color, Offset(swatchX, headerBaseline - swatch), Size(swatch, swatch))
+        swatchX += swatch + 4.dp.toPx()
+        native.drawText(name, swatchX, headerBaseline, label)
+        swatchX += label.measureText(name) + 8.dp.toPx()
     }
-    native.drawText("100%", 4f, stripTop + 16f, label)
-    drawLine(SolColors.Grid, Offset(left, stripTop), Offset(right, stripTop), strokeWidth = 1f)
+    val tick = android.graphics.Paint().apply {
+        color = android.graphics.Color.parseColor("#E8EEF7")
+        textSize = 10.sp.toPx()
+        isAntiAlias = true
+    }
+    native.drawText("100%", 6f, stripTop + 8f, tick)
+    drawLine(SolColors.Grid, Offset(left, stripTop), Offset(right, stripTop), strokeWidth = 1.dp.toPx())
     val stripH = (stripBottom - stripTop).coerceAtLeast(1f)
     for (run in runs) {
         val total = (run.heatPump + run.aux + run.cool).coerceAtLeast(0.001)

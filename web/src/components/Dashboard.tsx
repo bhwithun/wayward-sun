@@ -279,7 +279,7 @@ export function Dashboard() {
           ecobee={chart.ecobee}
         />
         {layers.hvac && (
-          <p className="muted" style={{ padding: "0 16px" }} title="Gas aux is about $0.60 per runtime hour">
+          <p className="muted hvac-summary" title="Gas aux is about $0.60 per runtime hour">
             {hvacSummaryLabel(hvacSummary(chart.ecobee, chart.fromMs, chart.toMs, clock))}
           </p>
         )}

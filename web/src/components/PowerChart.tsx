@@ -187,7 +187,8 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     }
   }
 
-  if (showDegrees) drawFreezeReference(ctx, yTemp, left, right, tempRange.min, tempRange.max);
+  const nowX = props.now >= props.from && props.now < props.to ? xOf(props.now) : null;
+  if (showDegrees) drawFreezeReference(ctx, yTemp, left, right, tempRange.min, tempRange.max, nowX);
 
   const ecobeeEnd = Math.min(props.to, props.now);
   if (props.layers.ecobee) drawEcobee(ctx, ecobee, props.from, ecobeeEnd, plotW, xOf, yTemp, "fill", props.now);
@@ -303,13 +304,13 @@ function drawFreezeReference(
   left: number,
   right: number,
   tempMin: number,
-  tempMax: number
+  tempMax: number,
+  nowX: number | null
 ) {
   if (!(tempMin < 32 && tempMax > 32)) return;
   const y = yOf(32);
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 4]);
   ctx.beginPath();
@@ -317,9 +318,18 @@ function drawFreezeReference(
   ctx.lineTo(right, y);
   ctx.stroke();
   ctx.setLineDash([]);
+  const text = "32°";
   ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText("32°", right - 2, y - 4);
+  const textWidth = ctx.measureText(text).width;
+  const anchor = nowX == null ? right - 8 : Math.min(right - 8, Math.max(left + textWidth + 8, nowX - 10));
+  const boxLeft = anchor - textWidth - 4;
+  ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
+  ctx.beginPath();
+  ctx.roundRect(boxLeft, y - 13, textWidth + 8, 14, 4);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.fillText(text, anchor, y - 3);
   ctx.restore();
 }
 
