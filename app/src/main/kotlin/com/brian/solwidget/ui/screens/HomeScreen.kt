@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -33,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -57,6 +59,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
@@ -70,8 +75,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -79,6 +86,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -90,6 +98,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -278,8 +287,23 @@ fun HomeScreen(
         cardBounds = cardBounds,
         onChartTap = {
             legendOpen = false
+            if (expanded && state.tab == HomeTab.LIVE) {
+                expandedPanel = liveFullscreenCards(state.layers).getOrNull(state.fullscreenPage - 1)
+            }
             viewModel.setChartExpanded(!expanded)
         },
+        onSwipe = { delta ->
+            legendOpen = false
+            if (state.tab == HomeTab.LIVE) {
+                val last = liveFullscreenCards(state.layers).size
+                viewModel.setFullscreenPage((state.fullscreenPage + delta).coerceIn(0, last))
+            } else if (state.historyWeekSelected) {
+                viewModel.shiftHistoryWeek(delta)
+            } else {
+                viewModel.shiftHistoryDay(delta)
+            }
+        },
+        pageIndex = state.fullscreenPage,
         onCardBounds = { cardBounds = it },
         legendOpen = legendOpen,
         onToggleLegend = { legendOpen = !legendOpen },
@@ -560,6 +584,35 @@ internal fun HomeTabs(
 }
 
 @Composable
+private fun LiveFullscreenPage(
+    index: Int,
+    cards: List<MetaPanel>,
+    chart: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
+    layers: ChartLayers,
+    snapshot: ForecastSnapshot,
+    weather: WeatherSnapshot?,
+    now: Instant,
+    onOpenSettings: () -> Unit
+) {
+    if (index == 0) {
+        Box(Modifier.fillMaxSize(), content = chart)
+    } else {
+        Box(Modifier.fillMaxSize().padding(16.dp)) {
+            LayerMetaPanel(
+                layers = layers,
+                snapshot = snapshot,
+                weather = weather,
+                now = now,
+                onOpenSettings = onOpenSettings,
+                expandedPanel = cards[index - 1],
+                onToggleExpand = {},
+                showOnly = cards[index - 1]
+            )
+        }
+    }
+}
+
+@Composable
 internal fun LivePane(
     snapshot: ForecastSnapshot?,
     weather: WeatherSnapshot?,
@@ -612,7 +665,29 @@ internal fun LivePane(
         )
     }
     if (controls.expanded) {
-        ExpandedChart(modifier, controls, legend, content = chartContent)
+        val cards = liveFullscreenCards(layers)
+        val pageCount = cards.size + 1
+        val index = controls.pageIndex.coerceIn(0, pageCount - 1)
+        ExpandedChart(
+            modifier = modifier,
+            controls = controls,
+            legend = legend,
+            pageCount = pageCount,
+            pageIndex = index,
+            showDots = true,
+            previous = if (index > 0) {
+                { LiveFullscreenPage(index - 1, cards, chartContent, layers, snapshot, weather, now, onOpenSettings) }
+            } else {
+                null
+            },
+            next = if (index < pageCount - 1) {
+                { LiveFullscreenPage(index + 1, cards, chartContent, layers, snapshot, weather, now, onOpenSettings) }
+            } else {
+                null
+            }
+        ) {
+            LiveFullscreenPage(index, cards, chartContent, layers, snapshot, weather, now, onOpenSettings)
+        }
         return
     }
     Box(modifier.fillMaxSize()) {
@@ -740,8 +815,53 @@ internal fun HistoryPane(
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
     }
+    val zoneDate = DetroitCalendar.ZONE
+    val windowFrom = history?.from?.atZone(zoneDate)?.toLocalDate()
+    val windowTo = history?.to?.atZone(zoneDate)?.toLocalDate()
+    val sampleDates = buildList {
+        history?.points?.forEach { add(it.periodEnd.atZone(zoneDate).toLocalDate()) }
+        history?.ecobee?.forEach { add(it.at.atZone(zoneDate).toLocalDate()) }
+    }
+    val earliest = sampleDates.minOrNull()
+    val newest = sampleDates.maxOrNull() ?: today
+    val anchor = if (weekSelected) shownWeek else shownDay
+    fun canStep(delta: Int) = if (weekSelected) {
+        DetroitCalendar.canStepWeek(anchor, delta, newest, windowFrom, windowTo, earliest)
+    } else {
+        DetroitCalendar.canStepDay(anchor, delta, newest, windowFrom, windowTo, earliest)
+    }
+    fun pageFor(start: LocalDate): @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        val (pageFrom, pageTo) = if (weekSelected) DetroitCalendar.weekRange(start) else DetroitCalendar.dayRange(start)
+        val drawn = if (pageMatches && history != null) history.chartFor(pageFrom, pageTo, now) else null
+        if (drawn != null) {
+            PowerChart(
+                points = drawn.points,
+                now = now,
+                weather = drawn.weather,
+                rangeFrom = pageFrom,
+                rangeTo = pageTo,
+                layers = layers,
+                sunDays = drawn.sunDays,
+                zone = DetroitCalendar.ZONE,
+                ecobee = drawn.ecobee
+            )
+        }
+    }
+    val stepDays = if (weekSelected) 7L else 1L
+    val previousStart = if (canStep(-1)) anchor.minusDays(stepDays) else null
+    val nextStart = if (canStep(1)) anchor.plusDays(stepDays) else null
     if (controls.expanded) {
-        ExpandedChart(modifier, controls, legend, content = chartContent)
+        ExpandedChart(
+            modifier = modifier,
+            controls = controls,
+            legend = legend,
+            pageCount = 1,
+            pageIndex = 0,
+            showDots = false,
+            previous = previousStart?.let { start -> pageFor(start) },
+            next = nextStart?.let { start -> pageFor(start) },
+            content = pageFor(anchor)
+        )
         return
     }
     Box(modifier.fillMaxSize()) {
@@ -849,28 +969,121 @@ private fun ExpandedChart(
     modifier: Modifier,
     controls: ChartControls,
     legend: LegendModel,
+    pageCount: Int,
+    pageIndex: Int,
+    showDots: Boolean,
+    previous: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)?,
+    next: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)?,
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit
 ) {
     var full by remember { mutableStateOf<Rect?>(null) }
-    BoxWithConstraints(
+    var slide by remember { mutableFloatStateOf(0f) }
+    var widthPx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(controls.previewDragFraction, widthPx) {
+        if (widthPx > 0 && controls.previewDragFraction != 0f) {
+            slide = controls.previewDragFraction * widthPx
+        }
+    }
+    Box(
         modifier
             .fillMaxSize()
             .background(SolColors.Navy)
             .onGloballyPositioned { full = it.boundsInRoot() }
             .scaleFromCard(controls.expandProgress, controls.cardBounds, full)
     ) {
-        val portrait = maxHeight > maxWidth
-        val chartHeight = if (maxWidth * 1.2f < maxHeight) maxWidth * 1.2f else maxHeight
-        ChartFrame(
-            expanded = true,
-            onTap = controls.onChartTap,
-            modifier = if (portrait) {
-                Modifier.fillMaxWidth().height(chartHeight).align(Alignment.Center)
-            } else {
-                Modifier.fillMaxSize()
-            },
-            content = content
-        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .onSizeChanged { widthPx = it.width }
+                .pointerInput(previous != null, next != null, controls.legendOpen) {
+                    if (controls.legendOpen) return@pointerInput
+                    val slop = viewConfiguration.touchSlop
+                    val longPress = viewConfiguration.longPressTimeoutMillis
+                    while (true) {
+                        var dx = 0f
+                        var horizontal = false
+                        var tap = false
+                        val width = size.width.toFloat().coerceAtLeast(1f)
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            val start = down.uptimeMillis
+                            val origin = down.position
+                            var movedX = 0f
+                            var movedY = 0f
+                            var sideways = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                                if (!change.pressed) {
+                                    val held = change.uptimeMillis - start
+                                    if (!sideways && chartTapFires(false, false, held, longPress)) tap = true
+                                    dx = movedX
+                                    horizontal = sideways
+                                    return@awaitEachGesture
+                                }
+                                movedX = change.position.x - origin.x
+                                movedY = change.position.y - origin.y
+                                if (!sideways && (abs(movedX) > slop || abs(movedY) > slop)) {
+                                    if (abs(movedY) > abs(movedX)) return@awaitEachGesture
+                                    sideways = true
+                                }
+                                if (sideways) {
+                                    change.consume()
+                                    slide = resistedDrag(movedX, canPrev = previous != null, canNext = next != null)
+                                }
+                            }
+                        }
+                        if (tap) {
+                            controls.onChartTap()
+                        } else if (horizontal) {
+                            val delta = pagerDelta(dx, width, canPrev = previous != null, canNext = next != null)
+                            val target = if (delta == 0) 0f else -delta * width
+                            val from = slide
+                            val started = withFrameNanos { it }
+                            while (true) {
+                                val now = withFrameNanos { it }
+                                val t = ((now - started) / 1_000_000f / CHART_EXPAND_MILLIS).coerceIn(0f, 1f)
+                                slide = from + (target - from) * t
+                                if (t >= 1f) break
+                            }
+                            if (delta != 0) {
+                                controls.onSwipe(delta)
+                                slide = 0f
+                            }
+                        }
+                    }
+                }
+        ) {
+            val width = widthPx.toFloat()
+            if (previous != null && width > 0f) {
+                Box(Modifier.fillMaxSize().offset { IntOffset((slide - width).roundToInt(), 0) }, content = previous)
+            }
+            Box(Modifier.fillMaxSize().offset { IntOffset(slide.roundToInt(), 0) }) {
+                ChartFrame(expanded = true, modifier = Modifier.fillMaxSize(), content = content)
+            }
+            if (next != null && width > 0f) {
+                Box(Modifier.fillMaxSize().offset { IntOffset((slide + width).roundToInt(), 0) }, content = next)
+            }
+        }
+        if (showDots && pageCount in 2..6) {
+            Row(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                repeat(pageCount) { index ->
+                    Box(
+                        Modifier
+                            .size(if (index == pageIndex) 7.dp else 5.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = if (index == pageIndex) 0.9f else 0.35f))
+                    )
+                }
+            }
+        } else {
+            if (previous != null) PagerEdge(Modifier.align(Alignment.CenterStart))
+            if (next != null) PagerEdge(Modifier.align(Alignment.CenterEnd))
+        }
         LegendButton(
             open = controls.legendOpen,
             onClick = controls.onToggleLegend,
@@ -886,11 +1099,26 @@ private fun ExpandedChart(
     }
 }
 
+@Composable
+private fun PagerEdge(modifier: Modifier) {
+    Box(
+        modifier
+            .padding(horizontal = 4.dp)
+            .width(3.dp)
+            .height(48.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color.White.copy(alpha = 0.28f))
+    )
+}
+
 internal data class ChartControls(
     val expanded: Boolean = false,
     val expandProgress: Float = 1f,
     val cardBounds: Rect? = null,
     val onChartTap: () -> Unit = {},
+    val onSwipe: (Int) -> Unit = {},
+    val pageIndex: Int = 0,
+    val previewDragFraction: Float = 0f,
     val onCardBounds: (Rect) -> Unit = {},
     val legendOpen: Boolean = false,
     val onToggleLegend: () -> Unit = {},
@@ -912,12 +1140,7 @@ private fun ChartFrame(
             .onGloballyPositioned { coords -> onBounds?.invoke(coords.boundsInRoot()) }
             .clip(RoundedCornerShape(if (expanded) 0.dp else 20.dp))
             .background(SolColors.Panel)
-            .padding(
-                start = if (expanded) 12.dp else 8.dp,
-                top = if (expanded) 40.dp else 8.dp,
-                end = if (expanded) 12.dp else 8.dp,
-                bottom = if (expanded) 12.dp else 8.dp
-            )
+            .padding(if (expanded) 4.dp else 8.dp)
             .then(if (onTap != null) Modifier.chartTap(onTap) else Modifier),
         content = content
     )
@@ -1179,6 +1402,14 @@ internal fun HistoryCalendar(
 }
 
 internal enum class MetaPanel { SOLAR, TEMP, PRECIP, RATES }
+
+/** Power chart first, then the Live cards that are turned on. */
+internal fun liveFullscreenCards(layers: ChartLayers): List<MetaPanel> = buildList {
+    if (layers.power) add(MetaPanel.SOLAR)
+    if (layers.temperature) add(MetaPanel.TEMP)
+    if (layers.precipitation) add(MetaPanel.PRECIP)
+    if (layers.rates) add(MetaPanel.RATES)
+}
 
 @Composable
 private fun StatusBanner(message: String) {

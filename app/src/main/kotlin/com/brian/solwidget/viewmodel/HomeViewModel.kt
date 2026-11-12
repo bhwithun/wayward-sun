@@ -36,6 +36,13 @@ import kotlinx.coroutines.withContext
 
 enum class HomeTab { LIVE, HISTORY }
 
+private data class HistoryBounds(
+    val from: LocalDate,
+    val toExclusive: LocalDate,
+    val earliest: LocalDate?,
+    val newest: LocalDate
+)
+
 fun homeTabStored(name: String?): HomeTab = when (name) {
     "history", "history-day" -> HomeTab.HISTORY
     else -> HomeTab.LIVE
@@ -64,7 +71,9 @@ data class HomeUiState(
     val liveEcobee: List<EcobeeSample> = emptyList(),
     val livePastKey: String? = null,
     val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR,
-    val chartExpanded: Boolean = false
+    val chartExpanded: Boolean = false,
+    /** Live fullscreen page. 0 is the power chart, then Solar, Temperature, and the other cards. */
+    val fullscreenPage: Int = 0
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -161,8 +170,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setChartExpanded(expanded: Boolean) {
-        if (_uiState.value.chartExpanded == expanded) return
-        _uiState.update { it.copy(chartExpanded = expanded) }
+        if (_uiState.value.chartExpanded == expanded && (!expanded || _uiState.value.fullscreenPage == 0)) return
+        _uiState.update {
+            it.copy(
+                chartExpanded = expanded,
+                fullscreenPage = if (expanded) it.fullscreenPage else 0
+            )
+        }
+    }
+
+    fun setFullscreenPage(index: Int) {
+        val page = index.coerceAtLeast(0)
+        if (_uiState.value.fullscreenPage == page) return
+        _uiState.update { it.copy(fullscreenPage = page) }
     }
 
     fun showTab(tab: HomeTab) {
@@ -221,19 +241,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Swipe on the day chart. One step is the adjacent local day. */
     fun shiftHistoryDay(delta: Int) {
-        if (delta == 0) return
-        val today = DetroitCalendar.today(_uiState.value.now)
-        val day = _uiState.value.selectedDay ?: today
+        val state = _uiState.value
+        val today = DetroitCalendar.today(state.now)
+        val day = state.selectedDay ?: today
+        val window = state.history?.let { historyWindow(it) }
+        if (!DetroitCalendar.canStepDay(day, delta, window?.newest ?: today, window?.from, window?.toExclusive, window?.earliest)) {
+            return
+        }
         selectHistoryDay(day.plusDays(delta.toLong()))
     }
 
     /** Swipe on the history chart. One step is the adjacent Sunday–Saturday week. */
     fun shiftHistoryWeek(delta: Int) {
-        if (delta == 0) return
         val today = DetroitCalendar.today(_uiState.value.now)
         val state = _uiState.value
         val month = state.historyMonth ?: YearMonth.from(today)
         val week = state.selectedWeek ?: DetroitCalendar.weekStart(today)
+        val window = state.history?.let { historyWindow(it) }
+        if (!DetroitCalendar.canStepWeek(week, delta, window?.newest ?: today, window?.from, window?.toExclusive, window?.earliest)) {
+            return
+        }
         val focus = DetroitCalendar.shiftWeek(month, week, delta)
         val monthChanged = focus.month != month || state.historyMonth == null
         _uiState.update { it.copy(historyMonth = focus.month, selectedWeek = focus.week) }
@@ -308,6 +335,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(layers = ChartLayers()) }
             WidgetUpdater.updateAll(getApplication())
         }
+    }
+
+    private fun historyWindow(page: HistoryPage): HistoryBounds {
+        val zone = DetroitCalendar.ZONE
+        val samples = page.points.map { it.periodEnd.atZone(zone).toLocalDate() } +
+            page.ecobee.map { it.at.atZone(zone).toLocalDate() }
+        return HistoryBounds(
+            from = page.from.atZone(zone).toLocalDate(),
+            toExclusive = page.to.atZone(zone).toLocalDate(),
+            earliest = samples.minOrNull(),
+            newest = samples.maxOrNull() ?: DetroitCalendar.today(_uiState.value.now)
+        )
     }
 
     fun consumeToast() {

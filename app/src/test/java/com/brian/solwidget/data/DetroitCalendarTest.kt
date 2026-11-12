@@ -53,6 +53,30 @@ class DetroitCalendarTest {
     }
 
     @Test
+    fun fullscreenSwipeStopsAtTodayAndAtTheFirstSampleInTheLoadedWindow() {
+        val today = LocalDate.of(2026, 11, 11)
+        val windowFrom = LocalDate.of(2026, 11, 1)
+        val windowTo = LocalDate.of(2026, 12, 1)
+        val earliest = LocalDate.of(2026, 11, 8)
+        assertFalse(DetroitCalendar.canStepDay(today, 1, today, windowFrom, windowTo, earliest))
+        assertTrue(DetroitCalendar.canStepDay(today, -1, today, windowFrom, windowTo, earliest))
+        assertFalse(DetroitCalendar.canStepDay(earliest, -1, today, windowFrom, windowTo, earliest))
+        assertTrue(DetroitCalendar.canStepDay(LocalDate.of(2026, 11, 1), -1, today, null, null, null))
+        assertFalse(DetroitCalendar.canStepWeek(LocalDate.of(2026, 11, 8), 1, today, windowFrom, windowTo, earliest))
+        assertFalse(DetroitCalendar.canStepWeek(LocalDate.of(2026, 11, 8), -1, today, windowFrom, windowTo, earliest))
+        assertTrue(
+            DetroitCalendar.canStepWeek(
+                LocalDate.of(2026, 11, 8),
+                -1,
+                today,
+                windowFrom,
+                windowTo,
+                LocalDate.of(2026, 11, 1)
+            )
+        )
+    }
+
+    @Test
     fun weekRangeIsDetroitMidnightThroughTheNextSunday() {
         val (from, to) = DetroitCalendar.weekRange(LocalDate.of(2026, 9, 27))
         assertEquals(Instant.parse("2026-09-27T04:00:00Z"), from)
