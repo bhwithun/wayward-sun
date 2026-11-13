@@ -1,8 +1,11 @@
-import { addDays, detroitParts, parseYmd, ymdKey, type Ymd } from "./time";
+import { addDays, detroitParts, parseYmd, ymdKey, zonedTimeToUtc, type Ymd } from "./time";
 
 /** Average kW over a 30-minute bucket: Wh / 0.5 h / 1000 = Wh / 500. */
 export const HOUSE_WH_PER_KW = 500;
 export const HOUSE_BUCKET_MS = 30 * 60 * 1000;
+export const HOUSE_HOUR_MS = 60 * 60 * 1000;
+/** Fixed solar axis. A higher bucket is drawn on this edge and marked as clipped. */
+export const HOUSE_SCALE_MAX_KW = 8;
 
 export type HouseSample = { t: number; kw: number };
 
@@ -37,27 +40,80 @@ export function detroitDayBounds(fromIso: string, toIso: string): { fromDay: str
   return { fromDay: ymdKey(from), toDay: ymdKey(to) };
 }
 
+/** Half-hour steps on a single day. Longer windows use hourly averages. */
+export function houseDetailIsHalfHour(fromMs: number, toMs: number): boolean {
+  const span = toMs - fromMs;
+  return span > 0 && span <= 26 * 60 * 60 * 1000;
+}
+
 /** Step polylines. Each run ends at its last real period end. A gap starts a new run. */
-export function houseStepRuns(samples: HouseSample[]): HouseVertex[][] {
+export function houseStepRuns(samples: HouseSample[], bucketMs = HOUSE_BUCKET_MS): HouseVertex[][] {
   const ordered = [...samples].sort((a, b) => a.t - b.t);
   const groups: HouseSample[][] = [];
   let current: HouseSample[] = [];
   for (const sample of ordered) {
     const previous = current[current.length - 1];
-    if (previous != null && sample.t - previous.t !== HOUSE_BUCKET_MS) {
+    if (previous != null && sample.t - previous.t !== bucketMs) {
       groups.push(current);
       current = [];
     }
     current.push(sample);
   }
   if (current.length > 0) groups.push(current);
-  return groups.map(stepVertices);
+  return groups.map((group) => stepVertices(group, bucketMs));
 }
 
-function stepVertices(samples: HouseSample[]): HouseVertex[] {
+/**
+ * One point per Detroit clock hour: the mean kW of the half-hours whose midpoint falls in that hour.
+ * The point's time is the end of the hour. Hours with no samples are left out.
+ */
+export function houseHourlySamples(samples: HouseSample[]): HouseSample[] {
+  const groups = new Map<string, { end: number; rows: HouseSample[] }>();
+  for (const sample of samples) {
+    const mid = detroitParts(new Date(sample.t - 15 * 60 * 1000));
+    const key = `${ymdKey(mid)}T${String(mid.hour).padStart(2, "0")}`;
+    let endHour = mid.hour + 1;
+    let endDay: Ymd = mid;
+    if (endHour === 24) {
+      endHour = 0;
+      endDay = addDays(mid, 1);
+    }
+    const end = zonedTimeToUtc(endDay.year, endDay.month, endDay.day, endHour).getTime();
+    const current = groups.get(key);
+    if (current) current.rows.push(sample);
+    else groups.set(key, { end, rows: [sample] });
+  }
+  return [...groups.values()]
+    .sort((a, b) => a.end - b.end)
+    .map((group) => ({
+      t: group.end,
+      kw: group.rows.reduce((sum, row) => sum + row.kw, 0) / group.rows.length,
+    }));
+}
+
+export function housePlotSamples(samples: HouseSample[], fromMs: number, toMs: number): HouseSample[] {
+  const visible = samples.filter((sample) => sample.t >= fromMs && sample.t < toMs);
+  return houseDetailIsHalfHour(fromMs, toMs) ? visible : houseHourlySamples(visible);
+}
+
+export function houseClippedSamples(samples: HouseSample[], limit = HOUSE_SCALE_MAX_KW): HouseSample[] {
+  return samples.filter((sample) => sample.kw > limit);
+}
+
+export function housePeakKw(samples: HouseSample[]): number | null {
+  if (samples.length === 0) return null;
+  return Math.max(...samples.map((sample) => sample.kw));
+}
+
+export function houseLegendLabel(peakKw: number | null): string {
+  if (peakKw == null || peakKw <= HOUSE_SCALE_MAX_KW) return "House use";
+  return `House use · peak ${peakKw.toFixed(1)} kW`;
+}
+
+function stepVertices(samples: HouseSample[], bucketMs: number): HouseVertex[] {
   const vertices: HouseVertex[] = [];
   samples.forEach((sample, index) => {
-    if (index === 0) vertices.push({ t: sample.t - HOUSE_BUCKET_MS, kw: sample.kw });
+    if (index === 0) vertices.push({ t: sample.t - bucketMs, kw: sample.kw });
     else vertices.push({ t: samples[index - 1].t, kw: sample.kw });
     vertices.push({ t: sample.t, kw: sample.kw });
   });

@@ -257,6 +257,10 @@ class AppStorage(private val context: Context) {
     }
 }
 
+/** The one rooftop this app is for. Other resource ids stay unnamed, so the card hides them. */
+fun solarDisplayName(resourceId: String): String? =
+    if (resourceId.equals(AppStorage.DEFAULT_RESOURCE_ID, ignoreCase = true)) "Enphase · Home" else null
+
 internal fun chartLayersFrom(prefs: Preferences): ChartLayers {
     val legacyRates = prefs[AppStorage.Keys.SHOW_DTE_RATES]
     val solcast = prefs[AppStorage.Keys.SHOW_SOLCAST] ?: true

@@ -31,7 +31,13 @@ import com.brian.solwidget.data.EcobeeBand
 import com.brian.solwidget.data.EcobeeMark
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.ForecastSnapshot
+import com.brian.solwidget.data.HOUSE_BUCKET
+import com.brian.solwidget.data.HOUSE_HOUR
+import com.brian.solwidget.data.HOUSE_SCALE_MAX_KW
 import com.brian.solwidget.data.HouseSample
+import com.brian.solwidget.data.houseClippedSamples
+import com.brian.solwidget.data.houseDetailIsHalfHour
+import com.brian.solwidget.data.housePlotSamples
 import com.brian.solwidget.data.houseStepRuns
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SolarDayLabels
@@ -54,6 +60,7 @@ import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.util.Formatters
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
@@ -70,6 +77,46 @@ private const val BITMAP_PX_PER_DP = 2.75f
 private const val TOO_WARM_ALPHA = 0.40f
 private const val TOO_COOL_ALPHA = 0.50f
 private const val FREEZE_F = 32.0
+private const val WIDGET_DAY_LABEL_FULL = 40f
+private const val WIDGET_DAY_LABEL_MIN = 18f
+
+internal data class WidgetDayColumn(val center: Float, val widthAtFullSize: Float)
+
+internal data class WidgetDayLabelPlan(val textSize: Float, val visible: List<Int>)
+
+/**
+ * Shrink the day column until every label fits. A column that still overflows at the
+ * minimum size is left out, so a partial day on the edge is not clipped.
+ */
+internal fun planWidgetDayLabels(
+    columns: List<WidgetDayColumn>,
+    left: Float,
+    right: Float,
+    fullSize: Float = WIDGET_DAY_LABEL_FULL,
+    minSize: Float = WIDGET_DAY_LABEL_MIN
+): WidgetDayLabelPlan {
+    if (columns.isEmpty() || fullSize <= 0f) return WidgetDayLabelPlan(fullSize, emptyList())
+    var size = fullSize
+    while (size > minSize) {
+        if (columns.indices.all { fitsWidgetColumn(columns[it], size, fullSize, left, right) }) {
+            return WidgetDayLabelPlan(size, columns.indices.toList())
+        }
+        size -= 1f
+    }
+    val visible = columns.indices.filter { fitsWidgetColumn(columns[it], minSize, fullSize, left, right) }
+    return WidgetDayLabelPlan(minSize, visible)
+}
+
+private fun fitsWidgetColumn(
+    column: WidgetDayColumn,
+    size: Float,
+    fullSize: Float,
+    left: Float,
+    right: Float
+): Boolean {
+    val half = column.widthAtFullSize * (size / fullSize) / 2f
+    return column.center - half >= left && column.center + half <= right
+}
 
 private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP, RATES }
 
@@ -188,8 +235,8 @@ fun PowerChart(
 
         if (layers.rates) {
             val bands = DteTou.bands(from, to)
-            if (layers.buy) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Buy) { it.cents }
-            if (layers.sell) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Sell) { it.sellCents }
+            if (layers.buy) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Buy, quiet = layers.house) { it.cents }
+            if (layers.sell) drawRateArea(bands, ::xOf, ::yOfRate, SolColors.Sell, quiet = layers.house) { it.sellCents }
         }
 
         if (layers.precipitation && weather.size >= 2) {
@@ -273,7 +320,7 @@ fun PowerChart(
             drawSeries(liveStroke(points), ::xOf, ::yOf, SolColors.Live, dotted = isDemo)
         }
         if (layers.house) {
-            drawHouseLine(house, from, to, ::xOf, ::yOf)
+            drawHouseLine(house, from, to, zone, ::xOf, ::yOf)
         }
 
         if (layers.temperature && weather.size >= 2) {
@@ -407,6 +454,9 @@ private fun hourClock(hour: Int): String = when (hour) {
     else -> "${hour - 12}p"
 }
 
+private fun compactTemp(range: DayTempRange): String =
+    if (range.lowF == range.highF) "${range.lowF}" else "${range.lowF}-${range.highF}"
+
 private fun drawTempRangeLabel(
     canvas: AndroidCanvas,
     range: DayTempRange,
@@ -421,13 +471,7 @@ private fun drawTempRangeLabel(
         isAntiAlias = true
         textAlign = Paint.Align.CENTER
     }
-    val text = if (!compact) {
-        range.label
-    } else if (range.lowF == range.highF) {
-        "${range.lowF}"
-    } else {
-        "${range.lowF}-${range.highF}"
-    }
+    val text = if (!compact) range.label else compactTemp(range)
     canvas.drawText(text, centerX, baselineY, paint(SolColors.Ink.toArgb()))
 }
 
@@ -475,12 +519,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHouseLine(
     samples: List<HouseSample>,
     from: Instant,
     to: Instant,
+    zone: ZoneId,
     xOf: (Instant) -> Float,
     yOf: (Double) -> Float
 ) {
-    val visible = samples.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
+    val plotted = housePlotSamples(samples, from, to, zone)
+    val bucket = if (houseDetailIsHalfHour(from, to)) HOUSE_BUCKET else HOUSE_HOUR
     val stroke = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Butt, join = StrokeJoin.Miter)
-    for (run in houseStepRuns(visible)) {
+    for (run in houseStepRuns(plotted, bucket)) {
         if (run.size < 2) continue
         val path = ComposePath()
         run.forEachIndexed { index, vertex ->
@@ -489,6 +535,18 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHouseLine(
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         drawPath(path, SolColors.House, style = stroke)
+    }
+    val capY = yOf(HOUSE_SCALE_MAX_KW)
+    val half = 4.5.dp.toPx()
+    val rise = 7.dp.toPx()
+    for (sample in houseClippedSamples(plotted)) {
+        val x = xOf(sample.periodEnd.minus(bucket.dividedBy(2)))
+        val cap = ComposePath()
+        cap.moveTo(x, capY - rise)
+        cap.lineTo(x - half, capY)
+        cap.lineTo(x + half, capY)
+        cap.close()
+        drawPath(cap, SolColors.House)
     }
 }
 
@@ -678,6 +736,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateArea(
     xOf: (Instant) -> Float,
     yOf: (Double) -> Float,
     color: Color,
+    quiet: Boolean = false,
     centsOf: (DteTou.Period) -> Double
 ) {
     if (bands.isEmpty()) return
@@ -697,17 +756,19 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRateArea(
     }
     path.lineTo(xOf(bands.last().end), baseline)
     path.close()
+    val fillAlpha = if (quiet) 0.10f else 0.20f
+    val edgeAlpha = if (quiet) 0.35f else 0.55f
     drawPath(
         path,
         Brush.verticalGradient(
-            colors = listOf(color.copy(alpha = 0.20f), Color.Transparent),
+            colors = listOf(color.copy(alpha = fillAlpha), Color.Transparent),
             startY = ceiling,
             endY = baseline
         )
     )
     drawPath(
         edge,
-        color.copy(alpha = 0.55f),
+        color.copy(alpha = edgeAlpha),
         style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Butt)
     )
 }
@@ -852,8 +913,12 @@ object ChartBitmapRenderer {
 
         if (layers.rates) {
             val bands = DteTou.bands(from, to)
-            if (layers.buy) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFFE57FD8.toInt()) { it.cents }
-            if (layers.sell) drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFF7BD88F.toInt()) { it.sellCents }
+            if (layers.buy) {
+                drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFFE57FD8.toInt(), quiet = layers.house) { it.cents }
+            }
+            if (layers.sell) {
+                drawAndroidRateArea(canvas, bands, ::xOf, ::yOfRate, 0xFF7BD88F.toInt(), quiet = layers.house) { it.sellCents }
+            }
         }
 
         if (layers.precipitation && weather.size >= 2) {
@@ -923,41 +988,59 @@ object ChartBitmapRenderer {
             emptyMap()
         }
         val tempRanges = if (layers.temperature) dayTempRanges(weather, zone) else emptyMap()
-        var day = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
+        val day = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
+        val measure = Paint().apply {
+            textSize = WIDGET_DAY_LABEL_FULL
+            isAntiAlias = true
+            textAlign = Paint.Align.CENTER
+        }
+        val columns = ArrayList<WidgetDayColumn>()
+        val columnDays = ArrayList<LocalDate>()
+        var cursor = day
+        while (!cursor.isAfter(lastDay)) {
+            val midnightX = xOf(cursor.atStartOfDay(zone).toInstant())
+            if (midnightX in left..right) {
+                canvas.drawLine(midnightX, top, midnightX, bottom, grid)
+            }
+            val labelX = xOf(cursor.atTime(12, 0).atZone(zone).toInstant())
+            if (labelX in left..right) {
+                val name = DayLabel.format(cursor.atStartOfDay(zone))
+                val kwh = dayTotals[cursor]?.takeIf { it.complete }?.let { Formatters.kwh(it.energyKwh) }
+                val temps = tempRanges[cursor]?.let { compactTemp(it) }
+                val width = listOfNotNull(name, kwh, temps).maxOf { measure.measureText(it) }
+                columns.add(WidgetDayColumn(labelX, width))
+                columnDays.add(cursor)
+            }
+            cursor = cursor.plusDays(1)
+        }
+        val labelPlan = planWidgetDayLabels(columns, left, right)
         val dayPaint = Paint().apply {
             color = 0xFFE8EEF7.toInt()
-            textSize = 40f
+            textSize = labelPlan.textSize
             isAntiAlias = true
             textAlign = Paint.Align.CENTER
         }
         val kwhPaint = Paint().apply {
             color = 0xFFE8EEF7.toInt()
-            textSize = 40f
+            textSize = labelPlan.textSize
             isAntiAlias = true
             textAlign = Paint.Align.CENTER
         }
-        while (!day.isAfter(lastDay)) {
-            val midnightX = xOf(day.atStartOfDay(zone).toInstant())
-            if (midnightX in left..right) {
-                canvas.drawLine(midnightX, top, midnightX, bottom, grid)
-            }
-            val label = DayLabel.format(day.atStartOfDay(zone))
-            val labelX = xOf(day.atTime(12, 0).atZone(zone).toInstant())
-            if (labelX in left + 12f..right - 12f) {
-                canvas.drawText(label, labelX, dayBaseline, dayPaint)
-                if (layers.power) {
-                    val totals = dayTotals[day]
-                    if (totals?.complete == true) {
-                        canvas.drawText(Formatters.kwh(totals.energyKwh), labelX, height - 8f, kwhPaint)
-                    }
-                }
-                val temps = tempRanges[day]
-                if (temps != null) {
-                    drawTempRangeLabel(canvas, temps, labelX, tempBaseline, 40f, compact = true)
+        for (index in labelPlan.visible) {
+            val shown = columnDays[index]
+            val labelX = columns[index].center
+            canvas.drawText(DayLabel.format(shown.atStartOfDay(zone)), labelX, dayBaseline, dayPaint)
+            if (layers.power) {
+                val totals = dayTotals[shown]
+                if (totals?.complete == true) {
+                    canvas.drawText(Formatters.kwh(totals.energyKwh), labelX, height - 8f, kwhPaint)
                 }
             }
-            day = day.plusDays(1)
+            val temps = tempRanges[shown]
+            if (temps != null) {
+                drawTempRangeLabel(canvas, temps, labelX, tempBaseline, labelPlan.textSize, compact = true)
+            }
         }
 
         if (layers.degrees) {
@@ -982,7 +1065,7 @@ object ChartBitmapRenderer {
             drawAndroidSeries(canvas, liveStroke(points), ::xOf, ::yOf, 0xFF2EE6A6.toInt(), bottom, dotted = isDemo)
         }
         if (layers.house) {
-            drawAndroidHouseLine(canvas, house, from, to, ::xOf, ::yOf)
+            drawAndroidHouseLine(canvas, house, from, to, zone, ::xOf, ::yOf)
         }
 
         if (layers.temperature && weather.size >= 2) {
@@ -1010,10 +1093,12 @@ object ChartBitmapRenderer {
         samples: List<HouseSample>,
         from: Instant,
         to: Instant,
+        zone: ZoneId,
         xOf: (Instant) -> Float,
         yOf: (Double) -> Float
     ) {
-        val visible = samples.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
+        val plotted = housePlotSamples(samples, from, to, zone)
+        val bucket = if (houseDetailIsHalfHour(from, to)) HOUSE_BUCKET else HOUSE_HOUR
         val paint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.STROKE
@@ -1022,7 +1107,7 @@ object ChartBitmapRenderer {
             strokeCap = Paint.Cap.BUTT
             strokeJoin = Paint.Join.MITER
         }
-        for (run in houseStepRuns(visible)) {
+        for (run in houseStepRuns(plotted, bucket)) {
             if (run.size < 2) continue
             val path = Path()
             run.forEachIndexed { index, vertex ->
@@ -1031,6 +1116,23 @@ object ChartBitmapRenderer {
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             canvas.drawPath(path, paint)
+        }
+        val capPaint = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.FILL
+            color = 0xFFB39DDB.toInt()
+        }
+        val capY = yOf(HOUSE_SCALE_MAX_KW)
+        val half = 4.5f * BITMAP_PX_PER_DP
+        val rise = 7f * BITMAP_PX_PER_DP
+        for (sample in houseClippedSamples(plotted)) {
+            val x = xOf(sample.periodEnd.minus(bucket.dividedBy(2)))
+            val cap = Path()
+            cap.moveTo(x, capY - rise)
+            cap.lineTo(x - half, capY)
+            cap.lineTo(x + half, capY)
+            cap.close()
+            canvas.drawPath(cap, capPaint)
         }
     }
 
@@ -1104,6 +1206,7 @@ object ChartBitmapRenderer {
         xOf: (Instant) -> Float,
         yOf: (Double) -> Float,
         color: Int,
+        quiet: Boolean = false,
         centsOf: (DteTou.Period) -> Double
     ) {
         if (bands.isEmpty()) return
@@ -1132,7 +1235,7 @@ object ChartBitmapRenderer {
                 ceiling,
                 0f,
                 baseline,
-                rgb or (0x33 shl 24),
+                rgb or ((if (quiet) 0x1A else 0x33) shl 24),
                 rgb,
                 Shader.TileMode.CLAMP
             )
@@ -1142,7 +1245,7 @@ object ChartBitmapRenderer {
             isAntiAlias = true
             style = Paint.Style.STROKE
             strokeWidth = 2f
-            this.color = rgb or (0x8C shl 24)
+            this.color = rgb or ((if (quiet) 0x59 else 0x8C) shl 24)
             strokeCap = Paint.Cap.BUTT
             strokeJoin = Paint.Join.MITER
         }

@@ -4,13 +4,25 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.round
 
 /** Average kW over a 30-minute bucket: Wh / 0.5 h / 1000 = Wh / 500. */
 const val HOUSE_WH_PER_KW = 500.0
 
+/** Fixed solar axis. A higher half-hour is drawn on this edge and marked as clipped. */
+const val HOUSE_SCALE_MAX_KW = 8.0
+
 val HOUSE_BUCKET: Duration = Duration.ofMinutes(30)
+
+val HOUSE_HOUR: Duration = Duration.ofHours(1)
+
+/** Half-hour steps on a single day. Week and Live windows use hourly averages. */
+fun houseDetailIsHalfHour(from: Instant, to: Instant): Boolean {
+    val minutes = Duration.between(from, to).toMinutes()
+    return minutes in 1..(26 * 60)
+}
 
 data class HouseSample(
     val periodEnd: Instant,
@@ -41,32 +53,76 @@ fun homeKwFromWh(homeWh: Double): Double = homeWh / HOUSE_WH_PER_KW
 fun kwhFromWh(wh: Double): Double = wh / 1000.0
 
 /**
- * Step polylines for average kW on each half-hour.
- * A run's last vertex is the last real period end. Nothing is added after it,
- * and a gap longer or shorter than [HOUSE_BUCKET] starts a new run.
+ * Step polylines. A run's last vertex is the last real period end.
+ * A gap that is not exactly [bucket] starts a new run.
  */
-fun houseStepRuns(samples: List<HouseSample>): List<List<HouseVertex>> {
+fun houseStepRuns(
+    samples: List<HouseSample>,
+    bucket: Duration = HOUSE_BUCKET
+): List<List<HouseVertex>> {
     val ordered = samples.sortedBy { it.periodEnd }
     if (ordered.isEmpty()) return emptyList()
     val groups = ArrayList<List<HouseSample>>()
     val current = ArrayList<HouseSample>()
     for (sample in ordered) {
         val previous = current.lastOrNull()
-        if (previous != null && Duration.between(previous.periodEnd, sample.periodEnd) != HOUSE_BUCKET) {
+        if (previous != null && Duration.between(previous.periodEnd, sample.periodEnd) != bucket) {
             groups.add(current.toList())
             current.clear()
         }
         current.add(sample)
     }
     if (current.isNotEmpty()) groups.add(current.toList())
-    return groups.map { stepVertices(it) }
+    return groups.map { stepVertices(it, bucket) }
 }
 
-private fun stepVertices(samples: List<HouseSample>): List<HouseVertex> {
+/**
+ * One point per clock hour: the mean kW of the half-hours whose midpoint falls in that hour.
+ * The point's period end is the end of the hour. Hours with no samples are absent, so the line stops.
+ */
+fun houseHourlySamples(samples: List<HouseSample>, zone: ZoneId): List<HouseSample> {
+    if (samples.isEmpty()) return emptyList()
+    val grouped = samples.groupBy { sample ->
+        val midpoint = sample.periodEnd.minus(Duration.ofMinutes(15))
+        midpoint.atZone(zone).toLocalDateTime().truncatedTo(ChronoUnit.HOURS)
+    }
+    return grouped.entries.sortedBy { it.key }.map { (hour, rows) ->
+        val end = hour.plusHours(1).atZone(zone).toInstant()
+        HouseSample(end, rows.sumOf { it.homeKw } / rows.size)
+    }
+}
+
+fun housePlotSamples(
+    samples: List<HouseSample>,
+    from: Instant,
+    to: Instant,
+    zone: ZoneId
+): List<HouseSample> {
+    val visible = samples.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
+    return if (houseDetailIsHalfHour(from, to)) visible else houseHourlySamples(visible, zone)
+}
+
+/** Readings above the fixed 0–8 kW scale. Each one gets a cap marker. */
+fun houseClippedSamples(
+    samples: List<HouseSample>,
+    limitKw: Double = HOUSE_SCALE_MAX_KW
+): List<HouseSample> = samples.filter { it.homeKw > limitKw }
+
+fun housePeakKw(samples: List<HouseSample>): Double? = samples.maxOfOrNull { it.homeKw }
+
+fun houseLegendLabel(peakKw: Double?): String {
+    if (peakKw == null || peakKw <= HOUSE_SCALE_MAX_KW) return "House use"
+    return String.format(Locale.US, "House use · peak %.1f kW", peakKw)
+}
+
+/** The widget row under House use stays visible but does not toggle while House use is off. */
+fun widgetHouseRowEnabled(houseOn: Boolean): Boolean = houseOn
+
+private fun stepVertices(samples: List<HouseSample>, bucket: Duration): List<HouseVertex> {
     val vertices = ArrayList<HouseVertex>(samples.size * 2)
     samples.forEachIndexed { index, sample ->
         if (index == 0) {
-            vertices.add(HouseVertex(sample.periodEnd.minus(HOUSE_BUCKET), sample.homeKw))
+            vertices.add(HouseVertex(sample.periodEnd.minus(bucket), sample.homeKw))
         } else {
             vertices.add(HouseVertex(samples[index - 1].periodEnd, sample.homeKw))
         }

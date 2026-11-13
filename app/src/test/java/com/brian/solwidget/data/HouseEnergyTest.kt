@@ -160,6 +160,46 @@ class HouseEnergyTest {
     }
 
     @Test
+    fun weekViewsAverageHoursAndADayKeepsHalfHours() {
+        val tenThirty = Instant.parse("2026-11-11T15:30:00Z")
+        val eleven = Instant.parse("2026-11-11T16:00:00Z")
+        val elevenThirty = Instant.parse("2026-11-11T16:30:00Z")
+        val noonUtc = Instant.parse("2026-11-11T17:00:00Z")
+        val samples = listOf(
+            HouseSample(tenThirty, 4.0),
+            HouseSample(eleven, 8.0),
+            HouseSample(elevenThirty, 2.0),
+            HouseSample(noonUtc, 2.0)
+        )
+        assertTrue(houseDetailIsHalfHour(from, to))
+        assertEquals(samples, housePlotSamples(samples, from, to, zone))
+        val weekEnd = Instant.parse("2026-11-18T05:00:00Z")
+        assertFalse(houseDetailIsHalfHour(from, weekEnd))
+        val hourly = housePlotSamples(samples, from, weekEnd, zone)
+        assertEquals(listOf(6.0, 2.0), hourly.map { it.homeKw })
+        assertEquals(eleven, hourly[0].periodEnd)
+        assertEquals(noonUtc, hourly[1].periodEnd)
+        val runs = houseStepRuns(hourly, HOUSE_HOUR)
+        assertEquals(1, runs.size)
+        assertEquals(noonUtc, runs.single().last().at)
+        val later = houseHourlySamples(listOf(HouseSample(Instant.parse("2026-11-11T19:30:00Z"), 3.0)), zone)
+        val split = houseStepRuns(hourly + later, HOUSE_HOUR)
+        assertEquals(2, split.size)
+        assertEquals(later.single().periodEnd, split[1].last().at)
+        assertTrue(split.flatten().none { it.at.isAfter(later.single().periodEnd) })
+    }
+
+    @Test
+    fun clippedBucketsAreMarkedAndNamedInTheLegend() {
+        val samples = listOf(HouseSample(noon, 16.4), HouseSample(noon.plus(HOUSE_BUCKET), 4.0))
+        assertEquals(listOf(16.4), houseClippedSamples(samples).map { it.homeKw })
+        assertEquals("House use · peak 16.4 kW", houseLegendLabel(housePeakKw(samples)))
+        assertEquals("House use", houseLegendLabel(4.0))
+        assertFalse(widgetHouseRowEnabled(false))
+        assertTrue(widgetHouseRowEnabled(true))
+    }
+
+    @Test
     fun theChipHidesWhenTheRangeHasNoHouseData() {
         val sample = listOf(HouseSample(noon, 2.0))
         assertFalse(houseChipVisible(emptyList(), emptyList(), from, to, zone))

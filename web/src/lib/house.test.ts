@@ -4,6 +4,12 @@ import {
   detroitDayBounds,
   homeKwFromWh,
   houseChipVisible,
+  houseClippedSamples,
+  houseDetailIsHalfHour,
+  houseHourlySamples,
+  houseLegendLabel,
+  housePeakKw,
+  housePlotSamples,
   houseStepRuns,
   houseSummary,
   houseSummaryLabel,
@@ -106,6 +112,40 @@ describe("house summary", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0][runs[0].length - 1].t).toBe(last);
     expect(runs[0].some((vertex) => vertex.t > last)).toBe(false);
+  });
+
+  it("averages a week into hours and keeps half-hours on a single day", () => {
+    const samples: HouseSample[] = [
+      { t: Date.parse("2026-11-11T15:30:00.000Z"), kw: 4 },
+      { t: Date.parse("2026-11-11T16:00:00.000Z"), kw: 8 },
+      { t: Date.parse("2026-11-11T16:30:00.000Z"), kw: 2 },
+      { t: Date.parse("2026-11-11T17:00:00.000Z"), kw: 2 },
+    ];
+    expect(houseDetailIsHalfHour(DETROIT_DAY_FROM, DETROIT_DAY_TO)).toBe(true);
+    expect(housePlotSamples(samples, DETROIT_DAY_FROM, DETROIT_DAY_TO)).toEqual(samples);
+    const weekTo = Date.parse("2026-11-18T05:00:00.000Z");
+    expect(houseDetailIsHalfHour(DETROIT_DAY_FROM, weekTo)).toBe(false);
+    const hourly = housePlotSamples(samples, DETROIT_DAY_FROM, weekTo);
+    expect(hourly.map((point) => point.kw)).toEqual([6, 2]);
+    expect(hourly[0].t).toBe(Date.parse("2026-11-11T16:00:00.000Z"));
+    expect(hourly[1].t).toBe(Date.parse("2026-11-11T17:00:00.000Z"));
+    const runs = houseStepRuns(hourly, 60 * 60 * 1000);
+    expect(runs).toHaveLength(1);
+    expect(runs[0][runs[0].length - 1].t).toBe(hourly[1].t);
+    const later = houseHourlySamples([{ t: Date.parse("2026-11-11T19:30:00.000Z"), kw: 3 }]);
+    const split = houseStepRuns([...hourly, ...later], 60 * 60 * 1000);
+    expect(split).toHaveLength(2);
+    expect(split[1][split[1].length - 1].t).toBe(later[0].t);
+  });
+
+  it("marks buckets above 8 kW and names the peak", () => {
+    const samples: HouseSample[] = [
+      { t: NOON, kw: 16.4 },
+      { t: NOON + 30 * 60 * 1000, kw: 4 },
+    ];
+    expect(houseClippedSamples(samples).map((sample) => sample.kw)).toEqual([16.4]);
+    expect(houseLegendLabel(housePeakKw(samples))).toBe("House use · peak 16.4 kW");
+    expect(houseLegendLabel(4)).toBe("House use");
   });
 
   it("reports solar covered from from_solar over home", () => {

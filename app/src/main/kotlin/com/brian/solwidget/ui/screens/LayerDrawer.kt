@@ -57,6 +57,8 @@ import kotlin.math.max
 import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.houseLegendLabel
+import com.brian.solwidget.data.widgetHouseRowEnabled
 import com.brian.solwidget.ui.theme.SolColors
 
 internal data class LegendModel(
@@ -66,7 +68,8 @@ internal data class LegendModel(
     val showHeatPump: Boolean = false,
     val showGasAux: Boolean = false,
     val showCoolRun: Boolean = false,
-    val showHouse: Boolean = false
+    val showHouse: Boolean = false,
+    val housePeakKw: Double? = null
 )
 
 private fun Modifier.expandTapTarget(): Modifier = layout { measurable, constraints ->
@@ -141,7 +144,8 @@ internal fun LegendCard(
         model.showHeatPump,
         model.showGasAux,
         model.showCoolRun,
-        model.showHouse
+        model.showHouse,
+        model.housePeakKw
     )
     Surface(
         modifier = modifier
@@ -223,7 +227,6 @@ fun LayerDrawerContent(
     onCheckUpdates: () -> Unit,
     onSettings: () -> Unit,
     showHouse: Boolean = false,
-    showWidgetHouse: Boolean = false,
     widgetHouse: Boolean = false,
     onWidgetHouse: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
@@ -286,9 +289,14 @@ fun LayerDrawerContent(
         ) { onToggle(ChartLayer.HVAC, it) }
         if (showHouse) {
             LayerSwitch("House use", SolColors.House, layers.house) { onToggle(ChartLayer.HOUSE, it) }
-        }
-        if (showWidgetHouse) {
-            LayerSwitch("House use on widget", SolColors.House, widgetHouse, onChecked = onWidgetHouse)
+            LayerSwitch(
+                "On widget",
+                SolColors.House,
+                widgetHouse,
+                enabled = widgetHouseRowEnabled(layers.house),
+                indent = true,
+                onChecked = onWidgetHouse
+            )
         }
         TextButton(
             onClick = onReset,
@@ -341,7 +349,8 @@ internal fun legendGroups(
     showHeatPump: Boolean,
     showGasAux: Boolean,
     showCoolRun: Boolean,
-    showHouse: Boolean = false
+    showHouse: Boolean = false,
+    housePeakKw: Double? = null
 ): List<List<LegendItem>> = buildList {
     val trace = buildList {
         if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
@@ -365,7 +374,7 @@ internal fun legendGroups(
         }
         if (runtime.isNotEmpty()) add(runtime)
     }
-    if (showHouse) add(listOf(LegendItem("House use", SolColors.House, LegendMark.HAIRLINE)))
+    if (showHouse) add(listOf(LegendItem(houseLegendLabel(housePeakKw), SolColors.House, LegendMark.HAIRLINE)))
     val other = buildList {
         if (layers.precipitation) add(LegendItem("Precip", SolColors.Precip.copy(alpha = 1f)))
         if (layers.buy) add(LegendItem("Buy", SolColors.Buy))
@@ -410,14 +419,19 @@ private fun LayerSwitch(
     name: String,
     color: Color,
     checked: Boolean,
+    enabled: Boolean = true,
+    indent: Boolean = false,
     swatch: (@Composable () -> Unit)? = null,
     onChecked: (Boolean) -> Unit
 ) {
+    val ink = if (enabled) SolColors.Ink else SolColors.Muted
+    val dot = if (enabled) color else color.copy(alpha = 0.35f)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp),
+            .clickable(enabled = enabled, role = Role.Switch, onClick = { onChecked(!checked) })
+            .padding(start = if (indent) 44.dp else 16.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (swatch != null) {
@@ -427,12 +441,12 @@ private fun LayerSwitch(
                 modifier = Modifier
                     .size(14.dp)
                     .clip(CircleShape)
-                    .background(color)
+                    .background(dot)
             )
         }
         Text(
             text = name,
-            color = SolColors.Ink,
+            color = ink,
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier
                 .weight(1f)
@@ -440,7 +454,8 @@ private fun LayerSwitch(
         )
         Switch(
             checked = checked,
-            onCheckedChange = onChecked,
+            onCheckedChange = null,
+            enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = SolColors.Ink,
                 checkedTrackColor = SolColors.PanelAlt,

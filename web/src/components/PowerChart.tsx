@@ -11,7 +11,15 @@ import {
   temperatureGrid,
   type EcobeeSample,
 } from "@/lib/ecobee";
-import { houseStepRuns, type HouseSample } from "@/lib/house";
+import {
+  HOUSE_HOUR_MS,
+  HOUSE_SCALE_MAX_KW,
+  houseClippedSamples,
+  houseDetailIsHalfHour,
+  housePlotSamples,
+  houseStepRuns,
+  type HouseSample,
+} from "@/lib/house";
 import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 import { detroitParts } from "@/lib/time";
 
@@ -138,8 +146,10 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     const steps = rateSteps(new Date(props.from), new Date(props.to), props.rates);
     const baseline = yRate(RATE_MIN);
     const ceiling = yRate(RATE_MAX);
-    if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, ceiling, BUY);
-    if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, ceiling, SELL);
+    const rateFill = props.layers.house ? 0.1 : 0.2;
+    const rateEdge = props.layers.house ? 0.35 : 0.55;
+    if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, ceiling, BUY, rateFill, rateEdge);
+    if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, ceiling, SELL, rateFill, rateEdge);
   }
 
   if (props.layers.precip && props.weather.length >= 2) {
@@ -208,7 +218,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo, 1);
   }
   if (props.layers.house) {
-    strokeHouse(ctx, houseStepRuns((props.house ?? []).filter((sample) => sample.t >= props.from && sample.t < props.to)), xOf, ySolar);
+    const plotted = housePlotSamples(props.house ?? [], props.from, props.to);
+    const bucket = houseDetailIsHalfHour(props.from, props.to) ? 30 * 60 * 1000 : HOUSE_HOUR_MS;
+    strokeHouse(ctx, plotted, bucket, xOf, ySolar, ySolar(HOUSE_SCALE_MAX_KW));
   }
 
   if (props.layers.temp && props.weather.length >= 2) {
@@ -342,27 +354,43 @@ function drawHourAxis(
 
 function strokeHouse(
   ctx: CanvasRenderingContext2D,
-  runs: Array<Array<{ t: number; kw: number }>>,
+  samples: HouseSample[],
+  bucketMs: number,
   xOf: (t: number) => number,
-  yOf: (kw: number) => number
+  yOf: (kw: number) => number,
+  capY: number
 ) {
-  if (runs.length === 0) return;
-  ctx.save();
-  ctx.strokeStyle = HOUSE;
-  ctx.lineWidth = 1.5;
-  ctx.lineJoin = "miter";
-  ctx.lineCap = "butt";
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  for (const run of runs) {
-    run.forEach((vertex, index) => {
-      const x = xOf(vertex.t);
-      const y = yOf(vertex.kw);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
+  const runs = houseStepRuns(samples, bucketMs);
+  if (runs.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = HOUSE;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "butt";
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (const run of runs) {
+      run.forEach((vertex, index) => {
+        const x = xOf(vertex.t);
+        const y = yOf(vertex.kw);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+    }
+    ctx.stroke();
+    ctx.restore();
   }
-  ctx.stroke();
+  ctx.save();
+  ctx.fillStyle = HOUSE;
+  for (const sample of houseClippedSamples(samples)) {
+    const x = xOf(sample.t - bucketMs / 2);
+    ctx.beginPath();
+    ctx.moveTo(x, capY - 7);
+    ctx.lineTo(x - 4.5, capY);
+    ctx.lineTo(x + 4.5, capY);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -403,11 +431,13 @@ function fillSteps(
   yOf: (cents: number) => number,
   baseline: number,
   ceiling: number,
-  color: { r: number; g: number; b: number }
+  color: { r: number; g: number; b: number },
+  fillAlpha = 0.2,
+  edgeAlpha = 0.55
 ) {
   if (vertices.length < 2) return;
   const wash = ctx.createLinearGradient(0, ceiling, 0, baseline);
-  wash.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0.20)`);
+  wash.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, ${fillAlpha})`);
   wash.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
   ctx.save();
   ctx.fillStyle = wash;
@@ -424,7 +454,7 @@ function fillSteps(
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
-  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`;
+  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${edgeAlpha})`;
   ctx.lineWidth = 1;
   ctx.lineJoin = "miter";
   ctx.lineCap = "butt";

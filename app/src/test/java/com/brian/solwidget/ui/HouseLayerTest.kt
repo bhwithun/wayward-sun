@@ -2,10 +2,18 @@ package com.brian.solwidget.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
@@ -102,13 +110,12 @@ class HouseLayerTest {
                     onWebApp = {},
                     onCheckUpdates = {},
                     onSettings = {},
-                    showHouse = false,
-                    showWidgetHouse = false
+                    showHouse = false
                 )
             }
         }
         rule.onNodeWithText("House use").assertDoesNotExist()
-        rule.onNodeWithText("House use on widget").assertDoesNotExist()
+        rule.onNodeWithText("On widget").assertDoesNotExist()
     }
 
     @Test
@@ -127,14 +134,48 @@ class HouseLayerTest {
                         onCheckUpdates = {},
                         onSettings = {},
                         showHouse = true,
-                        showWidgetHouse = true,
                         widgetHouse = false
                     )
                 }
             }
         }
         rule.onNodeWithText("House use", substring = false).performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("House use on widget", substring = false).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("On widget", substring = false).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun houseLabelTogglesTheRowAndTheWidgetRowStaysDisabledUntilThen() {
+        var houseOn by mutableStateOf(false)
+        var widgetOn by mutableStateOf(true)
+        rule.setContent {
+            SolWidgetTheme {
+                Box(Modifier.fillMaxSize()) {
+                    LayerDrawerContent(
+                        layers = ChartLayers(house = houseOn),
+                        versionName = "2.9.0",
+                        checkingUpdates = false,
+                        onToggle = { layer, visible ->
+                            if (layer == ChartLayer.HOUSE) houseOn = visible
+                        },
+                        onReset = {},
+                        onClose = {},
+                        onWebApp = {},
+                        onCheckUpdates = {},
+                        onSettings = {},
+                        showHouse = true,
+                        widgetHouse = widgetOn,
+                        onWidgetHouse = { widgetOn = it }
+                    )
+                }
+            }
+        }
+        val widgetRow = hasText("On widget") and hasClickAction()
+        rule.onNode(widgetRow).performScrollTo().assertIsNotEnabled()
+        assertTrue(widgetOn)
+        rule.onNode(hasText("House use") and hasClickAction()).performScrollTo().performClick()
+        assertTrue(houseOn)
+        rule.onNode(widgetRow).performScrollTo().assertIsEnabled().performClick()
+        assertFalse(widgetOn)
     }
 
     @Test

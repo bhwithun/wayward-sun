@@ -6,6 +6,9 @@ import { hvacPresence, hvacSummary, hvacSummaryLabel, type EcobeeSample } from "
 import {
   houseChipVisible,
   houseDaysOverlapping,
+  houseLegendLabel,
+  housePeakKw,
+  housePlotSamples,
   houseSummary,
   houseSummaryLabel,
   type HouseDay,
@@ -258,6 +261,9 @@ export function Dashboard() {
   const runtime = hvacPresence(chart.ecobee, chart.fromMs, chart.toMs, clock);
   const solarVisible = layers.solcast || layers.enphase;
   const houseAvailable = houseChipVisible(chart.house, chart.houseDays, chart.fromMs, chart.toMs);
+  const housePlotted = housePlotSamples(chart.house, chart.fromMs, chart.toMs);
+  const housePeak = housePeakKw(housePlotted);
+  const siteName = solarDisplayName(cache?.resourceId);
   const house = layers.house
     ? houseSummary(chart.house, chart.houseDays, chart.fromMs, chart.toMs, clock, solarVisible)
     : null;
@@ -361,7 +367,7 @@ export function Dashboard() {
           {layers.house && houseAvailable && (
             <div className="legend-row">
               <span>
-                <i className="swatch hairline" style={{ background: "#B39DDB" }} /> House use
+                <i className="swatch hairline" style={{ background: "#B39DDB" }} /> {houseLegendLabel(housePeak)}
               </span>
             </div>
           )}
@@ -504,7 +510,7 @@ export function Dashboard() {
               <h2>Snapshot</h2>
               <div className="stat">{cache?.source || "—"}</div>
               <p className="muted">as of {cache?.fetchedAt ? new Date(cache.fetchedAt).toLocaleString() : "never"}</p>
-              <p className="muted">resource {cache?.resourceId || "—"}</p>
+              {siteName && <p className="muted">{siteName}</p>}
             </section>
             <section className="panel">
               <h2>Quota (UTC day {cache?.requestsDay || "—"})</h2>
@@ -655,6 +661,13 @@ function span(from: Ymd, to: Ymd): { from: string; to: string } {
     from: zonedTimeToUtc(from.year, from.month, from.day).toISOString(),
     to: zonedTimeToUtc(to.year, to.month, to.day).toISOString(),
   };
+}
+
+const DEFAULT_RESOURCE_ID = "84d7-8b52-33f3-bd7b";
+
+function solarDisplayName(resourceId: string | undefined): string | null {
+  if (!resourceId) return null;
+  return resourceId.toLowerCase() === DEFAULT_RESOURCE_ID ? "Enphase · Home" : null;
 }
 
 function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
