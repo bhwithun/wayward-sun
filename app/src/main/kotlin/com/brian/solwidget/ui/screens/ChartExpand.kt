@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import kotlin.math.abs
 
@@ -15,6 +17,76 @@ internal const val CHART_EXPAND_MILLIS = 200
 
 /** A drag past this fraction of the page snaps. A slower, shorter drag springs back. */
 internal const val PAGER_POSITION_THRESHOLD = 0.30f
+
+/** Touch target for the fullscreen layers button. The header row is this tall so the control sits above the plot. */
+internal val FullscreenLayersButtonSize = 48.dp
+
+/** Fullscreen chrome above the chart canvas. Matches the button so the button cannot cover the plot. */
+internal val FullscreenHeaderHeight = 48.dp
+
+/**
+ * Distance from the top of the chart canvas to the plot, before an HVAC lane.
+ * The 8 kW label and any cap markers sit on this edge.
+ */
+internal val FullscreenPlotHeadroom = 28.dp
+
+/** Light scrim behind the fullscreen layer sheet. Within the 20–30% range. */
+internal const val FullscreenLayerScrimAlpha = 0.25f
+
+/** Narrower than the main drawer so a phone still has a strip to tap outside. Never above 280dp. */
+internal val FullscreenLayerSheetMaxWidth = 240.dp
+
+/** Minimum clear strip to the side of the sheet, used as the outside-to-dismiss target. */
+internal val FullscreenLayerDismissGap = 56.dp
+
+/** Paging and tap-to-exit stay off while the legend or the layer sheet is up. */
+internal fun fullscreenChartGesturesEnabled(legendOpen: Boolean, layersOpen: Boolean): Boolean =
+    !legendOpen && !layersOpen
+
+/**
+ * Extra top padding for the plot when the menu button would cover the 8 kW label,
+ * the top of the series, or cap markers. The inset is the button height, or zero
+ * when the header already holds the button clear of that region.
+ */
+internal fun fullscreenPlotInset(buttonHeight: Dp, chromeHeight: Dp, plotHeadroom: Dp): Dp {
+    if (buttonHeight <= 0.dp) return 0.dp
+    val plotTop = chromeHeight.coerceAtLeast(0.dp) + plotHeadroom.coerceAtLeast(0.dp)
+    return if (buttonHeight > plotTop) buttonHeight else 0.dp
+}
+
+/** Sheet width: at most [maxWidth], and at most 280dp, leaving [dismissGap] to tap outside when it fits. */
+internal fun fullscreenLayerSheetWidth(
+    available: Dp,
+    maxWidth: Dp = FullscreenLayerSheetMaxWidth,
+    dismissGap: Dp = FullscreenLayerDismissGap
+): Dp {
+    if (available <= 0.dp) return 0.dp
+    val cap = minOf(maxWidth, 280.dp)
+    val room = available - dismissGap
+    return if (room > 0.dp) minOf(cap, room) else minOf(cap, available)
+}
+
+internal data class SafePaddingPx(val start: Int, val top: Int, val end: Int, val bottom: Int)
+
+/**
+ * Cutout on the start edge (landscape camera) and the taller of cutout, gesture,
+ * and mandatory insets on the top and bottom (portrait status and nav).
+ */
+internal fun fullscreenSafePaddingPx(
+    cutoutStart: Int,
+    cutoutTop: Int,
+    cutoutEnd: Int,
+    cutoutBottom: Int,
+    gestureTop: Int,
+    gestureBottom: Int,
+    mandatoryTop: Int,
+    mandatoryBottom: Int
+): SafePaddingPx = SafePaddingPx(
+    start = cutoutStart.coerceAtLeast(0),
+    top = maxOf(cutoutTop, gestureTop, mandatoryTop).coerceAtLeast(0),
+    end = cutoutEnd.coerceAtLeast(0),
+    bottom = maxOf(cutoutBottom, gestureBottom, mandatoryBottom).coerceAtLeast(0)
+)
 
 /** A short unconsumed tap expands or restores. Swipes and long-presses do not. */
 internal fun chartTapFires(
