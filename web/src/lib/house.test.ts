@@ -92,6 +92,22 @@ describe("house summary", () => {
     expect(houseChipVisible([], [day(false)], DETROIT_DAY_FROM, DETROIT_DAY_TO)).toBe(true);
   });
 
+  it("keeps a daily total that is ahead of the half-hours and stops the line", () => {
+    const last = NOON;
+    const earlier = NOON - 30 * 60 * 1000;
+    const samples: HouseSample[] = [
+      { t: earlier, kw: 2 },
+      { t: last, kw: 2 },
+    ];
+    const summary = houseSummary(samples, [day(true, 2.4, 1.2)], DETROIT_DAY_FROM, DETROIT_DAY_TO, NOON, true);
+    expect(summary?.homeKwh).toBeCloseTo(2.4);
+    expect(summary?.hourlyDetailUnavailable).toBe(false);
+    const runs = houseStepRuns(samples);
+    expect(runs).toHaveLength(1);
+    expect(runs[0][runs[0].length - 1].t).toBe(last);
+    expect(runs[0].some((vertex) => vertex.t > last)).toBe(false);
+  });
+
   it("reports solar covered from from_solar over home", () => {
     const summary = houseSummary([], [day(true)], DETROIT_DAY_FROM, DETROIT_DAY_TO, NOON, true);
     expect(summary?.coveredPercent).toBe(62);

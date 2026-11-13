@@ -138,6 +138,28 @@ class HouseEnergyTest {
     }
 
     @Test
+    fun aDailyTotalCanLeadTheHalfHoursWhileTheLineStops() {
+        val last = noon
+        val earlier = noon.minus(HOUSE_BUCKET)
+        val samples = listOf(HouseSample(earlier, 2.0), HouseSample(last, 2.0))
+        val summary = houseSummary(
+            samples,
+            listOf(day(hasHalfHour = true, home = 2.4, solar = 1.2)),
+            from,
+            to,
+            zone,
+            noon,
+            solarVisible = true
+        )
+        assertEquals(2.4, summary?.homeKwh ?: 0.0, 0.001)
+        assertEquals(false, summary?.hourlyDetailUnavailable)
+        val runs = houseStepRuns(samples)
+        assertEquals(1, runs.size)
+        assertEquals(last, runs.single().last().at)
+        assertTrue(runs.flatten().none { it.at.isAfter(last) })
+    }
+
+    @Test
     fun theChipHidesWhenTheRangeHasNoHouseData() {
         val sample = listOf(HouseSample(noon, 2.0))
         assertFalse(houseChipVisible(emptyList(), emptyList(), from, to, zone))
