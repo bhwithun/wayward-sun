@@ -193,10 +193,32 @@ class HouseEnergyTest {
     fun clippedBucketsAreMarkedAndNamedInTheLegend() {
         val samples = listOf(HouseSample(noon, 16.4), HouseSample(noon.plus(HOUSE_BUCKET), 4.0))
         assertEquals(listOf(16.4), houseClippedSamples(samples).map { it.homeKw })
-        assertEquals("House use · peak 16.4 kW", houseLegendLabel(housePeakKw(samples)))
-        assertEquals("House use", houseLegendLabel(4.0))
+        assertEquals("House use · Peak 16.4 kW (half-hour)", houseLegendLabel(houseHalfHourPeak(samples, from, to)))
+        assertEquals("House use · Peak 4.0 kW (half-hour)", houseLegendLabel(4.0))
+        assertEquals("House use", houseLegendLabel(null))
         assertFalse(widgetHouseRowEnabled(false))
         assertTrue(widgetHouseRowEnabled(true))
+    }
+
+    @Test
+    fun dayBoundariesKeepTheClosingReadingOnANormalDayAndOnDstDays() {
+        val newYork = ZoneId.of("America/New_York")
+        assertDayBoundary(LocalDate.of(2026, 11, 11), newYork, expectedMinutes = 24 * 60)
+        assertDayBoundary(LocalDate.of(2026, 11, 1), newYork, expectedMinutes = 25 * 60)
+        assertDayBoundary(LocalDate.of(2026, 3, 8), newYork, expectedMinutes = 23 * 60)
+    }
+
+    @Test
+    fun legendPeakIsTheHalfHourMaxEvenWhenTheLineIsHourly() {
+        val samples = listOf(
+            HouseSample(Instant.parse("2026-11-11T15:30:00Z"), 4.0),
+            HouseSample(Instant.parse("2026-11-11T16:00:00Z"), 16.4)
+        )
+        val weekEnd = Instant.parse("2026-11-18T05:00:00Z")
+        val hourly = housePlotSamples(samples, from, weekEnd, zone)
+        assertEquals(10.2, hourly.single().homeKw, 0.001)
+        assertEquals(16.4, houseHalfHourPeak(samples, from, weekEnd) ?: 0.0, 0.001)
+        assertEquals("House use · Peak 16.4 kW (half-hour)", houseLegendLabel(houseHalfHourPeak(samples, from, weekEnd)))
     }
 
     @Test
@@ -229,6 +251,23 @@ class HouseEnergyTest {
         assertEquals(noon, decoded?.house?.single()?.periodEnd)
         assertEquals(LocalDate.of(2026, 11, 11), decoded?.houseDays?.single()?.day)
         assertEquals(1, decoded?.points?.size)
+    }
+
+    private fun assertDayBoundary(day: LocalDate, zone: ZoneId, expectedMinutes: Long) {
+        val start = day.atStartOfDay(zone).toInstant()
+        val end = day.plusDays(1).atStartOfDay(zone).toInstant()
+        assertEquals(expectedMinutes, java.time.Duration.between(start, end).toMinutes())
+        val previous = HouseSample(start, 9.0)
+        val opening = HouseSample(start.plus(HOUSE_BUCKET), 2.0)
+        val closing = HouseSample(end, 3.0)
+        val plotted = housePlotSamples(listOf(previous, opening, closing), start, end, zone)
+        assertEquals(listOf(opening.periodEnd, closing.periodEnd), plotted.map { it.periodEnd })
+        val halfHour = houseStepRuns(listOf(closing))
+        assertEquals(end.minus(HOUSE_BUCKET), halfHour.single().first().at)
+        assertEquals(end, halfHour.single().last().at)
+        val hour = houseStepRuns(listOf(HouseSample(end, 4.0)), HOUSE_HOUR)
+        assertEquals(end.minus(HOUSE_HOUR), hour.single().first().at)
+        assertEquals(end, hour.single().last().at)
     }
 
     private fun day(hasHalfHour: Boolean, home: Double = 18.4, solar: Double = 11.408) = HouseDay(

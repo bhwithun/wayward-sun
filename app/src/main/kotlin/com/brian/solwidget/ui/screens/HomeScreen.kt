@@ -145,8 +145,7 @@ import com.brian.solwidget.util.AppUpdate
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
 import com.brian.solwidget.util.ReleaseOffer
-import com.brian.solwidget.data.housePeakKw
-import com.brian.solwidget.data.housePlotSamples
+import com.brian.solwidget.data.houseHalfHourPeak
 import com.brian.solwidget.data.solarDisplayName
 import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.viewmodel.HomeViewModel
@@ -712,7 +711,7 @@ internal fun LivePane(
         showGasAux = runtime.aux,
         showCoolRun = runtime.cool,
         showHouse = layers.house && houseVisible,
-        housePeakKw = housePeakKw(housePlotSamples(house, rangeFrom, rangeTo, zone))
+        housePeakKw = houseHalfHourPeak(house, rangeFrom, rangeTo)
     )
     val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         if (controls.expanded) {
@@ -906,7 +905,7 @@ internal fun HistoryPane(
         housePeakKw = if (chart == null) {
             null
         } else {
-            housePeakKw(housePlotSamples(chart.house, from, to, DetroitCalendar.ZONE))
+            houseHalfHourPeak(chart.house, from, to)
         }
     )
     val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {

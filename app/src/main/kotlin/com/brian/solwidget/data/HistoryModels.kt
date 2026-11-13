@@ -69,7 +69,7 @@ fun HistoryPage.chartFor(from: Instant, to: Instant, now: Instant): HistoryChart
     }
     val sunDays = sun.filter { day -> !day.sunset.isBefore(from) && day.sunrise.isBefore(to) }
     val indoor = ecobee.filter { sample -> !sample.at.isBefore(from) && sample.at.isBefore(to) }
-    val houseSamples = house.filter { sample -> !sample.periodEnd.isBefore(from) && sample.periodEnd.isBefore(to) }
+    val houseSamples = house.filter { sample -> housePeriodInRange(sample.periodEnd, from, to) }
     return HistoryChart(
         points = rows.flatMap { it.toPowerPoints(now) },
         weather = weather,

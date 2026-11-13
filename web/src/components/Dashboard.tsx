@@ -7,8 +7,7 @@ import {
   houseChipVisible,
   houseDaysOverlapping,
   houseLegendLabel,
-  housePeakKw,
-  housePlotSamples,
+  houseHalfHourPeak,
   houseSummary,
   houseSummaryLabel,
   type HouseDay,
@@ -261,8 +260,7 @@ export function Dashboard() {
   const runtime = hvacPresence(chart.ecobee, chart.fromMs, chart.toMs, clock);
   const solarVisible = layers.solcast || layers.enphase;
   const houseAvailable = houseChipVisible(chart.house, chart.houseDays, chart.fromMs, chart.toMs);
-  const housePlotted = housePlotSamples(chart.house, chart.fromMs, chart.toMs);
-  const housePeak = housePeakKw(housePlotted);
+  const housePeak = houseHalfHourPeak(chart.house, chart.fromMs, chart.toMs);
   const siteName = solarDisplayName(cache?.resourceId);
   const house = layers.house
     ? houseSummary(chart.house, chart.houseDays, chart.fromMs, chart.toMs, clock, solarVisible)
@@ -622,7 +620,7 @@ function chartModel(
 function houseSamples(history: HistoryBody | null, fromMs: number, toMs: number): HouseSample[] {
   return (history?.house ?? [])
     .map((sample) => ({ t: Date.parse(sample.t), kw: sample.homeKw }))
-    .filter((sample) => Number.isFinite(sample.t) && Number.isFinite(sample.kw) && sample.t >= fromMs && sample.t < toMs);
+    .filter((sample) => Number.isFinite(sample.t) && Number.isFinite(sample.kw) && sample.t > fromMs && sample.t <= toMs);
 }
 
 function houseDayRows(history: HistoryBody | null): HouseDay[] {

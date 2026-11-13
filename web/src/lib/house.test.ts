@@ -7,8 +7,9 @@ import {
   houseClippedSamples,
   houseDetailIsHalfHour,
   houseHourlySamples,
+  houseHalfHourPeak,
   houseLegendLabel,
-  housePeakKw,
+  housePeriodInRange,
   housePlotSamples,
   houseStepRuns,
   houseSummary,
@@ -144,8 +145,32 @@ describe("house summary", () => {
       { t: NOON + 30 * 60 * 1000, kw: 4 },
     ];
     expect(houseClippedSamples(samples).map((sample) => sample.kw)).toEqual([16.4]);
-    expect(houseLegendLabel(housePeakKw(samples))).toBe("House use · peak 16.4 kW");
-    expect(houseLegendLabel(4)).toBe("House use");
+    expect(houseLegendLabel(houseHalfHourPeak(samples, DETROIT_DAY_FROM, DETROIT_DAY_TO))).toBe(
+      "House use · Peak 16.4 kW (half-hour)"
+    );
+    expect(houseLegendLabel(4)).toBe("House use · Peak 4.0 kW (half-hour)");
+    expect(houseLegendLabel(null)).toBe("House use");
+  });
+
+  it("keeps the closing half-hour on a normal day and on DST days", () => {
+    assertDayBoundary(newYorkMidnight(2026, 11, 11), newYorkMidnight(2026, 11, 12), 24 * 60);
+    assertDayBoundary(newYorkMidnight(2026, 11, 1), newYorkMidnight(2026, 11, 2), 25 * 60);
+    assertDayBoundary(newYorkMidnight(2026, 3, 8), newYorkMidnight(2026, 3, 9), 23 * 60);
+  });
+
+  it("legend peak stays the half-hour max when the line is hourly", () => {
+    const samples: HouseSample[] = [
+      { t: Date.parse("2026-11-11T15:30:00.000Z"), kw: 4 },
+      { t: Date.parse("2026-11-11T16:00:00.000Z"), kw: 16.4 },
+    ];
+    const weekTo = Date.parse("2026-11-18T05:00:00.000Z");
+    const hourly = housePlotSamples(samples, DETROIT_DAY_FROM, weekTo);
+    expect(hourly).toHaveLength(1);
+    expect(hourly[0].kw).toBeCloseTo(10.2);
+    expect(houseHalfHourPeak(samples, DETROIT_DAY_FROM, weekTo)).toBeCloseTo(16.4);
+    expect(houseLegendLabel(houseHalfHourPeak(samples, DETROIT_DAY_FROM, weekTo))).toBe(
+      "House use · Peak 16.4 kW (half-hour)"
+    );
   });
 
   it("reports solar covered from from_solar over home", () => {
@@ -185,6 +210,53 @@ describe("house summary", () => {
     expect(houseChipVisible(samples, [], DETROIT_DAY_FROM, DETROIT_DAY_TO)).toBe(true);
   });
 });
+
+function assertDayBoundary(start: number, end: number, expectedMinutes: number) {
+  expect((end - start) / 60000).toBe(expectedMinutes);
+  const samples: HouseSample[] = [
+    { t: start, kw: 9 },
+    { t: start + 30 * 60 * 1000, kw: 2 },
+    { t: end, kw: 3 },
+  ];
+  const plotted = housePlotSamples(samples, start, end);
+  expect(plotted.map((sample) => sample.t)).toEqual([start + 30 * 60 * 1000, end]);
+  expect(housePeriodInRange(start, start, end)).toBe(false);
+  expect(housePeriodInRange(end, start, end)).toBe(true);
+  const halfHour = houseStepRuns([{ t: end, kw: 3 }]);
+  expect(halfHour[0][0].t).toBe(end - 30 * 60 * 1000);
+  expect(halfHour[0][halfHour[0].length - 1].t).toBe(end);
+  const hour = houseStepRuns([{ t: end, kw: 4 }], 60 * 60 * 1000);
+  expect(hour[0][0].t).toBe(end - 60 * 60 * 1000);
+  expect(hour[0][hour[0].length - 1].t).toBe(end);
+}
+
+/** Midnight in America/New_York, including the DST transitions. */
+function newYorkMidnight(year: number, month: number, day: number): number {
+  const format = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const asUtc = (instant: number) => {
+    const bag: Record<string, string> = {};
+    for (const part of format.formatToParts(new Date(instant))) {
+      if (part.type !== "literal") bag[part.type] = part.value;
+    }
+    let hour = Number(bag.hour);
+    if (hour === 24) hour = 0;
+    return Date.UTC(Number(bag.year), Number(bag.month) - 1, Number(bag.day), hour, Number(bag.minute), Number(bag.second));
+  };
+  const guess = Date.UTC(year, month - 1, day);
+  let offset = asUtc(guess) - guess;
+  let instant = guess - offset;
+  offset = asUtc(instant) - instant;
+  return guess - offset;
+}
 
 describe("missing house tables", () => {
   it("recognizes a missing relation and ignores other failures", () => {

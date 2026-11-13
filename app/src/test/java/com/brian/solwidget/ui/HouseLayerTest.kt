@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -170,12 +172,16 @@ class HouseLayerTest {
             }
         }
         val widgetRow = hasText("On widget") and hasClickAction()
-        rule.onNode(widgetRow).performScrollTo().assertIsNotEnabled()
+        val houseRow = hasText("House use") and hasClickAction()
+        rule.onNode(houseRow).performScrollTo().assertIsOff()
+        rule.onNode(widgetRow).performScrollTo().assertIsOn().assertIsNotEnabled()
         assertTrue(widgetOn)
-        rule.onNode(hasText("House use") and hasClickAction()).performScrollTo().performClick()
+        rule.onNode(houseRow).performClick()
         assertTrue(houseOn)
+        rule.onNode(houseRow).assertIsOn()
         rule.onNode(widgetRow).performScrollTo().assertIsEnabled().performClick()
         assertFalse(widgetOn)
+        rule.onNode(widgetRow).assertIsOff()
     }
 
     @Test

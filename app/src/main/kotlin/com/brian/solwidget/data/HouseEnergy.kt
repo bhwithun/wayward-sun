@@ -92,15 +92,23 @@ fun houseHourlySamples(samples: List<HouseSample>, zone: ZoneId): List<HouseSamp
     }
 }
 
+/** `period_end` is the bucket end, so a day owns `(midnight, next midnight]`. */
+fun housePeriodInRange(periodEnd: Instant, from: Instant, to: Instant): Boolean =
+    periodEnd.isAfter(from) && !periodEnd.isAfter(to)
+
 fun housePlotSamples(
     samples: List<HouseSample>,
     from: Instant,
     to: Instant,
     zone: ZoneId
 ): List<HouseSample> {
-    val visible = samples.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
+    val visible = samples.filter { housePeriodInRange(it.periodEnd, from, to) }
     return if (houseDetailIsHalfHour(from, to)) visible else houseHourlySamples(visible, zone)
 }
+
+/** Max half-hour kW in `(from, to]`, before any hourly average. */
+fun houseHalfHourPeak(samples: List<HouseSample>, from: Instant, to: Instant): Double? =
+    samples.filter { housePeriodInRange(it.periodEnd, from, to) }.maxOfOrNull { it.homeKw }
 
 /** Readings above the fixed 0–8 kW scale. Each one gets a cap marker. */
 fun houseClippedSamples(
@@ -111,13 +119,14 @@ fun houseClippedSamples(
 fun housePeakKw(samples: List<HouseSample>): Double? = samples.maxOfOrNull { it.homeKw }
 
 fun houseLegendLabel(peakKw: Double?): String {
-    if (peakKw == null || peakKw <= HOUSE_SCALE_MAX_KW) return "House use"
-    return String.format(Locale.US, "House use · peak %.1f kW", peakKw)
+    if (peakKw == null || !peakKw.isFinite()) return "House use"
+    return String.format(Locale.US, "House use · Peak %.1f kW (half-hour)", peakKw)
 }
 
 /** The widget row under House use stays visible but does not toggle while House use is off. */
 fun widgetHouseRowEnabled(houseOn: Boolean): Boolean = houseOn
 
+/** Each value covers `[periodEnd - bucket, periodEnd)`. The vertex at `periodEnd` is the right edge. */
 private fun stepVertices(samples: List<HouseSample>, bucket: Duration): List<HouseVertex> {
     val vertices = ArrayList<HouseVertex>(samples.size * 2)
     samples.forEachIndexed { index, sample ->
@@ -156,7 +165,7 @@ fun houseSummary(
     val dates = detroitDatesInRange(from, to, zone)
     val byDay = days.associateBy { it.day }
     val inRangeDays = dates.mapNotNull { byDay[it] }
-    val samplesInRange = samples.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
+    val samplesInRange = samples.filter { housePeriodInRange(it.periodEnd, from, to) }
     if (inRangeDays.isEmpty() && samplesInRange.isEmpty()) return null
 
     val coveredDates = inRangeDays.map { it.day }.toHashSet()

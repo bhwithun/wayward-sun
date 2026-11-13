@@ -1,7 +1,12 @@
 package com.brian.solwidget.ui
 
 import com.brian.solwidget.ui.components.WidgetDayColumn
+import com.brian.solwidget.ui.components.croppedWidgetRange
+import com.brian.solwidget.ui.components.daysWithNoonInRange
 import com.brian.solwidget.ui.components.planWidgetDayLabels
+import com.brian.solwidget.ui.components.widgetRateWash
+import java.time.LocalDate
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -26,5 +31,34 @@ class WidgetDayLabelTest {
         val plan = planWidgetDayLabels(columns, left = 0f, right = 200f, fullSize = 40f, minSize = 18f)
         assertEquals(18f, plan.textSize)
         assertEquals(listOf(0), plan.visible)
+    }
+
+    @Test
+    fun cropsThePlotToDaysThatHaveLabels() {
+        val zone = ZoneId.of("America/Detroit")
+        val monday = LocalDate.of(2026, 11, 9)
+        val from = monday.atTime(18, 0).atZone(zone).toInstant()
+        val friday = monday.plusDays(4)
+        val to = friday.atTime(10, 0).atZone(zone).toInstant()
+        val noons = daysWithNoonInRange(from, to, zone)
+        assertEquals(
+            listOf(monday.plusDays(1), monday.plusDays(2), monday.plusDays(3)),
+            noons
+        )
+        val (cropFrom, cropTo) = croppedWidgetRange(from, to, noons, zone)
+        assertEquals(monday.plusDays(1).atStartOfDay(zone).toInstant(), cropFrom)
+        assertEquals(friday.atStartOfDay(zone).toInstant(), cropTo)
+    }
+
+    @Test
+    fun houseUseDimsWidgetRatesToMatchTheApp() {
+        val on = widgetRateWash(true)
+        val off = widgetRateWash(false)
+        assertEquals(0x1A, on.fillAlpha)
+        assertEquals(0x59, on.edgeAlpha)
+        assertEquals(0.10f, on.fillAlpha / 255f, 0.01f)
+        assertEquals(0.35f, on.edgeAlpha / 255f, 0.01f)
+        assertEquals(0x33, off.fillAlpha)
+        assertEquals(0x8C, off.edgeAlpha)
     }
 }

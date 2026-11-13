@@ -91,9 +91,19 @@ export function houseHourlySamples(samples: HouseSample[]): HouseSample[] {
     }));
 }
 
+/** `period_end` is the bucket end, so a day owns `(midnight, next midnight]`. */
+export function housePeriodInRange(t: number, fromMs: number, toMs: number): boolean {
+  return t > fromMs && t <= toMs;
+}
+
 export function housePlotSamples(samples: HouseSample[], fromMs: number, toMs: number): HouseSample[] {
-  const visible = samples.filter((sample) => sample.t >= fromMs && sample.t < toMs);
+  const visible = samples.filter((sample) => housePeriodInRange(sample.t, fromMs, toMs));
   return houseDetailIsHalfHour(fromMs, toMs) ? visible : houseHourlySamples(visible);
+}
+
+/** Max half-hour kW in `(from, to]`, before any hourly average. */
+export function houseHalfHourPeak(samples: HouseSample[], fromMs: number, toMs: number): number | null {
+  return housePeakKw(samples.filter((sample) => housePeriodInRange(sample.t, fromMs, toMs)));
 }
 
 export function houseClippedSamples(samples: HouseSample[], limit = HOUSE_SCALE_MAX_KW): HouseSample[] {
@@ -106,10 +116,11 @@ export function housePeakKw(samples: HouseSample[]): number | null {
 }
 
 export function houseLegendLabel(peakKw: number | null): string {
-  if (peakKw == null || peakKw <= HOUSE_SCALE_MAX_KW) return "House use";
-  return `House use · peak ${peakKw.toFixed(1)} kW`;
+  if (peakKw == null || !Number.isFinite(peakKw)) return "House use";
+  return `House use · Peak ${peakKw.toFixed(1)} kW (half-hour)`;
 }
 
+/** Each value covers `[t - bucket, t)`. The vertex at `t` is the right edge. */
 function stepVertices(samples: HouseSample[], bucketMs: number): HouseVertex[] {
   const vertices: HouseVertex[] = [];
   samples.forEach((sample, index) => {
@@ -147,7 +158,7 @@ export function houseSummary(
     const day = byDay.get(date);
     return day ? [day] : [];
   });
-  const samplesInRange = samples.filter((sample) => sample.t >= fromMs && sample.t < toMs);
+  const samplesInRange = samples.filter((sample) => housePeriodInRange(sample.t, fromMs, toMs));
   if (inRangeDays.length === 0 && samplesInRange.length === 0) return null;
 
   const coveredDates = new Set(inRangeDays.map((day) => day.day));

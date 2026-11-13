@@ -355,8 +355,8 @@ async function loadHouseSamples(fromIso: string, toIso: string): Promise<HousePo
     const rows = await sql()`
       SELECT period_end, home_wh, complete
       FROM house_energy
-      WHERE period_end >= ${fromIso}::timestamptz
-        AND period_end < ${toIso}::timestamptz
+      WHERE period_end > ${fromIso}::timestamptz
+        AND period_end <= ${toIso}::timestamptz
         AND complete
       ORDER BY period_end
     `;

@@ -80,6 +80,12 @@ private const val FREEZE_F = 32.0
 private const val WIDGET_DAY_LABEL_FULL = 40f
 private const val WIDGET_DAY_LABEL_MIN = 18f
 
+internal data class WidgetRateWash(val fillAlpha: Int, val edgeAlpha: Int)
+
+/** Buy/sell wash. House use on the widget uses the same values as the app and the website. */
+internal fun widgetRateWash(houseOn: Boolean): WidgetRateWash =
+    if (houseOn) WidgetRateWash(fillAlpha = 0x1A, edgeAlpha = 0x59) else WidgetRateWash(0x33, 0x8C)
+
 internal data class WidgetDayColumn(val center: Float, val widthAtFullSize: Float)
 
 internal data class WidgetDayLabelPlan(val textSize: Float, val visible: List<Int>)
@@ -105,6 +111,81 @@ internal fun planWidgetDayLabels(
     }
     val visible = columns.indices.filter { fitsWidgetColumn(columns[it], minSize, fullSize, left, right) }
     return WidgetDayLabelPlan(minSize, visible)
+}
+
+/** Days whose noon sits inside `[from, to)`. A partial edge day with no noon is unlabeled. */
+internal fun daysWithNoonInRange(from: Instant, to: Instant, zone: ZoneId): List<LocalDate> {
+    if (!to.isAfter(from)) return emptyList()
+    val dates = ArrayList<LocalDate>()
+    var day = from.atZone(zone).toLocalDate()
+    val last = to.minusMillis(1).atZone(zone).toLocalDate()
+    while (!day.isAfter(last) && dates.size < 400) {
+        val noon = day.atTime(12, 0).atZone(zone).toInstant()
+        if (!noon.isBefore(from) && noon.isBefore(to)) dates.add(day)
+        day = day.plusDays(1)
+    }
+    return dates
+}
+
+/**
+ * Drop time that belongs to a day with no label. A labeled day that the range
+ * only partly covers stays clipped to the original instants.
+ */
+internal fun croppedWidgetRange(
+    from: Instant,
+    to: Instant,
+    labeledDays: List<LocalDate>,
+    zone: ZoneId
+): Pair<Instant, Instant> {
+    if (labeledDays.isEmpty() || !to.isAfter(from)) return from to to
+    val ordered = labeledDays.sorted()
+    val dayStart = ordered.first().atStartOfDay(zone).toInstant()
+    val dayEnd = ordered.last().plusDays(1).atStartOfDay(zone).toInstant()
+    val cropFrom = if (dayStart.isAfter(from)) dayStart else from
+    val cropTo = if (dayEnd.isBefore(to)) dayEnd else to
+    return if (cropTo.isAfter(cropFrom)) cropFrom to cropTo else from to to
+}
+
+private fun widgetAxis(
+    startInstant: Instant,
+    endInstant: Instant,
+    rangeFrom: Instant?,
+    rangeTo: Instant?,
+    zone: ZoneId,
+    left: Float,
+    right: Float,
+    points: List<PowerPoint>,
+    weather: List<WeatherPoint>,
+    layers: ChartLayers
+): Pair<Instant, Instant> {
+    if (rangeFrom == null || rangeTo == null) return startInstant to endInstant
+    val candidates = daysWithNoonInRange(rangeFrom, rangeTo, zone)
+    if (candidates.isEmpty()) return startInstant to endInstant
+    val dayTotals = if (layers.power) {
+        SolarDayLabels.summaries(points, zone).associateBy { it.date }
+    } else {
+        emptyMap()
+    }
+    val tempRanges = if (layers.temperature) dayTempRanges(weather, zone) else emptyMap()
+    val measure = Paint().apply {
+        textSize = WIDGET_DAY_LABEL_FULL
+        isAntiAlias = true
+        textAlign = Paint.Align.CENTER
+    }
+    val span = (rangeTo.toEpochMilli() - rangeFrom.toEpochMilli()).toFloat().coerceAtLeast(1f)
+    val plotW = (right - left).coerceAtLeast(1f)
+    fun xOf(time: Instant) = left + ((time.toEpochMilli() - rangeFrom.toEpochMilli()) / span) * plotW
+    val columns = candidates.map { day ->
+        val name = DayLabel.format(day.atStartOfDay(zone))
+        val kwh = dayTotals[day]?.takeIf { it.complete }?.let { Formatters.kwh(it.energyKwh) }
+        val temps = tempRanges[day]?.let { compactTemp(it) }
+        WidgetDayColumn(
+            xOf(day.atTime(12, 0).atZone(zone).toInstant()),
+            listOfNotNull(name, kwh, temps).maxOf { measure.measureText(it) }
+        )
+    }
+    val kept = planWidgetDayLabels(columns, left, right).visible.map { candidates[it] }
+    return croppedWidgetRange(rangeFrom, rangeTo, kept, zone)
 }
 
 private fun fitsWidgetColumn(
@@ -874,8 +955,10 @@ object ChartBitmapRenderer {
             ?: weather.lastOrNull()?.time ?: ecobee.lastOrNull()?.at
             ?: house.maxByOrNull { it.periodEnd }?.periodEnd
         if (startInstant == null || endInstant == null) return bitmap
-        val minTime = startInstant.toEpochMilli().toFloat()
-        val maxTime = endInstant.toEpochMilli().toFloat()
+        val zone = ZoneId.systemDefault()
+        val (axisFrom, axisTo) = widgetAxis(startInstant, endInstant, rangeFrom, rangeTo, zone, left, right, points, weather, layers)
+        val minTime = axisFrom.toEpochMilli().toFloat()
+        val maxTime = axisTo.toEpochMilli().toFloat()
         val span = max(1f, maxTime - minTime)
         val solarMax = ForecastSnapshot.SOLAR_MAX_KW
 
@@ -981,7 +1064,6 @@ object ChartBitmapRenderer {
             AxisUnits.RATES, AxisUnits.NONE -> Unit
         }
 
-        val zone = ZoneId.systemDefault()
         val dayTotals = if (layers.power) {
             SolarDayLabels.summaries(points, zone).associateBy { it.date }
         } else {
@@ -1227,6 +1309,7 @@ object ChartBitmapRenderer {
         path.lineTo(xOf(bands.last().end), baseline)
         path.close()
         val rgb = color and 0x00FFFFFF
+        val wash = widgetRateWash(quiet)
         val fill = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
@@ -1235,7 +1318,7 @@ object ChartBitmapRenderer {
                 ceiling,
                 0f,
                 baseline,
-                rgb or ((if (quiet) 0x1A else 0x33) shl 24),
+                rgb or (wash.fillAlpha shl 24),
                 rgb,
                 Shader.TileMode.CLAMP
             )
@@ -1245,7 +1328,7 @@ object ChartBitmapRenderer {
             isAntiAlias = true
             style = Paint.Style.STROKE
             strokeWidth = 2f
-            this.color = rgb or ((if (quiet) 0x59 else 0x8C) shl 24)
+            this.color = rgb or (wash.edgeAlpha shl 24)
             strokeCap = Paint.Cap.BUTT
             strokeJoin = Paint.Join.MITER
         }
