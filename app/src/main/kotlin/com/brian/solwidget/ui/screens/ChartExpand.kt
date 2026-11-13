@@ -26,9 +26,12 @@ internal val FullscreenHeaderHeight = 48.dp
 
 /**
  * Distance from the top of the chart canvas to the plot, before an HVAC lane.
- * The 8 kW label and any cap markers sit on this edge.
+ * The 8 kW label sits on this edge.
  */
 internal val FullscreenPlotHeadroom = 28.dp
+
+/** House-use up-triangles rise this far above the 8 kW plot edge. */
+internal val HouseCapRise = 7.dp
 
 /** Light scrim behind the fullscreen layer sheet. Within the 20–30% range. */
 internal const val FullscreenLayerScrimAlpha = 0.25f
@@ -45,13 +48,19 @@ internal fun fullscreenChartGesturesEnabled(legendOpen: Boolean, layersOpen: Boo
 
 /**
  * Extra top padding for the plot when the menu button would cover the 8 kW label,
- * the top of the series, or cap markers. The inset is the button height, or zero
- * when the header already holds the button clear of that region.
+ * the top of the series, or the house-use cap markers. The inset is the button
+ * height, or zero when the header already holds the button clear of that region.
  */
-internal fun fullscreenPlotInset(buttonHeight: Dp, chromeHeight: Dp, plotHeadroom: Dp): Dp {
+internal fun fullscreenPlotInset(
+    buttonHeight: Dp,
+    chromeHeight: Dp,
+    plotHeadroom: Dp,
+    capRise: Dp = HouseCapRise
+): Dp {
     if (buttonHeight <= 0.dp) return 0.dp
-    val plotTop = chromeHeight.coerceAtLeast(0.dp) + plotHeadroom.coerceAtLeast(0.dp)
-    return if (buttonHeight > plotTop) buttonHeight else 0.dp
+    val markerTop = chromeHeight.coerceAtLeast(0.dp) +
+        (plotHeadroom.coerceAtLeast(0.dp) - capRise.coerceAtLeast(0.dp)).coerceAtLeast(0.dp)
+    return if (buttonHeight > markerTop) buttonHeight else 0.dp
 }
 
 /** Sheet width: at most [maxWidth], and at most 280dp, leaving [dismissGap] to tap outside when it fits. */

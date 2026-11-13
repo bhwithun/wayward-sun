@@ -11,6 +11,15 @@ import {
   temperatureGrid,
   type EcobeeSample,
 } from "@/lib/ecobee";
+import {
+  HOUSE_HOUR_MS,
+  HOUSE_SCALE_MAX_KW,
+  houseClippedSamples,
+  houseDetailIsHalfHour,
+  housePlotSamples,
+  houseStepRuns,
+  type HouseSample,
+} from "@/lib/house";
 import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 import { detroitParts } from "@/lib/time";
 
@@ -29,6 +38,7 @@ const TOO_COOL = "#FF9800";
 const HEAT_PUMP = "#00897B";
 const AUX_HEAT = "#EF5350";
 const COOL_RUN = "#90CAF9";
+const HOUSE = "#B39DDB";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;
@@ -44,6 +54,7 @@ export type ChartLayers = {
   sell: boolean;
   ecobee: boolean;
   hvac: boolean;
+  house: boolean;
 };
 
 export type WeatherMark = { t: number; tempF: number; precipPct: number | null };
@@ -59,6 +70,7 @@ type Props = {
   rates: RateSample[];
   demo: boolean;
   ecobee?: EcobeeSample[];
+  house?: HouseSample[];
 };
 
 export function PowerChart(props: Props) {
@@ -98,12 +110,13 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const left = showTempLabels || units !== "none" ? 52 : 12;
   const right = width - 18;
   const showPower = props.layers.solcast || props.layers.enphase;
+  const showSolarScale = showPower || props.layers.house;
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
   const showDegrees = props.layers.temp || props.layers.ecobee;
   const oneDay = props.to - props.from > 0 && props.to - props.from <= 26 * 60 * 60 * 1000;
   const weekColumns = !oneDay && props.to - props.from <= 10 * 24 * 60 * 60 * 1000;
   const top = (showDegrees ? 28 : 16) + (weekColumns ? 20 : 0);
-  const bottom = plotHeight - (oneDay || showPower || weekColumns ? 36 : 28);
+  const bottom = plotHeight - (oneDay || showSolarScale || weekColumns ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -133,8 +146,10 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
     const steps = rateSteps(new Date(props.from), new Date(props.to), props.rates);
     const baseline = yRate(RATE_MIN);
     const ceiling = yRate(RATE_MAX);
-    if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, ceiling, BUY);
-    if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, ceiling, SELL);
+    const rateFill = props.layers.house ? 0.1 : 0.2;
+    const rateEdge = props.layers.house ? 0.35 : 0.55;
+    if (props.layers.buy) fillSteps(ctx, steps.buy, xOf, yRate, baseline, ceiling, BUY, rateFill, rateEdge);
+    if (props.layers.sell) fillSteps(ctx, steps.sell, xOf, yRate, baseline, ceiling, SELL, rateFill, rateEdge);
   }
 
   if (props.layers.precip && props.weather.length >= 2) {
@@ -201,6 +216,11 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   }
   if (props.layers.enphase) {
     strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo, 1);
+  }
+  if (props.layers.house) {
+    const plotted = housePlotSamples(props.house ?? [], props.from, props.to);
+    const bucket = houseDetailIsHalfHour(props.from, props.to) ? 30 * 60 * 1000 : HOUSE_HOUR_MS;
+    strokeHouse(ctx, plotted, bucket, xOf, ySolar, ySolar(HOUSE_SCALE_MAX_KW));
   }
 
   if (props.layers.temp && props.weather.length >= 2) {
@@ -332,6 +352,48 @@ function drawHourAxis(
   ctx.restore();
 }
 
+function strokeHouse(
+  ctx: CanvasRenderingContext2D,
+  samples: HouseSample[],
+  bucketMs: number,
+  xOf: (t: number) => number,
+  yOf: (kw: number) => number,
+  capY: number
+) {
+  const runs = houseStepRuns(samples, bucketMs);
+  if (runs.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = HOUSE;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "butt";
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (const run of runs) {
+      run.forEach((vertex, index) => {
+        const x = xOf(vertex.t);
+        const y = yOf(vertex.kw);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.fillStyle = HOUSE;
+  for (const sample of houseClippedSamples(samples)) {
+    const x = xOf(sample.t - bucketMs / 2);
+    ctx.beginPath();
+    ctx.moveTo(x, capY - 7);
+    ctx.lineTo(x - 4.5, capY);
+    ctx.lineTo(x + 4.5, capY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function strokeSeries(
   ctx: CanvasRenderingContext2D,
   points: SeriesPoint[],
@@ -369,11 +431,13 @@ function fillSteps(
   yOf: (cents: number) => number,
   baseline: number,
   ceiling: number,
-  color: { r: number; g: number; b: number }
+  color: { r: number; g: number; b: number },
+  fillAlpha = 0.2,
+  edgeAlpha = 0.55
 ) {
   if (vertices.length < 2) return;
   const wash = ctx.createLinearGradient(0, ceiling, 0, baseline);
-  wash.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0.20)`);
+  wash.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, ${fillAlpha})`);
   wash.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
   ctx.save();
   ctx.fillStyle = wash;
@@ -390,7 +454,7 @@ function fillSteps(
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
-  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`;
+  ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${edgeAlpha})`;
   ctx.lineWidth = 1;
   ctx.lineJoin = "miter";
   ctx.lineCap = "butt";
@@ -591,7 +655,7 @@ function drawRuntimeLane(
 
 function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | "rates" {
   const labeled: Array<"solar" | "temp" | "precip" | "rates"> = [];
-  if (layers.solcast || layers.enphase) labeled.push("solar");
+  if (layers.solcast || layers.enphase || layers.house) labeled.push("solar");
   if (layers.temp || layers.ecobee) labeled.push("temp");
   if (layers.precip) labeled.push("precip");
   if (layers.buy || layers.sell) labeled.push("rates");

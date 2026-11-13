@@ -1,6 +1,7 @@
 import { combinedPoints, demoActualPeriods, type SnapshotBody } from "./demo";
 import { draftsFromSnapshot, type WeatherHour } from "./drafts";
 import { sql } from "./db";
+import { detroitDayBounds, homeKwFromWh, isMissingHouseTable, kwhFromWh } from "./house";
 import { METER_ACTUAL_SOURCE, type IntervalDraft } from "./merge";
 import type { SunDay } from "./weather";
 
@@ -227,6 +228,11 @@ async function upsertSun(days: SunDay[]): Promise<void> {
   `;
 }
 
+/**
+ * Solcast snapshot for phones. House energy is not copied here: Live and the
+ * widget already read `GET /history`, and that window covers the widget's
+ * prior 48 hours, so a second copy of today's rows is not required.
+ */
 export function publicCache(snapshot: SnapshotBody) {
   return {
     resourceId: snapshot.resourceId,
@@ -316,6 +322,86 @@ export async function loadHistory(fromIso: string, toIso: string) {
       sunset: new Date(String(row.sunset)).toISOString(),
     })),
     ecobee: await loadEcobee(fromIso, toIso),
+    ...(await loadHouse(fromIso, toIso)),
+  };
+}
+
+export type HousePoint = { t: string; homeKw: number };
+
+export type HouseDayPoint = {
+  day: string;
+  homeKwh: number;
+  fromSolarKwh: number;
+  hasHalfHour: boolean;
+};
+
+/**
+ * Complete half-hours and Detroit daily totals.
+ * Missing tables mean db/006_house_energy.sql has not been applied yet.
+ * History still returns; both arrays are empty until then.
+ */
+export async function loadHouse(
+  fromIso: string,
+  toIso: string
+): Promise<{ house: HousePoint[]; houseDays: HouseDayPoint[] }> {
+  const house = await loadHouseSamples(fromIso, toIso);
+  if (house == null) return { house: [], houseDays: [] };
+  const houseDays = await loadHouseDays(fromIso, toIso);
+  return { house, houseDays: houseDays ?? [] };
+}
+
+async function loadHouseSamples(fromIso: string, toIso: string): Promise<HousePoint[] | null> {
+  try {
+    const rows = await sql()`
+      SELECT period_end, home_wh, complete
+      FROM house_energy
+      WHERE period_end > ${fromIso}::timestamptz
+        AND period_end <= ${toIso}::timestamptz
+        AND complete
+      ORDER BY period_end
+    `;
+    return housePointsFromRows(rows as Array<Record<string, unknown>>);
+  } catch (error) {
+    if (isMissingHouseTable(error)) return null;
+    throw error;
+  }
+}
+
+async function loadHouseDays(fromIso: string, toIso: string): Promise<HouseDayPoint[] | null> {
+  const bounds = detroitDayBounds(fromIso, toIso);
+  try {
+    const rows = await sql()`
+      SELECT day, home_wh, from_solar_wh, has_half_hour
+      FROM house_energy_day
+      WHERE day >= ${bounds.fromDay}::date
+        AND day <= ${bounds.toDay}::date
+      ORDER BY day
+    `;
+    return (rows as Array<Record<string, unknown>>).map(mapHouseDay);
+  } catch (error) {
+    if (isMissingHouseTable(error)) return null;
+    throw error;
+  }
+}
+
+/** Drops an incomplete bucket even if the SQL filter was not applied. */
+export function housePointsFromRows(rows: Array<Record<string, unknown>>): HousePoint[] {
+  return rows.filter((row) => row.complete !== false && row.complete !== "f").map(mapHousePoint);
+}
+
+function mapHousePoint(row: Record<string, unknown>): HousePoint {
+  return {
+    t: new Date(String(row.period_end)).toISOString(),
+    homeKw: homeKwFromWh(Number(row.home_wh)),
+  };
+}
+
+function mapHouseDay(row: Record<string, unknown>): HouseDayPoint {
+  return {
+    day: isoDate(row.day),
+    homeKwh: kwhFromWh(Number(row.home_wh)),
+    fromSolarKwh: kwhFromWh(Number(row.from_solar_wh)),
+    hasHalfHour: row.has_half_hour === true || row.has_half_hour === "t" || row.has_half_hour === "true",
   };
 }
 

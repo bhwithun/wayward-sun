@@ -125,6 +125,7 @@ class ChartExpandTest {
         assertEquals(0.dp, fullscreenPlotInset(buttonHeight = 48.dp, chromeHeight = 32.dp, plotHeadroom = 28.dp))
         assertEquals(48.dp, fullscreenPlotInset(buttonHeight = 48.dp, chromeHeight = 0.dp, plotHeadroom = 0.dp))
         assertEquals(48.dp, fullscreenPlotInset(buttonHeight = 48.dp, chromeHeight = 20.dp, plotHeadroom = 10.dp))
+        assertEquals(48.dp, fullscreenPlotInset(buttonHeight = 48.dp, chromeHeight = 30.dp, plotHeadroom = 10.dp))
     }
 
     @Test
@@ -170,11 +171,16 @@ class ChartExpandTest {
     @Test
     fun fullscreenSheetUsesDrawerSwitchesAndDropsOnWidgetRows() {
         assertEquals(
-            listOf("Solcast", "Enphase", "Temp", "Precip", "Buy", "Sell", "Ecobee", "HVAC"),
+            listOf("Solcast", "Enphase", "Temp", "Precip", "Buy", "Sell", "Ecobee", "HVAC", "House use"),
             ChartLayerToggles.map { it.label }
         )
-        assertEquals(ChartLayerToggles, layerToggles(includeWidgetRows = true))
-        assertTrue(layerToggles(includeWidgetRows = false).none { it.onWidget })
+        assertEquals(ChartLayerToggles, layerToggles(includeWidgetRows = true, showHouse = true))
+        assertEquals(
+            listOf("Solcast", "Enphase", "Temp", "Precip", "Buy", "Sell", "Ecobee", "HVAC"),
+            layerToggles(includeWidgetRows = true, showHouse = false).map { it.label }
+        )
+        assertTrue(layerToggles(includeWidgetRows = false, showHouse = true).none { it.onWidget })
+        assertTrue(layerToggles(includeWidgetRows = false, showHouse = true).any { it.label == "House use" })
         val withWidget = ChartLayerToggles + LayerToggle(
             ChartLayer.HVAC,
             "On widget",

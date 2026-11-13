@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.brian.solwidget.ScreenshotActivity
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DetroitCalendar
+import com.brian.solwidget.data.HouseSample
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryInterval
 import com.brian.solwidget.data.HistoryPage
@@ -37,7 +38,9 @@ import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.historyFetchKey
 import com.brian.solwidget.ui.screens.ChartControls
+import com.brian.solwidget.ui.screens.FullscreenPlotHeadroom
 import com.brian.solwidget.ui.screens.HistoryPane
+import com.brian.solwidget.ui.screens.HouseCapRise
 import com.brian.solwidget.ui.screens.LivePane
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.ui.theme.SolWidgetTheme
@@ -169,6 +172,46 @@ class FullscreenLayersTest {
     }
 
     @Test
+    fun houseUseToggleRedrawsTheSummaryAndClearsTheButton() {
+        rule.setContent {
+            HistoryHost(
+                weekSelected = false,
+                house = listOf(
+                    HouseSample(Instant.parse("2026-11-11T17:00:00Z"), 16.4),
+                    HouseSample(Instant.parse("2026-11-11T17:30:00Z"), 4.0)
+                ),
+                showHouse = true
+            )
+        }
+        val button = rule.onNodeWithTag("fullscreen-layers-button").fetchSemanticsNode().boundsInRoot
+        val plot = rule.onNodeWithTag("fullscreen-plot").fetchSemanticsNode().boundsInRoot
+        val capClearance = with(rule.density) { (FullscreenPlotHeadroom - HouseCapRise).toPx() }
+        check(plot.top + capClearance >= button.bottom - 1f) {
+            "House-use cap markers would sit under the layers button"
+        }
+        rule.onNodeWithTag("fullscreen-layers-button").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("House use").assertIsDisplayed()
+        absent("On widget")
+        val hvacTop = rule.onNodeWithText("HVAC").fetchSemanticsNode().boundsInRoot.top
+        val houseTop = rule.onNodeWithText("House use").fetchSemanticsNode().boundsInRoot.top
+        check(hvacTop < houseTop) { "House use is not under HVAC" }
+        rule.onNodeWithTag("layer-switch-House use").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("layer-switch-House use").assertIsOn()
+        val summary = rule.onNodeWithTag("fullscreen-house-summary").fetchSemanticsNode().boundsInRoot
+        check(summary.top >= button.bottom - 1f) {
+            "House summary $summary overlaps the layers button $button"
+        }
+        rule.onNodeWithText("House 10.2 kWh").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Close menu").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Show legend").performClick()
+        rule.onNodeWithText("House use · Peak 16.4 kW (half-hour)").assertIsDisplayed()
+        rule.onNodeWithTag("fullscreen-chart").assertIsDisplayed()
+    }
+
+    @Test
     fun liveFullscreenUsesTheSameLayerSheet() {
         rule.setContent { LiveHost() }
         val button = rule.onNodeWithTag("fullscreen-layers-button").fetchSemanticsNode().boundsInRoot
@@ -233,14 +276,19 @@ class FullscreenLayersTest {
     }
 
     @Composable
-    private fun HistoryHost(weekSelected: Boolean) {
+    private fun HistoryHost(
+        weekSelected: Boolean,
+        house: List<HouseSample> = emptyList(),
+        showHouse: Boolean = false
+    ) {
         val now = Instant.parse("2026-11-18T17:00:00Z")
         val month = YearMonth.of(2026, 11)
         val weeks = DetroitCalendar.monthWeeks(month)
         val (from, to) = DetroitCalendar.monthFetchRange(weeks)
-        val page = HistoryPage(from = from, to = to, points = intervals(from), sun = emptyList())
+        val page = HistoryPage(from = from, to = to, points = intervals(from), sun = emptyList(), house = house)
         var expanded by remember { mutableStateOf(true) }
         var layersOpen by remember { mutableStateOf(false) }
+        var legendOpen by remember { mutableStateOf(false) }
         var layers by remember { mutableStateOf(ChartLayers()) }
         var week by remember { mutableStateOf(LocalDate.of(2026, 11, 8)) }
         var day by remember { mutableStateOf(LocalDate.of(2026, 11, 11)) }
@@ -276,7 +324,10 @@ class FullscreenLayersTest {
                         onToggleLayers = { layersOpen = !layersOpen },
                         onDismissLayers = { layersOpen = false },
                         onToggleLayer = { layer, visible -> layers = layers.with(layer, visible) },
-                        onResetLayers = { layers = ChartLayers() }
+                        onResetLayers = { layers = ChartLayers() },
+                        legendOpen = legendOpen,
+                        onToggleLegend = { legendOpen = !legendOpen },
+                        showHouse = showHouse
                     )
                 )
             }
@@ -331,7 +382,10 @@ class FullscreenLayersTest {
         onToggleLayers: () -> Unit,
         onDismissLayers: () -> Unit,
         onToggleLayer: (com.brian.solwidget.data.ChartLayer, Boolean) -> Unit,
-        onResetLayers: () -> Unit
+        onResetLayers: () -> Unit,
+        legendOpen: Boolean = false,
+        onToggleLegend: () -> Unit = {},
+        showHouse: Boolean = false
     ) = ChartControls(
         expanded = expanded,
         expandProgress = if (expanded) 1f else 0f,
@@ -340,7 +394,10 @@ class FullscreenLayersTest {
         onToggleLayers = onToggleLayers,
         onDismissLayers = onDismissLayers,
         onToggleLayer = onToggleLayer,
-        onResetLayers = onResetLayers
+        onResetLayers = onResetLayers,
+        legendOpen = legendOpen,
+        onToggleLegend = onToggleLegend,
+        showHouse = showHouse
     )
 
     private fun intervals(from: Instant): List<HistoryInterval> {

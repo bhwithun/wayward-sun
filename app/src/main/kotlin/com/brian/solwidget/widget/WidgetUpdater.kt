@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
@@ -22,20 +23,34 @@ object WidgetUpdater {
     val SHOW_BUY = booleanPreferencesKey("widget_show_buy_rate")
     val SHOW_SELL = booleanPreferencesKey("widget_show_sell_rate")
     val SHOW_ECOBEE = booleanPreferencesKey("widget_show_ecobee")
+    val SHOW_HOUSE = booleanPreferencesKey("widget_show_house_layer")
 
     suspend fun updateAll(context: Context) {
         val appContext = context.applicationContext
         val layers = AppStorage(appContext).chartLayersOnce()
-        val manager = GlanceAppWidgetManager(appContext)
+        val widgetHouse = AppStorage(appContext).widgetHouseOnce()
+        val glanceManager = GlanceAppWidgetManager(appContext)
         val widget = ForecastWidget()
-        val glanceIds = manager.getGlanceIds(ForecastWidget::class.java)
+        val component = ComponentName(appContext, ForecastWidgetReceiver::class.java)
+        val appWidgetIds = AppWidgetManager.getInstance(appContext).getAppWidgetIds(component)
+        val glanceIds = ArrayList<GlanceId>()
+        for (appWidgetId in appWidgetIds) {
+            try {
+                glanceIds.add(glanceManager.getGlanceIdBy(appWidgetId))
+            } catch (_: IllegalArgumentException) {
+                // The id is not a Glance widget yet.
+            }
+        }
+        if (glanceIds.isEmpty()) {
+            glanceIds.addAll(glanceManager.getGlanceIds(ForecastWidget::class.java))
+        }
         val revision = System.currentTimeMillis()
         if (glanceIds.isNotEmpty()) {
             for (id in glanceIds) {
                 updateAppWidgetState(appContext, id) { prefs ->
                     prefs.toMutablePreferences().apply {
                         this[REVISION] = revision
-                        writeLayers(this, layers)
+                        writeLayers(this, layers, widgetHouse)
                     }
                 }
                 widget.update(appContext, id)
@@ -46,7 +61,11 @@ object WidgetUpdater {
         requestProviderUpdate(appContext)
     }
 
-    fun layersFrom(prefs: androidx.datastore.preferences.core.Preferences, fallback: ChartLayers): ChartLayers {
+    fun layersFrom(
+        prefs: androidx.datastore.preferences.core.Preferences,
+        fallback: ChartLayers,
+        widgetHouse: Boolean = false
+    ): ChartLayers {
         val solcast = prefs[SHOW_SOLAR] ?: fallback.solcast
         return ChartLayers(
             solcast = solcast,
@@ -55,13 +74,15 @@ object WidgetUpdater {
             precipitation = prefs[SHOW_PRECIP] ?: fallback.precipitation,
             buy = prefs[SHOW_BUY] ?: prefs[SHOW_RATES] ?: fallback.buy,
             sell = prefs[SHOW_SELL] ?: prefs[SHOW_RATES] ?: fallback.sell,
-            ecobee = prefs[SHOW_ECOBEE] ?: fallback.ecobee
+            ecobee = prefs[SHOW_ECOBEE] ?: fallback.ecobee,
+            house = fallback.house && widgetHouse
         )
     }
 
-    private fun writeLayers(
+    internal fun writeLayers(
         prefs: androidx.datastore.preferences.core.MutablePreferences,
-        layers: ChartLayers
+        layers: ChartLayers,
+        widgetHouse: Boolean
     ) {
         prefs[SHOW_SOLAR] = layers.solcast
         prefs[SHOW_ENPHASE] = layers.enphase
@@ -70,6 +91,7 @@ object WidgetUpdater {
         prefs[SHOW_BUY] = layers.buy
         prefs[SHOW_SELL] = layers.sell
         prefs[SHOW_ECOBEE] = layers.ecobee
+        prefs[SHOW_HOUSE] = layers.house && widgetHouse
     }
 
     private fun requestProviderUpdate(context: Context) {

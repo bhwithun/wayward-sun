@@ -10,6 +10,8 @@ import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.GAS_AUX_DOLLARS_PER_HOUR
 import com.brian.solwidget.data.ForecastRepository
+import com.brian.solwidget.data.HouseDay
+import com.brian.solwidget.data.HouseSample
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryApi
 import com.brian.solwidget.data.HistoryPage
@@ -68,7 +70,10 @@ data class HomeUiState(
     val historyError: String? = null,
     val livePast: List<PowerPoint>? = null,
     val liveEcobee: List<EcobeeSample> = emptyList(),
+    val liveHouse: List<HouseSample> = emptyList(),
+    val liveHouseDays: List<HouseDay> = emptyList(),
     val livePastKey: String? = null,
+    val widgetHouse: Boolean = false,
     val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR,
     val chartExpanded: Boolean = false,
     /** Live fullscreen page. 0 is the power chart, then Solar, Temperature, and the other cards. */
@@ -103,6 +108,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     isLoading = false,
                     now = Instant.now(),
                     layers = storage.chartLayersOnce(),
+                    widgetHouse = storage.widgetHouseOnce(),
                     gasDollarsPerHour = storage.gasAuxDollarsOnce()
                 )
             }
@@ -163,7 +169,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val result = livePastRepository.fetch(now, zone)
         if (generation != liveGeneration) return false
         result.onSuccess { past ->
-            _uiState.update { it.copy(livePast = past.points, liveEcobee = past.ecobee, livePastKey = key) }
+            _uiState.update {
+                it.copy(
+                    livePast = past.points,
+                    liveEcobee = past.ecobee,
+                    liveHouse = past.house,
+                    liveHouseDays = past.houseDays,
+                    livePastKey = key
+                )
+            }
         }
         return result.isSuccess
     }
@@ -335,10 +349,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setWidgetHouse(visible: Boolean) {
+        viewModelScope.launch {
+            storage.setWidgetHouse(visible)
+            _uiState.update { it.copy(widgetHouse = visible) }
+            WidgetUpdater.updateAll(getApplication())
+        }
+    }
+
     fun resetLayers() {
         viewModelScope.launch {
-            ChartLayer.entries.forEach { storage.setChartLayer(it, true) }
-            _uiState.update { it.copy(layers = ChartLayers()) }
+            val defaults = ChartLayers()
+            for (layer in ChartLayer.entries) {
+                storage.setChartLayer(layer, defaults.isEnabled(layer))
+            }
+            _uiState.update { it.copy(layers = defaults) }
             WidgetUpdater.updateAll(getApplication())
         }
     }

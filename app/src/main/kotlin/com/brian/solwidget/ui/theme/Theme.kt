@@ -32,6 +32,7 @@ object SolColors {
     val HeatPump = Color(0xFF00897B)
     val AuxHeat = Color(0xFFEF5350)
     val CoolRun = Color(0xFF90CAF9)
+    val House = Color(0xFFB39DDB)
 }
 
 private val DarkColorScheme = darkColorScheme(
