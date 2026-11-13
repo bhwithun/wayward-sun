@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
@@ -28,9 +29,21 @@ object WidgetUpdater {
         val appContext = context.applicationContext
         val layers = AppStorage(appContext).chartLayersOnce()
         val widgetHouse = AppStorage(appContext).widgetHouseOnce()
-        val manager = GlanceAppWidgetManager(appContext)
+        val glanceManager = GlanceAppWidgetManager(appContext)
         val widget = ForecastWidget()
-        val glanceIds = manager.getGlanceIds(ForecastWidget::class.java)
+        val component = ComponentName(appContext, ForecastWidgetReceiver::class.java)
+        val appWidgetIds = AppWidgetManager.getInstance(appContext).getAppWidgetIds(component)
+        val glanceIds = ArrayList<GlanceId>()
+        for (appWidgetId in appWidgetIds) {
+            try {
+                glanceIds.add(glanceManager.getGlanceIdBy(appWidgetId))
+            } catch (_: IllegalArgumentException) {
+                // The id is not a Glance widget yet.
+            }
+        }
+        if (glanceIds.isEmpty()) {
+            glanceIds.addAll(glanceManager.getGlanceIds(ForecastWidget::class.java))
+        }
         val revision = System.currentTimeMillis()
         if (glanceIds.isNotEmpty()) {
             for (id in glanceIds) {
@@ -62,7 +75,7 @@ object WidgetUpdater {
             buy = prefs[SHOW_BUY] ?: prefs[SHOW_RATES] ?: fallback.buy,
             sell = prefs[SHOW_SELL] ?: prefs[SHOW_RATES] ?: fallback.sell,
             ecobee = prefs[SHOW_ECOBEE] ?: fallback.ecobee,
-            house = prefs[SHOW_HOUSE] ?: widgetHouse
+            house = fallback.house && widgetHouse
         )
     }
 
@@ -78,7 +91,7 @@ object WidgetUpdater {
         prefs[SHOW_BUY] = layers.buy
         prefs[SHOW_SELL] = layers.sell
         prefs[SHOW_ECOBEE] = layers.ecobee
-        prefs[SHOW_HOUSE] = widgetHouse
+        prefs[SHOW_HOUSE] = layers.house && widgetHouse
     }
 
     private fun requestProviderUpdate(context: Context) {

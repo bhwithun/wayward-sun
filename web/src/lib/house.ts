@@ -96,6 +96,11 @@ export function housePeriodInRange(t: number, fromMs: number, toMs: number): boo
   return t > fromMs && t <= toMs;
 }
 
+/** The half-hour ending at midnight belongs to the day that just finished. */
+export function houseReadingDay(t: number): string {
+  return ymdKey(detroitParts(new Date(t - 1)));
+}
+
 export function housePlotSamples(samples: HouseSample[], fromMs: number, toMs: number): HouseSample[] {
   const visible = samples.filter((sample) => housePeriodInRange(sample.t, fromMs, toMs));
   return houseDetailIsHalfHour(fromMs, toMs) ? visible : houseHourlySamples(visible);
@@ -163,7 +168,7 @@ export function houseSummary(
 
   const coveredDates = new Set(inRangeDays.map((day) => day.day));
   const sampleKwh = samplesInRange.reduce((sum, sample) => {
-    const date = ymdKey(detroitParts(new Date(sample.t)));
+    const date = houseReadingDay(sample.t);
     return coveredDates.has(date) ? sum : sum + sample.kw * 0.5;
   }, 0);
   const homeKwh = inRangeDays.reduce((sum, day) => sum + day.homeKwh, 0) + sampleKwh;

@@ -128,6 +128,13 @@ internal fun daysWithNoonInRange(from: Instant, to: Instant, zone: ZoneId): List
 }
 
 /**
+ * Epoch millis for the chart domain. Double, not Float: Float rounds midnight off by seconds
+ * and the closing half-hour then fails the `(start, end]` check.
+ */
+internal fun chartDomainMillis(from: Instant, to: Instant): Pair<Double, Double> =
+    from.toEpochMilli().toDouble() to to.toEpochMilli().toDouble()
+
+/**
  * Drop time that belongs to a day with no label. A labeled day that the range
  * only partly covers stays clipped to the original instants.
  */
@@ -256,13 +263,14 @@ fun PowerChart(
             ?: weather.lastOrNull()?.time ?: ecobee.lastOrNull()?.at
             ?: house.maxByOrNull { it.periodEnd }?.periodEnd
         if (startInstant == null || endInstant == null) return@Canvas
-        val minTime = startInstant.toEpochMilli().toFloat()
-        val maxTime = endInstant.toEpochMilli().toFloat()
-        val span = max(1f, maxTime - minTime)
+        // Float32 epoch millis are ~10s coarse here, which drops a period_end
+        // that lands exactly on midnight. Double keeps that instant.
+        val (minTime, maxTime) = chartDomainMillis(startInstant, endInstant)
+        val span = (maxTime - minTime).coerceAtLeast(1.0)
         val solarMax = ForecastSnapshot.SOLAR_MAX_KW
 
         fun xOf(time: Instant): Float =
-            left + ((time.toEpochMilli() - minTime) / span) * width
+            left + (((time.toEpochMilli() - minTime) / span) * width).toFloat()
 
         fun yOf(kw: Double): Float =
             bottom - ((kw / solarMax).toFloat().coerceIn(0f, 1f) * height)
@@ -957,12 +965,11 @@ object ChartBitmapRenderer {
         if (startInstant == null || endInstant == null) return bitmap
         val zone = ZoneId.systemDefault()
         val (axisFrom, axisTo) = widgetAxis(startInstant, endInstant, rangeFrom, rangeTo, zone, left, right, points, weather, layers)
-        val minTime = axisFrom.toEpochMilli().toFloat()
-        val maxTime = axisTo.toEpochMilli().toFloat()
-        val span = max(1f, maxTime - minTime)
+        val (minTime, maxTime) = chartDomainMillis(axisFrom, axisTo)
+        val span = (maxTime - minTime).coerceAtLeast(1.0)
         val solarMax = ForecastSnapshot.SOLAR_MAX_KW
 
-        fun xOf(time: Instant) = left + ((time.toEpochMilli() - minTime) / span) * chartW
+        fun xOf(time: Instant) = left + (((time.toEpochMilli() - minTime) / span) * chartW).toFloat()
         fun yOf(kw: Double) = bottom - ((kw / solarMax).toFloat().coerceIn(0f, 1f) * chartH)
 
         val from = Instant.ofEpochMilli(minTime.toLong())

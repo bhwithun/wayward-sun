@@ -10,6 +10,7 @@ import {
   houseHalfHourPeak,
   houseLegendLabel,
   housePeriodInRange,
+  houseReadingDay,
   housePlotSamples,
   houseStepRuns,
   houseSummary,
@@ -199,6 +200,46 @@ describe("house summary", () => {
   it("hides coverage when a started day has no row", () => {
     const from = Date.parse("2026-11-10T05:00:00.000Z");
     expect(houseSummary([], [day(true)], from, DETROIT_DAY_TO, NOON, true)?.coveredPercent).toBeNull();
+  });
+
+  it("day totals match house_energy_day for a past day and a past week", () => {
+    const nov10Start = Date.parse("2026-11-10T05:00:00.000Z");
+    const nov11Start = Date.parse("2026-11-11T05:00:00.000Z");
+    const nov13Start = Date.parse("2026-11-13T05:00:00.000Z");
+    const closing = { t: nov11Start, kw: 0.828 };
+    const oneDay = houseSummary(
+      [closing, { t: nov11Start - 30 * 60 * 1000, kw: 1.48 }],
+      [{ day: "2026-11-10", homeKwh: 41.56, fromSolarKwh: 10, hasHalfHour: true }],
+      nov10Start,
+      nov11Start,
+      nov11Start,
+      true
+    );
+    expect(oneDay?.homeKwh).toBeCloseTo(41.56);
+    expect(houseReadingDay(nov11Start)).toBe("2026-11-10");
+    const steps = houseStepRuns(housePlotSamples([closing], nov10Start, nov11Start));
+    expect(steps[0][0].t).toBe(nov11Start - 30 * 60 * 1000);
+    expect(steps[0][steps[0].length - 1].t).toBe(nov11Start);
+
+    const weekFrom = Date.parse("2026-11-08T05:00:00.000Z");
+    const weekTo = Date.parse("2026-11-15T05:00:00.000Z");
+    const days: HouseDay[] = [
+      { day: "2026-11-10", homeKwh: 41.56, fromSolarKwh: 1, hasHalfHour: true },
+      { day: "2026-11-11", homeKwh: 40, fromSolarKwh: 1, hasHalfHour: true },
+      { day: "2026-11-12", homeKwh: 43.33, fromSolarKwh: 1, hasHalfHour: true },
+    ];
+    const week = houseSummary(
+      [
+        { t: nov11Start, kw: 0.828 },
+        { t: nov13Start, kw: 0.74 },
+      ],
+      days,
+      weekFrom,
+      weekTo,
+      weekTo,
+      true
+    );
+    expect(week?.homeKwh).toBeCloseTo(41.56 + 40 + 43.33);
   });
 
   it("hides the chip when the range has neither samples nor a daily total", () => {

@@ -96,6 +96,10 @@ fun houseHourlySamples(samples: List<HouseSample>, zone: ZoneId): List<HouseSamp
 fun housePeriodInRange(periodEnd: Instant, from: Instant, to: Instant): Boolean =
     periodEnd.isAfter(from) && !periodEnd.isAfter(to)
 
+/** The half-hour ending at midnight belongs to the day that just finished. */
+fun houseReadingDay(periodEnd: Instant, zone: ZoneId): LocalDate =
+    periodEnd.minusMillis(1).atZone(zone).toLocalDate()
+
 fun housePlotSamples(
     samples: List<HouseSample>,
     from: Instant,
@@ -170,7 +174,7 @@ fun houseSummary(
 
     val coveredDates = inRangeDays.map { it.day }.toHashSet()
     val sampleKwh = samplesInRange.sumOf { sample ->
-        val date = sample.periodEnd.atZone(zone).toLocalDate()
+        val date = houseReadingDay(sample.periodEnd, zone)
         if (date in coveredDates) 0.0 else sample.homeKw * 0.5
     }
     val homeKwh = inRangeDays.sumOf { it.homeKwh } + sampleKwh

@@ -222,6 +222,45 @@ class HouseEnergyTest {
     }
 
     @Test
+    fun dayTotalsMatchHouseEnergyDayForAPastDayAndWeek() {
+        val detroit = ZoneId.of("America/Detroit")
+        val nov10 = LocalDate.of(2026, 11, 10)
+        val nov11 = nov10.plusDays(1)
+        val nov12 = nov10.plusDays(2)
+        val dayStart = nov10.atStartOfDay(detroit).toInstant()
+        val dayEnd = nov11.atStartOfDay(detroit).toInstant()
+        val closing = HouseSample(dayEnd, 0.828)
+        val oneDay = houseSummary(
+            listOf(closing, HouseSample(dayEnd.minus(HOUSE_BUCKET), 1.48)),
+            listOf(HouseDay(nov10, 41.56, 10.0, true)),
+            dayStart,
+            dayEnd,
+            detroit,
+            dayEnd,
+            solarVisible = true
+        )
+        assertEquals(41.56, oneDay?.homeKwh ?: 0.0, 0.001)
+        val steps = houseStepRuns(housePlotSamples(listOf(closing), dayStart, dayEnd, detroit))
+        assertEquals(dayEnd.minus(HOUSE_BUCKET), steps.single().first().at)
+        assertEquals(dayEnd, steps.single().last().at)
+
+        val sunday = LocalDate.of(2026, 11, 8)
+        val weekFrom = sunday.atStartOfDay(detroit).toInstant()
+        val weekTo = sunday.plusDays(7).atStartOfDay(detroit).toInstant()
+        val days = listOf(
+            HouseDay(nov10, 41.56, 1.0, true),
+            HouseDay(nov11, 40.0, 1.0, true),
+            HouseDay(nov12, 43.33, 1.0, true)
+        )
+        val midnights = listOf(
+            HouseSample(nov11.atStartOfDay(detroit).toInstant(), 0.828),
+            HouseSample(nov12.plusDays(1).atStartOfDay(detroit).toInstant(), 0.74)
+        )
+        val week = houseSummary(midnights, days, weekFrom, weekTo, detroit, weekTo, solarVisible = true)
+        assertEquals(41.56 + 40.0 + 43.33, week?.homeKwh ?: 0.0, 0.001)
+    }
+
+    @Test
     fun theChipHidesWhenTheRangeHasNoHouseData() {
         val sample = listOf(HouseSample(noon, 2.0))
         assertFalse(houseChipVisible(emptyList(), emptyList(), from, to, zone))

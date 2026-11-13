@@ -1,10 +1,12 @@
 package com.brian.solwidget.ui
 
 import com.brian.solwidget.ui.components.WidgetDayColumn
+import com.brian.solwidget.ui.components.chartDomainMillis
 import com.brian.solwidget.ui.components.croppedWidgetRange
 import com.brian.solwidget.ui.components.daysWithNoonInRange
 import com.brian.solwidget.ui.components.planWidgetDayLabels
 import com.brian.solwidget.ui.components.widgetRateWash
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -48,6 +50,17 @@ class WidgetDayLabelTest {
         val (cropFrom, cropTo) = croppedWidgetRange(from, to, noons, zone)
         assertEquals(monday.plusDays(1).atStartOfDay(zone).toInstant(), cropFrom)
         assertEquals(friday.atStartOfDay(zone).toInstant(), cropTo)
+    }
+
+    @Test
+    fun chartDomainKeepsTheMidnightAFloatAxisWouldDrop() {
+        val zone = ZoneId.of("America/New_York")
+        val end = LocalDate.of(2026, 11, 11).atStartOfDay(zone).toInstant()
+        val start = LocalDate.of(2026, 11, 10).atStartOfDay(zone).toInstant()
+        val (domainFrom, domainTo) = chartDomainMillis(start, end)
+        assertEquals(start.toEpochMilli().toDouble(), domainFrom, 0.0)
+        assertEquals(end.toEpochMilli().toDouble(), domainTo, 0.0)
+        assertEquals(end, Instant.ofEpochMilli(domainTo.toLong()))
     }
 
     @Test

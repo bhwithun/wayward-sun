@@ -59,12 +59,20 @@ class HouseLayerTest {
     }
 
     @Test
-    fun widgetToggleIsSeparateFromTheChartChip() {
-        assertFalse(WidgetUpdater.layersFrom(emptyPreferences(), ChartLayers(house = true)).house)
-        val glance = mutablePreferencesOf()
-        glance[WidgetUpdater.SHOW_HOUSE] = true
-        assertTrue(WidgetUpdater.layersFrom(glance, ChartLayers(house = false)).house)
-        assertTrue(WidgetUpdater.layersFrom(emptyPreferences(), ChartLayers(), widgetHouse = true).house)
+    fun widgetHouseIsHouseUseAndOnWidgetReadAtRenderTime() {
+        assertFalse(WidgetUpdater.layersFrom(emptyPreferences(), ChartLayers(house = true), widgetHouse = false).house)
+        assertFalse(WidgetUpdater.layersFrom(emptyPreferences(), ChartLayers(house = false), widgetHouse = true).house)
+        assertTrue(WidgetUpdater.layersFrom(emptyPreferences(), ChartLayers(house = true), widgetHouse = true).house)
+        val staleOff = mutablePreferencesOf()
+        staleOff[WidgetUpdater.SHOW_HOUSE] = false
+        assertTrue(
+            WidgetUpdater.layersFrom(staleOff, ChartLayers(house = true), widgetHouse = true).house
+        )
+        val staleOn = mutablePreferencesOf()
+        staleOn[WidgetUpdater.SHOW_HOUSE] = true
+        assertFalse(
+            WidgetUpdater.layersFrom(staleOn, ChartLayers(house = false), widgetHouse = true).house
+        )
 
         val written = mutablePreferencesOf()
         written[WidgetUpdater.SHOW_HOUSE] = true
