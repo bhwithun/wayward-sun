@@ -10,7 +10,7 @@ The main chart is the same idea as the Solcast Toolkit **Graph: Live and Forecas
 
 The display is **layers you can turn on or off**: solar (live + forecast), **rain / precipitation**, temperature, and **DTE rate periods** (Dynamic Peak Pricing D1.8: off-peak, mid-peak, and peak hours in America/Detroit). It is not a commercial PV monitoring portal, not a utility account, and not a generic weather app. There is no current-kW hero number; the graph is the point.
 
-The website adds a longer view of stored history (7, 30, 90 days, or a custom range). History is half-hour rows: solar actual and forecast, the DTE rate stamped when the row was first written, temperature, and precipitation probability.
+The website adds a longer view of stored history (7, 30, 90 days, or a custom range). History is half-hour rows: solar actual and forecast, the DTE rate stamped when the row was first written, temperature, and precipitation probability. `GET /history` also returns whole-house energy when `house_energy` and `house_energy_day` exist (`web/db/006_house_energy.sql`). A separate loader fills those tables from the Tesla Energy Gateway. This app does not call Tesla. Until the migration is applied, `house` and `houseDays` are empty arrays.
 
 Hobbyist Solcast accounts allow **10 HTTP requests per UTC day**. Several phones and widgets would burn that quota independently. So **one Vercel app** is the only Solcast client. It calls Solcast on a Detroit schedule, stores the result in Neon, and every device just downloads that cache. See [Solcast API Utilization](#solcast-api-utilization).
 
@@ -35,6 +35,7 @@ Solcast API  ←  Vercel (secret + Neon, on-demand)  ←  GET /cache  ←  Andro
 - Solcast runs only from the schedule. A phone `GET /cache` downloads the stored snapshot and does not call Solcast.
 - There is no `CACHE_SECRET` and no device `PUT`. The cache URL is readable by anyone who has it.
 - Weather for the phone is Open-Meteo on the device. Weather stored in history is Open-Meteo from the server, using `SITE_LAT` and `SITE_LNG`.
+- `GET /history` adds `house` (`t`, `homeKw` = `home_wh / 500` for complete half-hours) and `houseDays` (`day`, `homeKwh`, `fromSolarKwh`, `hasHalfHour`). `GET /cache` stays the Solcast snapshot. Live and the widget already download `/history` for the past window, which covers the widget's prior 48 hours, so today's house rows are not copied onto `/cache`.
 
 ### Web commands
 

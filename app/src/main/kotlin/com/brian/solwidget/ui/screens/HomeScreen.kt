@@ -77,6 +77,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,6 +113,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brian.solwidget.R
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.HouseDay
+import com.brian.solwidget.data.HouseSample
+import com.brian.solwidget.data.HouseSummary
+import com.brian.solwidget.data.houseChipVisible
+import com.brian.solwidget.data.houseSummary
+import com.brian.solwidget.data.houseSummaryLabel
 import com.brian.solwidget.data.hvacSummary
 import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
@@ -138,6 +145,8 @@ import com.brian.solwidget.util.AppUpdate
 import com.brian.solwidget.util.Formatters
 import com.brian.solwidget.util.IntentUtils
 import com.brian.solwidget.util.ReleaseOffer
+import com.brian.solwidget.data.houseHalfHourPeak
+import com.brian.solwidget.data.solarDisplayName
 import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.viewmodel.HomeViewModel
 import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
@@ -165,6 +174,7 @@ fun HomeScreen(
     var updateCheck by remember { mutableStateOf(0) }
     var readyOffer by remember { mutableStateOf<ReleaseOffer?>(null) }
     val versionName = remember(context) { AppUpdate.installedVersionName(context) }
+    var showHouseChip by remember { mutableStateOf(false) }
     var expandedPanel by remember { mutableStateOf<MetaPanel?>(null) }
     val showLiveOverlay = state.tab == HomeTab.LIVE && expandedPanel != null
     val openDrawer = {
@@ -260,6 +270,9 @@ fun HomeScreen(
                         scope.launch { drawerState.close() }
                         IntentUtils.openUrl(context, "https://sun.brianandkathi.com")
                     },
+                    showHouse = showHouseChip,
+                    widgetHouse = state.widgetHouse,
+                    onWidgetHouse = viewModel::setWidgetHouse,
                     onCheckUpdates = {
                         scope.launch { drawerState.close() }
                         val generation = updateCheck + 1
@@ -343,6 +356,9 @@ fun HomeScreen(
                         expandedPanel = if (expandedPanel == panel) null else panel
                     },
                     gasDollarsPerHour = state.gasDollarsPerHour,
+                    house = state.liveHouse,
+                    houseDays = state.liveHouseDays,
+                    onHouseChip = { showHouseChip = it },
                     controls = chartControls
                 )
             } else {
@@ -364,6 +380,7 @@ fun HomeScreen(
                     onSelectDay = viewModel::selectHistoryDay,
                     onShowToday = viewModel::showCurrentHistory,
                     gasDollarsPerHour = state.gasDollarsPerHour,
+                    onHouseChip = { showHouseChip = it },
                     controls = chartControls
                 )
             }
@@ -658,10 +675,14 @@ internal fun LivePane(
     expandedPanel: MetaPanel?,
     onToggleExpand: (MetaPanel) -> Unit,
     gasDollarsPerHour: Double,
+    house: List<HouseSample> = emptyList(),
+    houseDays: List<HouseDay> = emptyList(),
+    onHouseChip: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     controls: ChartControls = ChartControls()
 ) {
     if (snapshot == null) {
+        SideEffect { onHouseChip(false) }
         Box(
             modifier = modifier
                 .fillMaxWidth()
@@ -673,6 +694,13 @@ internal fun LivePane(
         return
     }
     val (rangeFrom, rangeTo) = ForecastSnapshot.range(now, zone)
+    val houseVisible = houseChipVisible(house, houseDays, rangeFrom, rangeTo, zone)
+    SideEffect { onHouseChip(houseVisible) }
+    val houseLine = if (layers.house) {
+        houseSummary(house, houseDays, rangeFrom, rangeTo, zone, now, layers.power)
+    } else {
+        null
+    }
     val (tooWarm, tooCool) = ecobeeFillPresence(ecobee, rangeFrom, rangeTo, now)
     val runtime = hvacPresence(ecobee, rangeFrom, rangeTo, now)
     val legend = LegendModel(
@@ -681,20 +709,43 @@ internal fun LivePane(
         showTooCool = tooCool,
         showHeatPump = runtime.heatPump,
         showGasAux = runtime.aux,
-        showCoolRun = runtime.cool
+        showCoolRun = runtime.cool,
+        showHouse = layers.house && houseVisible,
+        housePeakKw = houseHalfHourPeak(house, rangeFrom, rangeTo)
     )
     val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
-        PowerChart(
-            points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
-            now = now,
-            weather = weather?.alignedWithPower(now, zone).orEmpty(),
-            rangeFrom = rangeFrom,
-            rangeTo = rangeTo,
-            layers = layers,
-            sunDays = weather?.sunDays.orEmpty(),
-            isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
-            ecobee = ecobee
-        )
+        if (controls.expanded) {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    PowerChart(
+                        points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
+                        now = now,
+                        weather = weather?.alignedWithPower(now, zone).orEmpty(),
+                        rangeFrom = rangeFrom,
+                        rangeTo = rangeTo,
+                        layers = layers,
+                        sunDays = weather?.sunDays.orEmpty(),
+                        isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
+                        ecobee = ecobee,
+                        house = house
+                    )
+                }
+                HouseSummaryRow(houseLine)
+            }
+        } else {
+            PowerChart(
+                points = liveSolarPoints(livePast, snapshot.points, rangeFrom, rangeTo, now),
+                now = now,
+                weather = weather?.alignedWithPower(now, zone).orEmpty(),
+                rangeFrom = rangeFrom,
+                rangeTo = rangeTo,
+                layers = layers,
+                sunDays = weather?.sunDays.orEmpty(),
+                isDemo = snapshot.isDemo && livePast.isNullOrEmpty(),
+                ecobee = ecobee,
+                house = house
+            )
+        }
     }
     if (controls.expanded) {
         val cards = liveFullscreenCards(layers)
@@ -754,6 +805,7 @@ internal fun LivePane(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+        HouseSummaryBlock(houseLine)
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -808,6 +860,7 @@ internal fun HistoryPane(
     onSelectDay: (LocalDate) -> Unit,
     onShowToday: () -> Unit,
     gasDollarsPerHour: Double,
+    onHouseChip: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     controls: ChartControls = ChartControls()
 ) {
@@ -827,6 +880,14 @@ internal fun HistoryPane(
         DetroitCalendar.dayRange(shownDay)
     }
     val chart = if (pageMatches && history != null) history.chartFor(from, to, now) else null
+    val houseDays = if (pageMatches) history?.houseDays.orEmpty() else emptyList()
+    val houseVisible = houseChipVisible(chart?.house.orEmpty(), houseDays, from, to, DetroitCalendar.ZONE)
+    SideEffect { onHouseChip(houseVisible) }
+    val houseLine = if (layers.house && chart != null) {
+        houseSummary(chart.house, houseDays, from, to, DetroitCalendar.ZONE, now, layers.power)
+    } else {
+        null
+    }
     val (tooWarm, tooCool) = if (chart != null) {
         ecobeeFillPresence(chart.ecobee, from, to, now)
     } else {
@@ -839,7 +900,13 @@ internal fun HistoryPane(
         showTooCool = tooCool,
         showHeatPump = runtime?.heatPump == true,
         showGasAux = runtime?.aux == true,
-        showCoolRun = runtime?.cool == true
+        showCoolRun = runtime?.cool == true,
+        showHouse = layers.house && houseVisible,
+        housePeakKw = if (chart == null) {
+            null
+        } else {
+            houseHalfHourPeak(chart.house, from, to)
+        }
     )
     val chartContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         if (chart != null) {
@@ -852,7 +919,8 @@ internal fun HistoryPane(
                 layers = layers,
                 sunDays = chart.sunDays,
                 zone = DetroitCalendar.ZONE,
-                ecobee = chart.ecobee
+                ecobee = chart.ecobee,
+                house = chart.house
             )
         }
         if (chart == null && historyLoading) {
@@ -877,17 +945,36 @@ internal fun HistoryPane(
         val (pageFrom, pageTo) = if (weekSelected) DetroitCalendar.weekRange(start) else DetroitCalendar.dayRange(start)
         val drawn = if (pageMatches && history != null) history.chartFor(pageFrom, pageTo, now) else null
         if (drawn != null) {
-            PowerChart(
-                points = drawn.points,
-                now = now,
-                weather = drawn.weather,
-                rangeFrom = pageFrom,
-                rangeTo = pageTo,
-                layers = layers,
-                sunDays = drawn.sunDays,
-                zone = DetroitCalendar.ZONE,
-                ecobee = drawn.ecobee
-            )
+            val pageSummary = if (layers.house) {
+                houseSummary(
+                    drawn.house,
+                    history?.houseDays.orEmpty(),
+                    pageFrom,
+                    pageTo,
+                    DetroitCalendar.ZONE,
+                    now,
+                    layers.power
+                )
+            } else {
+                null
+            }
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    PowerChart(
+                        points = drawn.points,
+                        now = now,
+                        weather = drawn.weather,
+                        rangeFrom = pageFrom,
+                        rangeTo = pageTo,
+                        layers = layers,
+                        sunDays = drawn.sunDays,
+                        zone = DetroitCalendar.ZONE,
+                        ecobee = drawn.ecobee,
+                        house = drawn.house
+                    )
+                }
+                HouseSummaryRow(pageSummary)
+            }
         }
     }
     val anchors = rememberStableSpan(
@@ -961,8 +1048,10 @@ internal fun HistoryPane(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            HouseSummaryBlock(houseLine)
             if (pageMatches && history != null && chart != null &&
                 chart.points.isEmpty() && chart.weather.isEmpty() && chart.ecobee.isEmpty() &&
+                !houseVisible &&
                 historyError == null
             ) {
                 Text(
@@ -997,6 +1086,35 @@ internal fun HistoryPane(
             Modifier.align(Alignment.TopEnd).padding(top = 48.dp, end = 12.dp).zIndex(2f)
         )
     }
+    }
+}
+
+@Composable
+private fun HouseSummaryBlock(summary: HouseSummary?) {
+    if (summary == null) return
+    Text(
+        text = houseSummaryLabel(summary),
+        color = SolColors.Muted,
+        style = MaterialTheme.typography.bodySmall
+    )
+    if (summary.hourlyDetailUnavailable) {
+        Text(
+            text = "Hourly detail unavailable",
+            color = SolColors.Muted.copy(alpha = 0.72f),
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+private fun HouseSummaryRow(summary: HouseSummary?) {
+    if (summary == null) return
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
+    ) {
+        HouseSummaryBlock(summary)
     }
 }
 
@@ -1586,7 +1704,9 @@ private fun LayerMetaPanel(
                             .padding(horizontal = 6.dp, vertical = 1.dp)
                     )
                 } else {
-                    Text(snapshot.resourceId, color = SolColors.Ink, style = type.body)
+                    solarDisplayName(snapshot.resourceId)?.let { name ->
+                        Text(name, color = SolColors.Ink, style = type.body)
+                    }
                 }
                 Text(Formatters.asOf(snapshot.fetchedAt, now), color = SolColors.Muted, style = type.caption)
             }
