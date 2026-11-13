@@ -4,6 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PowerChart, type ChartLayers } from "@/components/PowerChart";
 import { hvacPresence, hvacSummary, hvacSummaryLabel, type EcobeeSample } from "@/lib/ecobee";
 import {
+  houseChipVisible,
+  houseDaysOverlapping,
+  houseSummary,
+  houseSummaryLabel,
+  type HouseDay,
+  type HouseSample,
+} from "@/lib/house";
+import {
   BASE_MID_PEAK_CENTS,
   BASE_OFF_PEAK_CENTS,
   BASE_PEAK_CENTS,
@@ -47,6 +55,7 @@ const DEFAULT_LAYERS: ChartLayers = {
   sell: true,
   ecobee: true,
   hvac: false,
+  house: false,
 };
 
 function readLayers(): ChartLayers {
@@ -64,6 +73,7 @@ function readLayers(): ChartLayers {
       sell: parsed.sell !== false,
       ecobee: parsed.ecobee !== false,
       hvac: parsed.hvac === true,
+      house: parsed.house === true,
     };
   } catch {
     return DEFAULT_LAYERS;
@@ -105,10 +115,15 @@ type EcobeeBody = {
   outdoorF?: number | null;
 };
 
+type HouseBody = { t: string; homeKw: number };
+type HouseDayBody = { day: string; homeKwh: number; fromSolarKwh: number; hasHalfHour: boolean };
+
 type HistoryBody = {
   points?: HistoryPoint[];
   sun?: Array<{ date: string; sunrise: string; sunset: string }>;
   ecobee?: EcobeeBody[];
+  house?: HouseBody[];
+  houseDays?: HouseDayBody[];
   error?: string;
 };
 
@@ -241,6 +256,11 @@ export function Dashboard() {
         : null;
   const chart = chartModel(history, clock, chartFocus, todayParts);
   const runtime = hvacPresence(chart.ecobee, chart.fromMs, chart.toMs, clock);
+  const solarVisible = layers.solcast || layers.enphase;
+  const houseAvailable = houseChipVisible(chart.house, chart.houseDays, chart.fromMs, chart.toMs);
+  const house = layers.house
+    ? houseSummary(chart.house, chart.houseDays, chart.fromMs, chart.toMs, clock, solarVisible)
+    : null;
   const monthName = MONTH_LABEL.format(new Date(Date.UTC(month.year, month.month - 1, 1)));
 
   return (
@@ -270,6 +290,9 @@ export function Dashboard() {
         <Chip label="Sell" on={layers.sell} onClick={() => setLayers({ ...layers, sell: !layers.sell })} />
         <Chip label="Ecobee" on={layers.ecobee} onClick={() => setLayers({ ...layers, ecobee: !layers.ecobee })} />
         <Chip label="HVAC" on={layers.hvac} onClick={() => setLayers({ ...layers, hvac: !layers.hvac })} />
+        {houseAvailable && (
+          <Chip label="House use" on={layers.house} onClick={() => setLayers({ ...layers, house: !layers.house })} />
+        )}
       </div>
 
       {status && <p className="banner">{status}</p>}
@@ -335,6 +358,13 @@ export function Dashboard() {
               )}
             </div>
           )}
+          {layers.house && houseAvailable && (
+            <div className="legend-row">
+              <span>
+                <i className="swatch hairline" style={{ background: "#B39DDB" }} /> House use
+              </span>
+            </div>
+          )}
           {(layers.precip || layers.buy || layers.sell) && (
             <div className="legend-row">
               {layers.precip && <span style={{ color: "#4DD0C8" }}>▮ Precip</span>}
@@ -357,11 +387,18 @@ export function Dashboard() {
           rates={chart.rates}
           demo={cache?.source === "demo"}
           ecobee={chart.ecobee}
+          house={chart.house}
         />
         {layers.hvac && (
           <p className="muted hvac-summary" title="Aux heat is about $0.60 per runtime hour">
             {hvacSummaryLabel(hvacSummary(chart.ecobee, chart.fromMs, chart.toMs, clock))}
           </p>
+        )}
+        {house && (
+          <>
+            <p className="muted hvac-summary">{houseSummaryLabel(house)}</p>
+            {house.hourlyDetailUnavailable && <p className="muted house-note">Hourly detail unavailable</p>}
+          </>
         )}
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
@@ -570,8 +607,27 @@ function chartModel(
     rates: rows,
     ecobee,
     totals: filledTotals(start ?? today, totalDays, points, clock),
-    empty: history != null && rows.length === 0 && !history.error,
+    house: houseSamples(history, fromMs, toMs),
+    houseDays: houseDaysOverlapping(houseDayRows(history), fromMs, toMs),
+    empty: history != null && rows.length === 0 && houseSamples(history, fromMs, toMs).length === 0 && houseDaysOverlapping(houseDayRows(history), fromMs, toMs).length === 0 && !history.error,
   };
+}
+
+function houseSamples(history: HistoryBody | null, fromMs: number, toMs: number): HouseSample[] {
+  return (history?.house ?? [])
+    .map((sample) => ({ t: Date.parse(sample.t), kw: sample.homeKw }))
+    .filter((sample) => Number.isFinite(sample.t) && Number.isFinite(sample.kw) && sample.t >= fromMs && sample.t < toMs);
+}
+
+function houseDayRows(history: HistoryBody | null): HouseDay[] {
+  return (history?.houseDays ?? [])
+    .filter((day) => Number.isFinite(day.homeKwh) && Number.isFinite(day.fromSolarKwh))
+    .map((day) => ({
+      day: day.day,
+      homeKwh: day.homeKwh,
+      fromSolarKwh: day.fromSolarKwh,
+      hasHalfHour: day.hasHalfHour === true,
+    }));
 }
 
 function filledTotals(start: Ymd, count: number, points: SeriesPoint[], nowMs: number) {

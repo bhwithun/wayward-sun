@@ -77,7 +77,17 @@ class HistoryApi {
                 }
             }
         }
-        return HistoryPage(from = from, to = to, points = points, sun = sun, ecobee = ecobee)
+        val house = parseHouse(root.optJSONArray("house"))
+        val houseDays = parseHouseDays(root.optJSONArray("houseDays"))
+        return HistoryPage(
+            from = from,
+            to = to,
+            points = points,
+            sun = sun,
+            ecobee = ecobee,
+            house = house,
+            houseDays = houseDays
+        )
     }
 
     private fun get(url: String): String {
@@ -102,6 +112,38 @@ class HistoryApi {
         } finally {
             connection.disconnect()
         }
+    }
+}
+
+private fun parseHouse(houseJson: org.json.JSONArray?): List<HouseSample> = buildList {
+    if (houseJson == null) return@buildList
+    for (index in 0 until houseJson.length()) {
+        val row = houseJson.optJSONObject(index) ?: continue
+        val periodEnd = row.optString("t").takeIf { it.isNotBlank() }
+            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            ?: continue
+        val homeKw = row.optionalDouble("homeKw") ?: continue
+        add(HouseSample(periodEnd, homeKw))
+    }
+}
+
+private fun parseHouseDays(daysJson: org.json.JSONArray?): List<HouseDay> = buildList {
+    if (daysJson == null) return@buildList
+    for (index in 0 until daysJson.length()) {
+        val row = daysJson.optJSONObject(index) ?: continue
+        val day = row.optString("day").takeIf { it.isNotBlank() }
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: continue
+        val homeKwh = row.optionalDouble("homeKwh") ?: continue
+        val fromSolarKwh = row.optionalDouble("fromSolarKwh") ?: 0.0
+        add(
+            HouseDay(
+                day = day,
+                homeKwh = homeKwh,
+                fromSolarKwh = fromSolarKwh,
+                hasHalfHour = row.optBoolean("hasHalfHour", false)
+            )
+        )
     }
 }
 

@@ -3,6 +3,7 @@ package com.brian.solwidget.data
 import android.content.Context
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,12 +12,16 @@ data class StoredLivePast(
     val key: String,
     val savedAt: Instant,
     val points: List<PowerPoint>,
-    val ecobee: List<EcobeeSample> = emptyList()
+    val ecobee: List<EcobeeSample> = emptyList(),
+    val house: List<HouseSample> = emptyList(),
+    val houseDays: List<HouseDay> = emptyList()
 )
 
 data class LiveHistory(
     val points: List<PowerPoint>,
-    val ecobee: List<EcobeeSample>
+    val ecobee: List<EcobeeSample>,
+    val house: List<HouseSample> = emptyList(),
+    val houseDays: List<HouseDay> = emptyList()
 )
 
 /**
@@ -64,6 +69,24 @@ object LivePastStore {
             append(sample.outdoorF?.toString().orEmpty())
             append('\n')
         }
+        for (sample in stored.house) {
+            append("H,")
+            append(sample.periodEnd.toEpochMilli())
+            append(',')
+            append(sample.homeKw)
+            append('\n')
+        }
+        for (day in stored.houseDays) {
+            append("D,")
+            append(day.day)
+            append(',')
+            append(day.homeKwh)
+            append(',')
+            append(day.fromSolarKwh)
+            append(',')
+            append(if (day.hasHalfHour) "1" else "0")
+            append('\n')
+        }
     }
 
     fun decode(text: String?): StoredLivePast? {
@@ -73,9 +96,19 @@ object LivePastStore {
         val savedAt = lines[1].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return null
         val points = mutableListOf<PowerPoint>()
         val ecobee = mutableListOf<EcobeeSample>()
+        val house = mutableListOf<HouseSample>()
+        val houseDays = mutableListOf<HouseDay>()
         for (line in lines.drop(2)) {
             if (line.startsWith("E,")) {
                 parseEcobee(line)?.let { ecobee.add(it) }
+                continue
+            }
+            if (line.startsWith("H,")) {
+                parseHouse(line)?.let { house.add(it) }
+                continue
+            }
+            if (line.startsWith("D,")) {
+                parseHouseDay(line)?.let { houseDays.add(it) }
                 continue
             }
             val row = parseRow(line) ?: continue
@@ -93,8 +126,27 @@ object LivePastStore {
             lines[0],
             savedAt,
             points.sortedBy { it.periodEnd },
-            ecobee.sortedBy { it.at }
+            ecobee.sortedBy { it.at },
+            house.sortedBy { it.periodEnd },
+            houseDays.sortedBy { it.day }
         )
+    }
+
+    private fun parseHouse(line: String): HouseSample? {
+        val parts = line.split(',')
+        if (parts.size < 3 || parts[0] != "H") return null
+        val end = parts[1].toLongOrNull()?.let(Instant::ofEpochMilli) ?: return null
+        val kw = parts[2].toDoubleOrNull() ?: return null
+        return HouseSample(end, kw)
+    }
+
+    private fun parseHouseDay(line: String): HouseDay? {
+        val parts = line.split(',')
+        if (parts.size < 5 || parts[0] != "D") return null
+        val day = runCatching { LocalDate.parse(parts[1]) }.getOrNull() ?: return null
+        val home = parts[2].toDoubleOrNull() ?: return null
+        val solar = parts[3].toDoubleOrNull() ?: return null
+        return HouseDay(day, home, solar, parts[4] == "1")
     }
 
     private fun parseEcobee(line: String): EcobeeSample? {
@@ -138,7 +190,9 @@ object LivePastStore {
     }
 
     fun isFresh(stored: StoredLivePast, now: Instant, zone: ZoneId): Boolean {
-        if (stored.points.isEmpty() && stored.ecobee.isEmpty()) return false
+        if (stored.points.isEmpty() && stored.ecobee.isEmpty() && stored.house.isEmpty() && stored.houseDays.isEmpty()) {
+            return false
+        }
         val (from, to) = ForecastSnapshot.range(now, zone)
         if (stored.key != historyFetchKey(from, to)) return false
         return !stored.savedAt.isBefore(now.minus(MAX_AGE))
@@ -160,14 +214,16 @@ class LivePastRepository(context: Context) {
             val (from, to) = ForecastSnapshot.range(now, zone)
             val page = api.fetch(storage.cacheUrlOnce(), from, to)
             val points = page.livePastPoints(now)
-            val history = LiveHistory(points, page.ecobee)
+            val history = LiveHistory(points, page.ecobee, page.house, page.houseDays)
             storage.saveLivePast(
                 LivePastStore.encode(
                     StoredLivePast(
                         key = historyFetchKey(from, to),
                         savedAt = Instant.now(),
                         points = points,
-                        ecobee = page.ecobee
+                        ecobee = page.ecobee,
+                        house = page.house,
+                        houseDays = page.houseDays
                     )
                 )
             )
@@ -191,4 +247,4 @@ class LivePastRepository(context: Context) {
 private fun HistoryPage.livePastPoints(now: Instant): List<PowerPoint> =
     chartFor(from, to, now).points.filter { !it.periodEnd.isAfter(now) }
 
-private fun StoredLivePast.toHistory(): LiveHistory = LiveHistory(points, ecobee)
+private fun StoredLivePast.toHistory(): LiveHistory = LiveHistory(points, ecobee, house, houseDays)

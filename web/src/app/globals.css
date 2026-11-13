@@ -20,6 +20,7 @@ h2 {
 p { margin: 0 0 10px; }
 .muted { color: #9AA8BF; font-size: 0.88rem; }
 .hvac-summary { margin: 8px 0 0; padding-left: 4px; }
+.house-note { margin: 2px 0 0; padding-left: 4px; font-size: 12px; opacity: 0.8; }
 code { color: #F5C542; }
 .banner {
   background: #1C2B45;

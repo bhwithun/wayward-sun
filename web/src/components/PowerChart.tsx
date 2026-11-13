@@ -11,6 +11,7 @@ import {
   temperatureGrid,
   type EcobeeSample,
 } from "@/lib/ecobee";
+import { houseStepRuns, type HouseSample } from "@/lib/house";
 import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 import { detroitParts } from "@/lib/time";
 
@@ -29,6 +30,7 @@ const TOO_COOL = "#FF9800";
 const HEAT_PUMP = "#00897B";
 const AUX_HEAT = "#EF5350";
 const COOL_RUN = "#90CAF9";
+const HOUSE = "#B39DDB";
 
 const SOLAR_MAX = 8;
 const PRECIP_MAX = 100;
@@ -44,6 +46,7 @@ export type ChartLayers = {
   sell: boolean;
   ecobee: boolean;
   hvac: boolean;
+  house: boolean;
 };
 
 export type WeatherMark = { t: number; tempF: number; precipPct: number | null };
@@ -59,6 +62,7 @@ type Props = {
   rates: RateSample[];
   demo: boolean;
   ecobee?: EcobeeSample[];
+  house?: HouseSample[];
 };
 
 export function PowerChart(props: Props) {
@@ -98,12 +102,13 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const left = showTempLabels || units !== "none" ? 52 : 12;
   const right = width - 18;
   const showPower = props.layers.solcast || props.layers.enphase;
+  const showSolarScale = showPower || props.layers.house;
   const ecobee = (props.ecobee ?? []).filter((sample) => sample.t <= props.now);
   const showDegrees = props.layers.temp || props.layers.ecobee;
   const oneDay = props.to - props.from > 0 && props.to - props.from <= 26 * 60 * 60 * 1000;
   const weekColumns = !oneDay && props.to - props.from <= 10 * 24 * 60 * 60 * 1000;
   const top = (showDegrees ? 28 : 16) + (weekColumns ? 20 : 0);
-  const bottom = plotHeight - (oneDay || showPower || weekColumns ? 36 : 28);
+  const bottom = plotHeight - (oneDay || showSolarScale || weekColumns ? 36 : 28);
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -201,6 +206,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   }
   if (props.layers.enphase) {
     strokeSeries(ctx, props.points.filter((p) => p.kind === "live"), xOf, ySolar, LIVE, props.demo, 1);
+  }
+  if (props.layers.house) {
+    strokeHouse(ctx, houseStepRuns((props.house ?? []).filter((sample) => sample.t >= props.from && sample.t < props.to)), xOf, ySolar);
   }
 
   if (props.layers.temp && props.weather.length >= 2) {
@@ -329,6 +337,32 @@ function drawHourAxis(
     ctx.stroke();
     if (x > left + 22 && x < right - 22) ctx.fillText(hourClock(hour), x, height - 8);
   }
+  ctx.restore();
+}
+
+function strokeHouse(
+  ctx: CanvasRenderingContext2D,
+  runs: Array<Array<{ t: number; kw: number }>>,
+  xOf: (t: number) => number,
+  yOf: (kw: number) => number
+) {
+  if (runs.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = HOUSE;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = "miter";
+  ctx.lineCap = "butt";
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  for (const run of runs) {
+    run.forEach((vertex, index) => {
+      const x = xOf(vertex.t);
+      const y = yOf(vertex.kw);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+  }
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -591,7 +625,7 @@ function drawRuntimeLane(
 
 function axisUnits(layers: ChartLayers): "none" | "solar" | "temp" | "precip" | "rates" {
   const labeled: Array<"solar" | "temp" | "precip" | "rates"> = [];
-  if (layers.solcast || layers.enphase) labeled.push("solar");
+  if (layers.solcast || layers.enphase || layers.house) labeled.push("solar");
   if (layers.temp || layers.ecobee) labeled.push("temp");
   if (layers.precip) labeled.push("precip");
   if (layers.buy || layers.sell) labeled.push("rates");

@@ -65,7 +65,8 @@ internal data class LegendModel(
     val showTooCool: Boolean = false,
     val showHeatPump: Boolean = false,
     val showGasAux: Boolean = false,
-    val showCoolRun: Boolean = false
+    val showCoolRun: Boolean = false,
+    val showHouse: Boolean = false
 )
 
 private fun Modifier.expandTapTarget(): Modifier = layout { measurable, constraints ->
@@ -139,7 +140,8 @@ internal fun LegendCard(
         model.showTooCool,
         model.showHeatPump,
         model.showGasAux,
-        model.showCoolRun
+        model.showCoolRun,
+        model.showHouse
     )
     Surface(
         modifier = modifier
@@ -220,6 +222,10 @@ fun LayerDrawerContent(
     onWebApp: () -> Unit,
     onCheckUpdates: () -> Unit,
     onSettings: () -> Unit,
+    showHouse: Boolean = false,
+    showWidgetHouse: Boolean = false,
+    widgetHouse: Boolean = false,
+    onWidgetHouse: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -278,6 +284,12 @@ fun LayerDrawerContent(
             layers.hvac,
             swatch = { HvacSwatch() }
         ) { onToggle(ChartLayer.HVAC, it) }
+        if (showHouse) {
+            LayerSwitch("House use", SolColors.House, layers.house) { onToggle(ChartLayer.HOUSE, it) }
+        }
+        if (showWidgetHouse) {
+            LayerSwitch("House use on widget", SolColors.House, widgetHouse, onChecked = onWidgetHouse)
+        }
         TextButton(
             onClick = onReset,
             modifier = Modifier.padding(start = 8.dp, top = 4.dp)
@@ -314,21 +326,22 @@ fun LayerDrawerContent(
     }
 }
 
-private enum class LegendMark { DOT, SQUARE, HAIRLINE }
+internal enum class LegendMark { DOT, SQUARE, HAIRLINE }
 
-private data class LegendItem(
+internal data class LegendItem(
     val name: String,
     val color: Color,
     val mark: LegendMark = LegendMark.DOT
 )
 
-private fun legendGroups(
+internal fun legendGroups(
     layers: ChartLayers,
     showTooWarm: Boolean,
     showTooCool: Boolean,
     showHeatPump: Boolean,
     showGasAux: Boolean,
-    showCoolRun: Boolean
+    showCoolRun: Boolean,
+    showHouse: Boolean = false
 ): List<List<LegendItem>> = buildList {
     val trace = buildList {
         if (layers.solcast) add(LegendItem("Solcast", SolColors.Forecast))
@@ -352,6 +365,7 @@ private fun legendGroups(
         }
         if (runtime.isNotEmpty()) add(runtime)
     }
+    if (showHouse) add(listOf(LegendItem("House use", SolColors.House, LegendMark.HAIRLINE)))
     val other = buildList {
         if (layers.precipitation) add(LegendItem("Precip", SolColors.Precip.copy(alpha = 1f)))
         if (layers.buy) add(LegendItem("Buy", SolColors.Buy))

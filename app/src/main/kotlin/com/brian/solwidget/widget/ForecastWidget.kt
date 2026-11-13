@@ -39,6 +39,7 @@ import com.brian.solwidget.MainActivity
 import com.brian.solwidget.data.AppStorage
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.EcobeeSample
+import com.brian.solwidget.data.HouseSample
 import com.brian.solwidget.data.ForecastRepository
 import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.LivePastRepository
@@ -60,6 +61,7 @@ class ForecastWidget : GlanceAppWidget() {
         val snapshot = ForecastRepository.get(context).loadSnapshot()
         val weather = WeatherRepository.get(context).loadSnapshot()
         val layers = AppStorage(context).chartLayersOnce()
+        val widgetHouse = AppStorage(context).widgetHouseOnce()
         val now = Instant.now()
         val zone = ZoneId.systemDefault()
         val (from, to) = widgetChartRange(now)
@@ -73,7 +75,7 @@ class ForecastWidget : GlanceAppWidget() {
             }
         )
         provideContent {
-            val glanceLayers = WidgetUpdater.layersFrom(currentState<Preferences>(), layers)
+            val glanceLayers = WidgetUpdater.layersFrom(currentState<Preferences>(), layers, widgetHouse)
             GlanceTheme {
                 WidgetContent(
                     snapshot = snapshot,
@@ -86,6 +88,7 @@ class ForecastWidget : GlanceAppWidget() {
                     sunDays = weather.sunDays,
                     layers = glanceLayers,
                     ecobee = ecobee,
+                    house = past?.house.orEmpty(),
                     openApp = openApp
                 )
             }
@@ -105,6 +108,7 @@ private fun WidgetContent(
     sunDays: List<SunTimes>,
     layers: ChartLayers,
     ecobee: List<EcobeeSample>,
+    house: List<HouseSample>,
     openApp: Action
 ) {
     val size = LocalSize.current
@@ -124,7 +128,8 @@ private fun WidgetContent(
         layers = layers,
         sunDays = sunDays,
         isDemo = chartDemo,
-        ecobee = ecobee
+        ecobee = ecobee,
+        house = house
     )
 
     val muted = ColorProvider(Color(0xFF9AA8BF))

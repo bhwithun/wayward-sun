@@ -9,7 +9,7 @@ Next.js app on Vercel. It is the only Solcast client. Neon stores the latest sna
 | GET | `/` | Dashboard |
 | GET | `/health` | `{ ok, runtime, deployed }` |
 | GET | `/cache` | JSON snapshot for the Android app. Does not call Solcast. |
-| GET | `/history?from=&to=` | Stored half-hour rows plus Ecobee 5-minute samples when `ecobee_samples` exists. `from` and `to` are ISO instants or `YYYY-MM-DD` (Detroit midnight). Max 366 days. |
+| GET | `/history?from=&to=` | Stored half-hour rows, Ecobee samples when `ecobee_samples` exists, and house energy when `house_energy` / `house_energy_day` exist. `from` and `to` are ISO instants or `YYYY-MM-DD` (Detroit midnight). Max 366 days. |
 | GET | `/cron` | Scheduled Solcast pull, and an Enphase production pull when that app is connected and the last one is an hour old. Called by Neon `solpull` every 30 minutes from 10:00 through 04:30 UTC, and by Vercel Cron once a day at 12:30 UTC. Solcast runs only when the America/Detroit clock is on a forecast slot. If `CRON_SECRET` is set, requires `Authorization: Bearer`. |
 | GET | `/enphase/connect` | Sends the homeowner to Enphase to approve the Watt-plan app. |
 | GET | `/enphase/callback` | Stores the Enphase tokens. Does not show them. |
@@ -18,7 +18,11 @@ There is no device `PUT` and no manual refresh.
 
 ## Setup
 
-1. Create a Neon database and run `db/001_init.sql`. An existing database also runs `db/002_actuals_fetched_at.sql`, `db/003_meter_actuals.sql`, and `db/004_ecobee.sql`. Run `003` before deploying the measured-production code. Run `004` before expecting indoor samples from `GET /history`.
+1. Create a Neon database and run `db/001_init.sql`. An existing database also runs `db/002_actuals_fetched_at.sql`, `db/003_meter_actuals.sql`, `db/004_ecobee.sql`, and `db/005_ecobee_runtime.sql`. `db/006_house_energy.sql` adds `house_energy` and `house_energy_day`. Do not apply `006` until the house-energy loader is ready. The web app never calls Tesla. If those tables are missing, `GET /history` still returns and `house` / `houseDays` are empty.
+
+## House energy
+
+`house` is `{ t, homeKw }` for complete 30-minute rows. `homeKw` is `home_wh / 500`. `houseDays` is `{ day, homeKwh, fromSolarKwh, hasHalfHour }` for America/Detroit dates in the requested window. `day` totals use watt-hours divided by 1000. `/cache` does not include these arrays. The phone and the widget already request `/history` for the green trace, and that window covers the widget's prior 48 hours.
 
 ## Ecobee
 

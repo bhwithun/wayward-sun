@@ -31,6 +31,8 @@ import com.brian.solwidget.data.EcobeeBand
 import com.brian.solwidget.data.EcobeeMark
 import com.brian.solwidget.data.EcobeeSample
 import com.brian.solwidget.data.ForecastSnapshot
+import com.brian.solwidget.data.HouseSample
+import com.brian.solwidget.data.houseStepRuns
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SolarDayLabels
 import com.brian.solwidget.data.SunTimes
@@ -73,7 +75,7 @@ private enum class AxisUnits { NONE, SOLAR, TEMP, PRECIP, RATES }
 
 private fun axisUnits(layers: ChartLayers, labelRates: Boolean): AxisUnits {
     val labeled = buildList {
-        if (layers.power) add(AxisUnits.SOLAR)
+        if (layers.power || layers.house) add(AxisUnits.SOLAR)
         if (layers.degrees) add(AxisUnits.TEMP)
         if (layers.precipitation) add(AxisUnits.PRECIP)
         if (labelRates && layers.rates) add(AxisUnits.RATES)
@@ -94,10 +96,11 @@ fun PowerChart(
     sunDays: List<SunTimes> = emptyList(),
     isDemo: Boolean = false,
     zone: ZoneId = ZoneId.systemDefault(),
-    ecobee: List<EcobeeSample> = emptyList()
+    ecobee: List<EcobeeSample> = emptyList(),
+    house: List<HouseSample> = emptyList()
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        if (points.size < 2 && weather.size < 2 && !layers.rates && ecobee.size < 2) return@Canvas
+        if (points.size < 2 && weather.size < 2 && !layers.rates && ecobee.size < 2 && house.isEmpty()) return@Canvas
 
         val units = axisUnits(layers, labelRates = true)
         val showTempLabels = layers.degrees
@@ -111,7 +114,7 @@ fun PowerChart(
         val top = 28.dp.toPx() + laneHeight + laneGap
         val bottom = size.height - when {
             hourAxis -> 22.dp.toPx()
-            layers.power -> 28.dp.toPx()
+            layers.power || units == AxisUnits.SOLAR -> 28.dp.toPx()
             else -> 12.dp.toPx()
         }
         val laneTop = top - laneGap - laneHeight
@@ -120,8 +123,10 @@ fun PowerChart(
 
         val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd
             ?: weather.firstOrNull()?.time ?: ecobee.firstOrNull()?.at
+            ?: house.minByOrNull { it.periodEnd }?.periodEnd
         val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd
             ?: weather.lastOrNull()?.time ?: ecobee.lastOrNull()?.at
+            ?: house.maxByOrNull { it.periodEnd }?.periodEnd
         if (startInstant == null || endInstant == null) return@Canvas
         val minTime = startInstant.toEpochMilli().toFloat()
         val maxTime = endInstant.toEpochMilli().toFloat()
@@ -266,6 +271,9 @@ fun PowerChart(
         }
         if (layers.enphase) {
             drawSeries(liveStroke(points), ::xOf, ::yOf, SolColors.Live, dotted = isDemo)
+        }
+        if (layers.house) {
+            drawHouseLine(house, from, to, ::xOf, ::yOf)
         }
 
         if (layers.temperature && weather.size >= 2) {
@@ -461,6 +469,27 @@ private fun contiguousSeries(series: List<PowerPoint>): List<List<PowerPoint>> {
     }
     if (current.isNotEmpty()) runs.add(current.toList())
     return runs
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHouseLine(
+    samples: List<HouseSample>,
+    from: Instant,
+    to: Instant,
+    xOf: (Instant) -> Float,
+    yOf: (Double) -> Float
+) {
+    val visible = samples.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
+    val stroke = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Butt, join = StrokeJoin.Miter)
+    for (run in houseStepRuns(visible)) {
+        if (run.size < 2) continue
+        val path = ComposePath()
+        run.forEachIndexed { index, vertex ->
+            val x = xOf(vertex.at)
+            val y = yOf(vertex.kw)
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, SolColors.House, style = stroke)
+    }
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
@@ -759,10 +788,11 @@ object ChartBitmapRenderer {
         layers: ChartLayers = ChartLayers(),
         sunDays: List<SunTimes> = emptyList(),
         isDemo: Boolean = false,
-        ecobee: List<EcobeeSample> = emptyList()
+        ecobee: List<EcobeeSample> = emptyList(),
+        house: List<HouseSample> = emptyList()
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(width.coerceAtLeast(8), height.coerceAtLeast(8), Bitmap.Config.ARGB_8888)
-        if (points.size < 2 && weather.size < 2 && !layers.rates && ecobee.size < 2) return bitmap
+        if (points.size < 2 && weather.size < 2 && !layers.rates && ecobee.size < 2 && house.isEmpty()) return bitmap
         val canvas = AndroidCanvas(bitmap)
         canvas.drawColor(0x00152136)
 
@@ -778,8 +808,10 @@ object ChartBitmapRenderer {
         val chartH = (bottom - top).coerceAtLeast(1f)
         val startInstant = rangeFrom ?: points.firstOrNull()?.periodEnd
             ?: weather.firstOrNull()?.time ?: ecobee.firstOrNull()?.at
+            ?: house.minByOrNull { it.periodEnd }?.periodEnd
         val endInstant = rangeTo ?: points.lastOrNull()?.periodEnd
             ?: weather.lastOrNull()?.time ?: ecobee.lastOrNull()?.at
+            ?: house.maxByOrNull { it.periodEnd }?.periodEnd
         if (startInstant == null || endInstant == null) return bitmap
         val minTime = startInstant.toEpochMilli().toFloat()
         val maxTime = endInstant.toEpochMilli().toFloat()
@@ -949,6 +981,9 @@ object ChartBitmapRenderer {
         if (layers.enphase) {
             drawAndroidSeries(canvas, liveStroke(points), ::xOf, ::yOf, 0xFF2EE6A6.toInt(), bottom, dotted = isDemo)
         }
+        if (layers.house) {
+            drawAndroidHouseLine(canvas, house, from, to, ::xOf, ::yOf)
+        }
 
         if (layers.temperature && weather.size >= 2) {
             drawAndroidTempLine(canvas, weather, ::xOf, ::yOfTemp, sunDays)
@@ -968,6 +1003,35 @@ object ChartBitmapRenderer {
             drawDemoWatermark(canvas, left, top, right, bottom)
         }
         return bitmap
+    }
+
+    private fun drawAndroidHouseLine(
+        canvas: AndroidCanvas,
+        samples: List<HouseSample>,
+        from: Instant,
+        to: Instant,
+        xOf: (Instant) -> Float,
+        yOf: (Double) -> Float
+    ) {
+        val visible = samples.filter { !it.periodEnd.isBefore(from) && it.periodEnd.isBefore(to) }
+        val paint = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f * BITMAP_PX_PER_DP
+            color = 0xFFB39DDB.toInt()
+            strokeCap = Paint.Cap.BUTT
+            strokeJoin = Paint.Join.MITER
+        }
+        for (run in houseStepRuns(visible)) {
+            if (run.size < 2) continue
+            val path = Path()
+            run.forEachIndexed { index, vertex ->
+                val x = xOf(vertex.at)
+                val y = yOf(vertex.kw)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            canvas.drawPath(path, paint)
+        }
     }
 
     private fun drawAndroidSeries(

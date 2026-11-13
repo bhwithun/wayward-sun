@@ -44,6 +44,8 @@ class AppStorage(private val context: Context) {
         val SHOW_ENPHASE = booleanPreferencesKey("show_enphase")
         val SHOW_ECOBEE = booleanPreferencesKey("show_ecobee")
         val SHOW_HVAC = booleanPreferencesKey("show_hvac")
+        val SHOW_HOUSE = booleanPreferencesKey("show_house")
+        val WIDGET_SHOW_HOUSE = booleanPreferencesKey("widget_show_house")
         val GAS_AUX_DOLLARS = doublePreferencesKey("gas_aux_dollars_per_hour")
         val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
         val CHART_EXPAND_HINT_SEEN = booleanPreferencesKey("chart_expand_hint_seen")
@@ -202,21 +204,11 @@ class AppStorage(private val context: Context) {
         context.dataStore.edit { it[key] = value }
     }
 
-    suspend fun chartLayersOnce(): ChartLayers {
-        val prefs = context.dataStore.data.first()
-        val legacyRates = prefs[Keys.SHOW_DTE_RATES]
-        val solcast = prefs[Keys.SHOW_SOLCAST] ?: true
-        return ChartLayers(
-            temperature = prefs[Keys.SHOW_TEMPERATURE] ?: true,
-            buy = prefs[Keys.SHOW_BUY] ?: legacyRates ?: true,
-            sell = prefs[Keys.SHOW_SELL] ?: legacyRates ?: true,
-            precipitation = prefs[Keys.SHOW_PRECIPITATION] ?: true,
-            solcast = solcast,
-            enphase = prefs[Keys.SHOW_ENPHASE] ?: solcast,
-            ecobee = prefs[Keys.SHOW_ECOBEE] ?: true,
-            hvac = prefs[Keys.SHOW_HVAC] ?: false
-        )
-    }
+    suspend fun chartLayersOnce(): ChartLayers = chartLayersFrom(context.dataStore.data.first())
+
+    suspend fun widgetHouseOnce(): Boolean = getBooleanOnce(Keys.WIDGET_SHOW_HOUSE, false)
+
+    suspend fun setWidgetHouse(visible: Boolean) = setBoolean(Keys.WIDGET_SHOW_HOUSE, visible)
 
     suspend fun lastHomeTab(): String =
         getStringOnce(Keys.LAST_HOME_TAB, "live")?.ifBlank { "live" } ?: "live"
@@ -248,6 +240,7 @@ class AppStorage(private val context: Context) {
             ChartLayer.ENPHASE -> Keys.SHOW_ENPHASE
             ChartLayer.ECOBEE -> Keys.SHOW_ECOBEE
             ChartLayer.HVAC -> Keys.SHOW_HVAC
+            ChartLayer.HOUSE -> Keys.SHOW_HOUSE
         }
         setBoolean(key, visible)
     }
@@ -262,4 +255,20 @@ class AppStorage(private val context: Context) {
             prefs[Keys.AUTO_FETCHES_USED] = autos + if (autoPull) 1 else 0
         }
     }
+}
+
+internal fun chartLayersFrom(prefs: Preferences): ChartLayers {
+    val legacyRates = prefs[AppStorage.Keys.SHOW_DTE_RATES]
+    val solcast = prefs[AppStorage.Keys.SHOW_SOLCAST] ?: true
+    return ChartLayers(
+        temperature = prefs[AppStorage.Keys.SHOW_TEMPERATURE] ?: true,
+        buy = prefs[AppStorage.Keys.SHOW_BUY] ?: legacyRates ?: true,
+        sell = prefs[AppStorage.Keys.SHOW_SELL] ?: legacyRates ?: true,
+        precipitation = prefs[AppStorage.Keys.SHOW_PRECIPITATION] ?: true,
+        solcast = solcast,
+        enphase = prefs[AppStorage.Keys.SHOW_ENPHASE] ?: solcast,
+        ecobee = prefs[AppStorage.Keys.SHOW_ECOBEE] ?: true,
+        hvac = prefs[AppStorage.Keys.SHOW_HVAC] ?: false,
+        house = prefs[AppStorage.Keys.SHOW_HOUSE] ?: false
+    )
 }
