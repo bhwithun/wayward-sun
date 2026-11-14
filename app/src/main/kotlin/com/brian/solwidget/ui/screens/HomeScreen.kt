@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
@@ -95,6 +96,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -112,6 +115,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brian.solwidget.R
+import com.brian.solwidget.data.ChartLayer
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.HouseDay
 import com.brian.solwidget.data.HouseSample
@@ -203,6 +207,7 @@ fun HomeScreen(
 
     val expanded = state.chartExpanded
     var legendOpen by rememberSaveable { mutableStateOf(false) }
+    var layersOpen by rememberSaveable { mutableStateOf(false) }
     var cardBounds by remember { mutableStateOf<Rect?>(null) }
     var expandHintSeen by remember { mutableStateOf(true) }
     val expandProgress by androidx.compose.animation.core.animateFloatAsState(
@@ -245,11 +250,12 @@ fun HomeScreen(
         }
     }
 
-    BackHandler(enabled = drawerState.isOpen && !expanded && !legendOpen) {
+    BackHandler(enabled = drawerState.isOpen && !expanded && !legendOpen && !layersOpen) {
         scope.launch { drawerState.close() }
     }
-    BackHandler(enabled = legendOpen) { legendOpen = false }
-    BackHandler(enabled = expanded && !legendOpen) { viewModel.setChartExpanded(false) }
+    BackHandler(enabled = legendOpen && !layersOpen) { legendOpen = false }
+    BackHandler(enabled = layersOpen) { layersOpen = false }
+    BackHandler(enabled = expanded && !legendOpen && !layersOpen) { viewModel.setChartExpanded(false) }
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen,
@@ -308,6 +314,7 @@ fun HomeScreen(
         cardBounds = cardBounds,
         onChartTap = {
             legendOpen = false
+            layersOpen = false
             if (expanded && state.tab == HomeTab.LIVE) {
                 expandedPanel = liveFullscreenCards(state.layers).getOrNull(state.fullscreenPage - 1)
             }
@@ -315,6 +322,7 @@ fun HomeScreen(
         },
         onSwipe = { delta ->
             legendOpen = false
+            layersOpen = false
             if (state.tab == HomeTab.LIVE) {
                 val last = liveFullscreenCards(state.layers).size
                 viewModel.setFullscreenPage((state.fullscreenPage + delta).coerceIn(0, last))
@@ -327,8 +335,20 @@ fun HomeScreen(
         pageIndex = state.fullscreenPage,
         onCardBounds = { cardBounds = it },
         legendOpen = legendOpen,
-        onToggleLegend = { legendOpen = !legendOpen },
+        onToggleLegend = {
+            layersOpen = false
+            legendOpen = !legendOpen
+        },
         onDismissLegend = { legendOpen = false },
+        layersOpen = layersOpen,
+        onToggleLayers = {
+            legendOpen = false
+            layersOpen = !layersOpen
+        },
+        onDismissLayers = { layersOpen = false },
+        onToggleLayer = viewModel::setLayer,
+        onResetLayers = viewModel::resetLayers,
+        showHouse = showHouseChip,
         showExpandHint = showExpandHint && !covering
     )
     HomeScaffold(
@@ -1112,6 +1132,7 @@ private fun HouseSummaryRow(summary: HouseSummary?) {
     Column(
         Modifier
             .fillMaxWidth()
+            .testTag("fullscreen-house-summary")
             .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
     ) {
         HouseSummaryBlock(summary)
@@ -1198,7 +1219,15 @@ private fun ExpandedChart(
     showDots: Boolean,
     title: String
 ) {
+    BackHandler(enabled = controls.layersOpen) { controls.onDismissLayers() }
     if (pages.isEmpty()) return
+    val sheetProgress by animateFloatAsState(
+        targetValue = if (controls.layersOpen) 1f else 0f,
+        animationSpec = tween(200),
+        label = "layerSheet"
+    )
+    val layersCovering = controls.layersOpen || sheetProgress > 0.01f
+    val chartGestures = fullscreenChartGesturesEnabled(controls.legendOpen, layersCovering)
     val safeStart = startIndex.coerceIn(0, pages.lastIndex)
     val pagerState = key(pagerKey) {
         rememberPagerState(initialPage = safeStart) { pages.size }
@@ -1240,13 +1269,17 @@ private fun ExpandedChart(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(32.dp)
-                    .padding(horizontal = 8.dp),
+                    .height(FullscreenHeaderHeight)
+                    .padding(end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Box(Modifier.size(FullscreenLayersButtonSize))
                 Text(
                     text = title,
-                    modifier = Modifier.weight(1f).alignByBaseline(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp)
+                        .alignByBaseline(),
                     color = SolColors.Ink,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
@@ -1273,19 +1306,33 @@ private fun ExpandedChart(
                     modifier = Modifier.padding(start = 8.dp).alignByBaseline()
                 )
             }
-            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(
+                        top = fullscreenPlotInset(
+                            FullscreenLayersButtonSize,
+                            FullscreenHeaderHeight,
+                            FullscreenPlotHeadroom
+                        )
+                    )
+                    .clipToBounds()
+                    .testTag("fullscreen-plot")
+            ) {
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier
                         .fillMaxSize()
+                        .testTag("fullscreen-pager")
                         .background(SolColors.Panel)
                         .fullscreenChartTap(
-                            enabled = !controls.legendOpen,
+                            enabled = chartGestures,
                             onTap = controls.onChartTap
                         ),
                     beyondViewportPageCount = 1,
                     flingBehavior = fling,
-                    userScrollEnabled = !controls.legendOpen,
+                    userScrollEnabled = chartGestures,
                     key = { index -> pages.getOrNull(index)?.key ?: index }
                 ) { index ->
                     val page = pages.getOrNull(index) ?: return@HorizontalPager
@@ -1309,6 +1356,119 @@ private fun ExpandedChart(
                 Modifier.align(Alignment.TopEnd).padding(top = 52.dp, end = 12.dp).zIndex(2f)
             )
         }
+        FullscreenLayersButton(
+            onClick = controls.onToggleLayers,
+            modifier = Modifier.align(Alignment.TopStart).zIndex(2.5f)
+        )
+        if (layersCovering) {
+            FullscreenLayerSheet(
+                progress = sheetProgress,
+                layers = legend.layers,
+                showHouse = controls.showHouse,
+                onToggle = controls.onToggleLayer,
+                onReset = controls.onResetLayers,
+                onDismiss = controls.onDismissLayers
+            )
+        }
+    }
+}
+
+/**
+ * Narrow sheet of the same layer switches as the drawer. It slides in from the
+ * start edge. Taps on the sheet and on the scrim are consumed here, so they
+ * cannot also leave fullscreen.
+ */
+@Composable
+private fun BoxScope.FullscreenLayerSheet(
+    progress: Float,
+    layers: ChartLayers,
+    showHouse: Boolean,
+    onToggle: (ChartLayer, Boolean) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    BoxWithConstraints(Modifier.matchParentSize().zIndex(3f)) {
+        val sheetWidth = fullscreenLayerSheetWidth(maxWidth)
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = FullscreenLayerScrimAlpha * progress.coerceIn(0f, 1f)))
+                .tapOutsideToDismiss(onDismiss)
+                .testTag("fullscreen-layers-scrim")
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Dismiss layers"
+                    onClick {
+                        onDismiss()
+                        true
+                    }
+                }
+        )
+        val density = LocalDensity.current
+        val travel = with(density) { sheetWidth.toPx() }
+        val offsetX = ((1f - progress.coerceIn(0f, 1f)) * -travel).roundToInt()
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .offset { IntOffset(offsetX, 0) }
+                .width(sheetWidth)
+                .fillMaxHeight()
+                .background(SolColors.Panel)
+                .testTag("fullscreen-layers-sheet")
+        ) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+            )
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 12.dp)
+            ) {
+                LayerSwitchSection(
+                    layers = layers,
+                    onToggle = onToggle,
+                    onReset = onReset,
+                    onClose = onDismiss,
+                    includeWidgetRows = false,
+                    showHouse = showHouse
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A tap dismisses. A drag is swallowed so it cannot turn the page or leave fullscreen.
+ * The pointer stays on this node, which sits above the chart.
+ */
+private fun Modifier.tapOutsideToDismiss(onTap: () -> Unit): Modifier = pointerInput(onTap) {
+    val slop = viewConfiguration.touchSlop
+    val longPress = viewConfiguration.longPressTimeoutMillis
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        down.consume()
+        val origin = down.position
+        val start = down.uptimeMillis
+        var moved = false
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+            change.consume()
+            if (!change.pressed) {
+                if (!moved && change.uptimeMillis - start < longPress) onTap()
+                return@awaitEachGesture
+            }
+            val dx = change.position.x - origin.x
+            val dy = change.position.y - origin.y
+            if (abs(dx) > slop || abs(dy) > slop) moved = true
+        }
     }
 }
 
@@ -1329,16 +1489,22 @@ private fun fullscreenSafePadding(): androidx.compose.foundation.layout.PaddingV
     val cutout = WindowInsets.displayCutout
     val gestures = WindowInsets.systemGestures
     val mandatory = WindowInsets.mandatorySystemGestures
-    val top = maxOf(cutout.getTop(density), gestures.getTop(density), mandatory.getTop(density))
-    val bottom = maxOf(cutout.getBottom(density), gestures.getBottom(density), mandatory.getBottom(density))
-    val start = cutout.getLeft(density, layoutDirection)
-    val end = cutout.getRight(density, layoutDirection)
+    val edges = fullscreenSafePaddingPx(
+        cutoutStart = cutout.getLeft(density, layoutDirection),
+        cutoutTop = cutout.getTop(density),
+        cutoutEnd = cutout.getRight(density, layoutDirection),
+        cutoutBottom = cutout.getBottom(density),
+        gestureTop = gestures.getTop(density),
+        gestureBottom = gestures.getBottom(density),
+        mandatoryTop = mandatory.getTop(density),
+        mandatoryBottom = mandatory.getBottom(density)
+    )
     return with(density) {
         androidx.compose.foundation.layout.PaddingValues(
-            start = start.toDp(),
-            top = top.toDp(),
-            end = end.toDp(),
-            bottom = bottom.toDp()
+            start = edges.start.toDp(),
+            top = edges.top.toDp(),
+            end = edges.end.toDp(),
+            bottom = edges.bottom.toDp()
         )
     }
 }
@@ -1355,6 +1521,12 @@ internal data class ChartControls(
     val legendOpen: Boolean = false,
     val onToggleLegend: () -> Unit = {},
     val onDismissLegend: () -> Unit = {},
+    val layersOpen: Boolean = false,
+    val onToggleLayers: () -> Unit = {},
+    val onDismissLayers: () -> Unit = {},
+    val onToggleLayer: (ChartLayer, Boolean) -> Unit = { _, _ -> },
+    val onResetLayers: () -> Unit = {},
+    val showHouse: Boolean = false,
     val showExpandHint: Boolean = false
 )
 

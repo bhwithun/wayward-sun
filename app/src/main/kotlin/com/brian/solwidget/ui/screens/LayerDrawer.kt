@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,6 +50,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -217,28 +219,89 @@ private fun LegendChip(item: LegendItem, fontSize: androidx.compose.ui.unit.Text
     }
 }
 
+internal enum class LayerGroup(val title: String) {
+    Solar("Solar"),
+    Weather("Weather"),
+    Grid("Grid"),
+    Home("Home")
+}
+
+internal data class LayerToggle(
+    val layer: ChartLayer,
+    val label: String,
+    val group: LayerGroup,
+    val onWidget: Boolean = false
+)
+
+/** Chart switches in drawer order. Rows marked [LayerToggle.onWidget] stay on the main drawer. */
+internal val ChartLayerToggles: List<LayerToggle> = listOf(
+    LayerToggle(ChartLayer.SOLCAST, "Solcast", LayerGroup.Solar),
+    LayerToggle(ChartLayer.ENPHASE, "Enphase", LayerGroup.Solar),
+    LayerToggle(ChartLayer.TEMPERATURE, "Temp", LayerGroup.Weather),
+    LayerToggle(ChartLayer.PRECIPITATION, "Precip", LayerGroup.Weather),
+    LayerToggle(ChartLayer.BUY, "Buy", LayerGroup.Grid),
+    LayerToggle(ChartLayer.SELL, "Sell", LayerGroup.Grid),
+    LayerToggle(ChartLayer.ECOBEE, "Ecobee", LayerGroup.Home),
+    LayerToggle(ChartLayer.HVAC, "HVAC", LayerGroup.Home),
+    LayerToggle(ChartLayer.HOUSE, "House use", LayerGroup.Home)
+)
+
+internal fun layerToggles(
+    includeWidgetRows: Boolean,
+    showHouse: Boolean = true,
+    rows: List<LayerToggle> = ChartLayerToggles
+): List<LayerToggle> = rows.filter { toggle ->
+    (includeWidgetRows || !toggle.onWidget) && (showHouse || toggle.layer != ChartLayer.HOUSE)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LayerDrawerContent(
+internal fun FullscreenLayersButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier
+            .size(FullscreenLayersButtonSize)
+            .testTag("fullscreen-layers-button")
+            .clip(CircleShape)
+            .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape)
+            .background(Color(0xCC0B1220))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = true),
+                role = Role.Button,
+                onClick = onClick
+            )
+            .semantics { contentDescription = "Open layers" },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Menu,
+            contentDescription = null,
+            tint = SolColors.Ink,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
+/**
+ * The layer switches, in the same order as the main drawer. Fullscreen passes
+ * [includeWidgetRows] false so the On widget row stays on the drawer.
+ */
+@Composable
+internal fun LayerSwitchSection(
     layers: ChartLayers,
-    versionName: String,
-    checkingUpdates: Boolean,
     onToggle: (ChartLayer, Boolean) -> Unit,
     onReset: () -> Unit,
     onClose: () -> Unit,
-    onWebApp: () -> Unit,
-    onCheckUpdates: () -> Unit,
-    onSettings: () -> Unit,
+    includeWidgetRows: Boolean,
     showHouse: Boolean = false,
     widgetHouse: Boolean = false,
     onWidgetHouse: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
-    ) {
+    Column(modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -265,32 +328,29 @@ fun LayerDrawerContent(
                 )
             }
         }
-        LayerSubhead("Solar")
-        LayerSwitch("Solcast", SolColors.Forecast, layers.solcast) { onToggle(ChartLayer.SOLCAST, it) }
-        LayerSwitch("Enphase", SolColors.Live, layers.enphase) { onToggle(ChartLayer.ENPHASE, it) }
-        LayerSubhead("Weather")
-        LayerSwitch("Temp", SolColors.Temp, layers.temperature) { onToggle(ChartLayer.TEMPERATURE, it) }
-        LayerSwitch("Precip", SolColors.Precip.copy(alpha = 1f), layers.precipitation) {
-            onToggle(ChartLayer.PRECIPITATION, it)
+        var lastGroup: LayerGroup? = null
+        layerToggles(includeWidgetRows, showHouse).forEach { toggle ->
+            if (toggle.group != lastGroup) {
+                LayerSubhead(toggle.group.title)
+                lastGroup = toggle.group
+            }
+            val swatch: (@Composable () -> Unit)? = when (toggle.layer) {
+                ChartLayer.ECOBEE -> {
+                    { EcobeeSwatch() }
+                }
+                ChartLayer.HVAC -> {
+                    { HvacSwatch() }
+                }
+                else -> null
+            }
+            LayerSwitch(
+                name = toggle.label,
+                color = layerColor(toggle.layer),
+                checked = layers.isEnabled(toggle.layer),
+                swatch = swatch
+            ) { onToggle(toggle.layer, it) }
         }
-        LayerSubhead("Grid")
-        LayerSwitch("Buy", SolColors.Buy, layers.buy) { onToggle(ChartLayer.BUY, it) }
-        LayerSwitch("Sell", SolColors.Sell, layers.sell) { onToggle(ChartLayer.SELL, it) }
-        LayerSubhead("Home")
-        LayerSwitch(
-            "Ecobee",
-            SolColors.Setpoint,
-            layers.ecobee,
-            swatch = { EcobeeSwatch() }
-        ) { onToggle(ChartLayer.ECOBEE, it) }
-        LayerSwitch(
-            "HVAC",
-            SolColors.HeatPump,
-            layers.hvac,
-            swatch = { HvacSwatch() }
-        ) { onToggle(ChartLayer.HVAC, it) }
-        if (showHouse) {
-            LayerSwitch("House use", SolColors.House, layers.house) { onToggle(ChartLayer.HOUSE, it) }
+        if (includeWidgetRows && showHouse) {
             LayerSwitch(
                 "On widget",
                 SolColors.House,
@@ -306,6 +366,41 @@ fun LayerDrawerContent(
         ) {
             Text("Reset layers", color = SolColors.Forecast)
         }
+    }
+}
+
+@Composable
+fun LayerDrawerContent(
+    layers: ChartLayers,
+    versionName: String,
+    checkingUpdates: Boolean,
+    onToggle: (ChartLayer, Boolean) -> Unit,
+    onReset: () -> Unit,
+    onClose: () -> Unit,
+    onWebApp: () -> Unit,
+    onCheckUpdates: () -> Unit,
+    onSettings: () -> Unit,
+    showHouse: Boolean = false,
+    widgetHouse: Boolean = false,
+    onWidgetHouse: (Boolean) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 24.dp)
+    ) {
+        LayerSwitchSection(
+            layers = layers,
+            onToggle = onToggle,
+            onReset = onReset,
+            onClose = onClose,
+            includeWidgetRows = true,
+            showHouse = showHouse,
+            widgetHouse = widgetHouse,
+            onWidgetHouse = onWidgetHouse
+        )
         HorizontalDivider(
             modifier = Modifier.padding(vertical = 8.dp),
             color = SolColors.TableStripe
@@ -385,6 +480,18 @@ internal fun legendGroups(
     if (other.isNotEmpty()) add(other)
 }
 
+private fun layerColor(layer: ChartLayer): Color = when (layer) {
+    ChartLayer.TEMPERATURE -> SolColors.Temp
+    ChartLayer.BUY -> SolColors.Buy
+    ChartLayer.SELL -> SolColors.Sell
+    ChartLayer.PRECIPITATION -> SolColors.Precip.copy(alpha = 1f)
+    ChartLayer.SOLCAST -> SolColors.Forecast
+    ChartLayer.ENPHASE -> SolColors.Live
+    ChartLayer.ECOBEE -> SolColors.Setpoint
+    ChartLayer.HVAC -> SolColors.HeatPump
+    ChartLayer.HOUSE -> SolColors.House
+}
+
 @Composable
 private fun LayerSubhead(title: String) {
     Text(
@@ -432,6 +539,7 @@ private fun LayerSwitch(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
+            .testTag("layer-switch-$name")
             .toggleable(
                 value = checked,
                 enabled = enabled,
