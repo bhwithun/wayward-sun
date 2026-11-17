@@ -1776,7 +1776,7 @@ private fun LayerMetaPanel(
                 RateTable(type, expanded, onDrawer)
                 Text(Formatters.asOf(DteTou.RATES_AS_OF, now, DteTou.ZONE), color = SolColors.Muted, style = type.caption)
                 Text(
-                    "Import effective includes PSCR and volumetric surcharges. Excludes \$8.50 service charge and sales tax.",
+                    "Effective includes PSCR and volumetric surcharges. Excludes \$8.50 service charge and sales tax.",
                     color = SolColors.Muted,
                     style = type.caption
                 )
