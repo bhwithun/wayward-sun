@@ -10,7 +10,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,14 +32,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.ecobeeFillPresence
 import com.brian.solwidget.data.hvacPresence
-import com.brian.solwidget.data.hvacSummary
-import com.brian.solwidget.data.hvacSummaryLabel
 import com.brian.solwidget.data.EcobeeSample
-import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.WeatherPoint
@@ -53,10 +48,7 @@ import com.brian.solwidget.data.historyFetchKey
 import com.brian.solwidget.ui.screens.ChartControls
 import com.brian.solwidget.ui.screens.HistoryCalendar
 import com.brian.solwidget.ui.screens.HistoryPane
-import com.brian.solwidget.ui.screens.HomeTabs
 import com.brian.solwidget.ui.screens.LayerDrawerContent
-import com.brian.solwidget.ui.screens.LivePane
-import com.brian.solwidget.viewmodel.HomeTab
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.ui.theme.SolWidgetTheme
 import androidx.activity.compose.BackHandler
@@ -233,12 +225,6 @@ class EcobeeScreenshotTest {
         captureSized((844 * density).roundToInt(), (390 * density).roundToInt(), "fullscreen-landscape-2.8.0f.png") {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
         }
-        captureSized(width, height, "live-2.8.0g.png") {
-            liveScreen()
-        }
-        captureSized(width, height, "live-fullscreen-2.8.0f.png") {
-            liveScreen(expanded = true)
-        }
         captureSized(width, height, "fullscreen-portrait-2.8.1c.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true)
         }
@@ -247,9 +233,6 @@ class EcobeeScreenshotTest {
         }
         captureSized(width, height, "fullscreen-day-portrait-2.8.1b.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = false, expanded = true)
-        }
-        captureSized(width, height, "live-fullscreen-2.8.1b.png", emulateCutout = true) {
-            liveScreen(expanded = true)
         }
         captureSized(width, height, "fullscreen-swipe-2.8.1b.png", emulateCutout = true) {
             historyScreen(day, month, page, key, layers, weekSelected = true, expanded = true, previewDragFraction = 0.42f)
@@ -266,18 +249,6 @@ class EcobeeScreenshotTest {
         captureSized(width, height, "fullscreen-day-after-2.8.2.png", emulateCutout = true) {
             historyScreen(LocalDate.of(2026, 11, 10), month, page, key, layers, weekSelected = false, expanded = true)
         }
-        captureSized(width, (112 * density).roundToInt(), "tabs-closeup-2.8.0f.png") {
-            SolWidgetTheme {
-                Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
-                    Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
-                    HomeTabs(
-                        tab = HomeTab.HISTORY,
-                        onSelect = {},
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)
-                    )
-                }
-            }
-        }
     }
 
     @Composable
@@ -291,7 +262,6 @@ class EcobeeScreenshotTest {
         SolWidgetTheme {
             Column(Modifier.fillMaxSize().background(SolColors.Navy).padding(16.dp)) {
                 Text("Wayward Sun", color = SolColors.Ink)
-                HomeTabs(tab = HomeTab.HISTORY, onSelect = {}, modifier = Modifier.padding(top = 12.dp))
                 HistoryCalendar(
                     month = month,
                     weeks = weeks,
@@ -302,51 +272,6 @@ class EcobeeScreenshotTest {
                     onSelectWeek = {},
                     onSelectDay = {},
                     onShowToday = {}
-                )
-            }
-        }
-    }
-
-    @Composable
-    private fun liveScreen(expanded: Boolean = false) {
-        val from = now.minus(48, ChronoUnit.HOURS)
-        val to = now.plus(48, ChronoUnit.HOURS)
-        val indoor = runtimeDay(aux = false)
-        val chartLayers = layers(temp = true, ecobee = true, solar = true)
-        SolWidgetTheme {
-            Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
-                if (!expanded) {
-                    Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
-                    HomeTabs(
-                        tab = HomeTab.LIVE,
-                        onSelect = {},
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)
-                    )
-                }
-                LivePane(
-                    snapshot = ForecastSnapshot(
-                        resourceId = "84d7-8b52-33f3-bd7b",
-                        points = solar(from, to),
-                        fetchedAt = now,
-                        requestsUsed = 0,
-                        requestLimit = 10,
-                        isDemo = false
-                    ),
-                    weather = null,
-                    livePast = solar(from, to),
-                    ecobee = indoor,
-                    layers = chartLayers,
-                    now = now,
-                    zone = zone,
-                    isLoading = false,
-                    onOpenSettings = {},
-                    expandedPanel = null,
-                    onToggleExpand = {},
-                    gasDollarsPerHour = 0.60,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = if (expanded) 0.dp else 16.dp),
-                    controls = ChartControls(expanded = expanded, expandProgress = 1f)
                 )
             }
         }
@@ -368,7 +293,6 @@ class EcobeeScreenshotTest {
             Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
                 if (!expanded) {
                     Text("Wayward Sun", color = SolColors.Ink, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
-                    HomeTabs(tab = HomeTab.HISTORY, onSelect = {}, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
                 }
                 HistoryPane(
                     month = month,
@@ -715,10 +639,6 @@ class EcobeeScreenshotTest {
                             titleContentColor = SolColors.Ink
                         )
                     )
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text("Live", color = SolColors.Ink, modifier = Modifier.weight(1f))
-                        Text("History", color = SolColors.Muted, modifier = Modifier.weight(1f))
-                    }
                     Box(
                         Modifier
                             .padding(horizontal = 16.dp)
@@ -734,14 +654,6 @@ class EcobeeScreenshotTest {
                             rangeTo = to,
                             layers = layers,
                             ecobee = indoor
-                        )
-                    }
-                    if (layers.hvac) {
-                        Text(
-                            text = hvacSummaryLabel(hvacSummary(indoor, from, to, now)),
-                            color = SolColors.Muted,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
                 }
@@ -785,6 +697,9 @@ class EcobeeScreenshotTest {
         composeView.layout(0, 0, width, height)
         Shadows.shadowOf(Looper.getMainLooper()).idle()
         draw(composeView, width, height, name)
+        composeView.disposeComposition()
+        activity.finish()
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
     }
 
     private fun draw(composeView: ComposeView, width: Int, height: Int, name: String): Bitmap {

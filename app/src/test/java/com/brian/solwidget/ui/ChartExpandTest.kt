@@ -8,14 +8,11 @@ import com.brian.solwidget.ui.screens.FullscreenLayerScrimAlpha
 import com.brian.solwidget.ui.screens.LayerGroup
 import com.brian.solwidget.ui.screens.LayerToggle
 import com.brian.solwidget.ui.screens.chartTapFires
-import com.brian.solwidget.data.ChartLayers
-import com.brian.solwidget.ui.screens.MetaPanel
 import com.brian.solwidget.ui.screens.fullscreenChartGesturesEnabled
 import com.brian.solwidget.ui.screens.fullscreenLayerSheetWidth
 import com.brian.solwidget.ui.screens.fullscreenPlotInset
 import com.brian.solwidget.ui.screens.fullscreenSafePaddingPx
 import com.brian.solwidget.ui.screens.layerToggles
-import com.brian.solwidget.ui.screens.liveFullscreenCards
 import com.brian.solwidget.ui.screens.pagerDelta
 import com.brian.solwidget.ui.screens.livePeriodLabel
 import com.brian.solwidget.ui.screens.periodRangeLabel
@@ -47,31 +44,6 @@ class ChartExpandTest {
         assertEquals(1, pagerDelta(dx = -120f, width = 400f, canPrev = true, canNext = true))
         assertEquals(0, pagerDelta(dx = -120f, width = 400f, canPrev = true, canNext = false))
         assertEquals(-1, pagerDelta(dx = 120f, width = 400f, canPrev = true, canNext = false))
-    }
-
-    @Test
-    fun liveFullscreenListsEveryOnCardAheadOfTheOpenOne() {
-        val cards = liveFullscreenCards(ChartLayers())
-        assertEquals(
-            listOf(MetaPanel.SOLAR, MetaPanel.TEMP, MetaPanel.PRECIP, MetaPanel.RATES),
-            cards
-        )
-    }
-
-    @Test
-    fun liveFullscreenFollowsTheCardsThatAreOn() {
-        val cards = liveFullscreenCards(
-            ChartLayers(
-                temperature = true,
-                precipitation = false,
-                buy = false,
-                sell = false,
-                solcast = true,
-                enphase = false,
-                ecobee = false
-            )
-        )
-        assertEquals(listOf(MetaPanel.SOLAR, MetaPanel.TEMP), cards)
     }
 
     @Test

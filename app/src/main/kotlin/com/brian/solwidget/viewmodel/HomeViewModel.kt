@@ -33,10 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-
-enum class HomeTab { LIVE, HISTORY }
 
 private data class HistoryBounds(
     val from: LocalDate,
@@ -44,12 +41,70 @@ private data class HistoryBounds(
     val earliest: LocalDate?
 )
 
-fun homeTabStored(name: String?): HomeTab = when (name) {
-    "history", "history-day" -> HomeTab.HISTORY
-    else -> HomeTab.LIVE
+/**
+ * Clock that used to move the Live now-line. Today's day view uses the same
+ * interval: the line moves, and that day's history is loaded again.
+ */
+const val HOME_CLOCK_MS = 30_000L
+
+/** The app opens here. A null [selectedDay] means today, until the first load fills it in. */
+fun viewingTodayDay(weekSelected: Boolean, selectedDay: LocalDate?, today: LocalDate): Boolean =
+    !weekSelected && (selectedDay == null || selectedDay == today)
+
+/** The date-row control is hidden while today's day chart is already showing. */
+fun showTodayButton(weekSelected: Boolean, selectedDay: LocalDate?, today: LocalDate): Boolean =
+    !viewingTodayDay(weekSelected, selectedDay, today)
+
+/**
+ * Day to show after the month changes by the arrows, a calendar swipe, or paging.
+ * Other months still open on the 1st (or on the day that is still in that grid).
+ * Coming back to the current month selects today, including when the 1st of the
+ * month you left is still drawn on this month's grid.
+ */
+fun dayForMonthShift(
+    nextMonth: YearMonth,
+    previousDay: LocalDate?,
+    today: LocalDate,
+    weeks: List<com.brian.solwidget.data.CalendarWeek>
+): LocalDate {
+    if (nextMonth == YearMonth.from(today)) return today
+    val stillThere = previousDay != null &&
+        weeks.any { week -> week.days.any { it.date == previousDay && it.inMonth } }
+    if (stillThere) return previousDay
+    return LocalDate.of(nextMonth.year, nextMonth.monthValue, 1)
 }
 
-fun HomeTab.storedName(): String = if (this == HomeTab.HISTORY) "history" else "live"
+/**
+ * One day step from the chart pager. Stepping onto the 1st of the current month
+ * from another month selects today. The 1st of any other month stays the 1st,
+ * and a step that stays inside the month is unchanged.
+ */
+fun dayAfterPagingIntoMonth(target: LocalDate, from: LocalDate, today: LocalDate): LocalDate {
+    val enteredCurrent = YearMonth.from(target) != YearMonth.from(from) &&
+        YearMonth.from(target) == YearMonth.from(today) &&
+        target.dayOfMonth == 1
+    return if (enteredCurrent) today else target
+}
+
+/** True once a full clock interval has passed while today's day is the open chart. */
+fun todayClockDue(elapsedMs: Long, viewingToday: Boolean): Boolean =
+    viewingToday && elapsedMs >= HOME_CLOCK_MS
+
+/**
+ * When the open chart is the current day and the Detroit date rolls, follow it.
+ * A week chart and any other selected day stay where they are. Returns the new
+ * day, or null when nothing should change.
+ */
+fun followToday(
+    weekSelected: Boolean,
+    selectedDay: LocalDate?,
+    previousToday: LocalDate,
+    today: LocalDate
+): LocalDate? {
+    if (today == previousToday || weekSelected) return null
+    if (selectedDay == null || selectedDay == previousToday) return today
+    return null
+}
 
 data class HomeUiState(
     val snapshot: ForecastSnapshot? = null,
@@ -58,12 +113,11 @@ data class HomeUiState(
     val now: Instant = Instant.now(),
     val layers: ChartLayers = ChartLayers(),
     val toastMessage: String? = null,
-    val tab: HomeTab = HomeTab.LIVE,
     val historyMonth: YearMonth? = null,
     val selectedWeek: LocalDate? = null,
     val selectedDay: LocalDate? = null,
-    /** Opening History shows the current week until a day cell is tapped. */
-    val historyWeekSelected: Boolean = true,
+    /** False on open, so the chart is today's day. A week chip turns this on. */
+    val historyWeekSelected: Boolean = false,
     val history: HistoryPage? = null,
     val historyKey: String? = null,
     val historyLoading: Boolean = false,
@@ -75,9 +129,7 @@ data class HomeUiState(
     val livePastKey: String? = null,
     val widgetHouse: Boolean = false,
     val gasDollarsPerHour: Double = GAS_AUX_DOLLARS_PER_HOUR,
-    val chartExpanded: Boolean = false,
-    /** Live fullscreen page. 0 is the power chart, then Solar, Temperature, and the other cards. */
-    val fullscreenPage: Int = 0
+    val chartExpanded: Boolean = false
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -93,11 +145,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
-        val savedTab = runBlocking(Dispatchers.IO) { homeTabStored(storage.lastHomeTab()) }
-        if (savedTab == HomeTab.HISTORY) {
-            _uiState.update { it.copy(tab = savedTab) }
-            loadHistory()
-        }
+        loadHistory()
         viewModelScope.launch {
             val cached = repo.loadSnapshot()
             val weatherCached = weatherRepo.loadSnapshot()
@@ -115,9 +163,39 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             refresh(force = true)
         }
         viewModelScope.launch {
+            var previousToday = DetroitCalendar.today(Instant.now())
             while (true) {
-                delay(30_000)
-                _uiState.update { it.copy(now = Instant.now()) }
+                delay(HOME_CLOCK_MS)
+                val now = Instant.now()
+                val today = DetroitCalendar.today(now)
+                val before = _uiState.value
+                val followed = followToday(
+                    before.historyWeekSelected,
+                    before.selectedDay,
+                    previousToday,
+                    today
+                )
+                previousToday = today
+                _uiState.update { state ->
+                    if (followed == null) {
+                        state.copy(now = now)
+                    } else {
+                        state.copy(
+                            now = now,
+                            selectedDay = followed,
+                            historyMonth = YearMonth.from(followed),
+                            selectedWeek = DetroitCalendar.weekStart(followed)
+                        )
+                    }
+                }
+                val open = _uiState.value
+                if (todayClockDue(
+                        HOME_CLOCK_MS,
+                        viewingTodayDay(open.historyWeekSelected, open.selectedDay, today)
+                    )
+                ) {
+                    loadHistory(force = true)
+                }
                 if (loadLivePast(force = false)) {
                     WidgetUpdater.updateAll(getApplication())
                 }
@@ -183,26 +261,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setChartExpanded(expanded: Boolean) {
-        if (_uiState.value.chartExpanded == expanded && (!expanded || _uiState.value.fullscreenPage == 0)) return
-        _uiState.update {
-            it.copy(
-                chartExpanded = expanded,
-                fullscreenPage = if (expanded) it.fullscreenPage else 0
-            )
-        }
-    }
-
-    fun setFullscreenPage(index: Int) {
-        val page = index.coerceAtLeast(0)
-        if (_uiState.value.fullscreenPage == page) return
-        _uiState.update { it.copy(fullscreenPage = page) }
-    }
-
-    fun showTab(tab: HomeTab) {
-        if (_uiState.value.tab == tab) return
-        _uiState.update { it.copy(tab = tab) }
-        viewModelScope.launch { storage.setLastHomeTab(tab.storedName()) }
-        if (tab == HomeTab.HISTORY) loadHistory()
+        if (_uiState.value.chartExpanded == expanded) return
+        _uiState.update { it.copy(chartExpanded = expanded) }
     }
 
     fun shiftHistoryMonth(delta: Int) {
@@ -212,17 +272,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { state ->
             val next = current.plusMonths(delta.toLong())
             val weeks = DetroitCalendar.monthWeeks(next)
-            val selected = weeks.find { it.id == state.selectedWeek }?.id
-                ?: weeks.find { week -> week.days.any { it.date == today } }?.id
-                ?: weeks.firstOrNull()?.id
-            val dayStillVisible = state.selectedDay != null &&
-                weeks.any { week -> week.days.any { it.date == state.selectedDay } }
-            val nextDay = when {
-                dayStillVisible -> state.selectedDay
-                weeks.any { week -> week.days.any { it.date == today && it.inMonth } } -> today
-                else -> LocalDate.of(next.year, next.monthValue, 1)
+            val nextDay = dayForMonthShift(next, state.selectedDay, today, weeks)
+            val selected = if (next == YearMonth.from(today)) {
+                DetroitCalendar.weekStart(today)
+            } else {
+                weeks.find { it.id == state.selectedWeek }?.id
+                    ?: weeks.find { week -> week.days.any { it.date == nextDay } }?.id
+                    ?: weeks.firstOrNull()?.id
             }
             state.copy(historyMonth = next, selectedWeek = selected, selectedDay = nextDay)
+        }
+        loadHistory()
+    }
+
+    /** Date-row Today. Opens today's day and moves the calendar to this month. */
+    fun showToday() {
+        val today = DetroitCalendar.today(_uiState.value.now)
+        _uiState.update {
+            it.copy(
+                historyMonth = YearMonth.from(today),
+                selectedWeek = DetroitCalendar.weekStart(today),
+                selectedDay = today,
+                historyWeekSelected = false
+            )
         }
         loadHistory()
     }
@@ -268,7 +340,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (!DetroitCalendar.canStepDay(day, delta, today, window?.from, window?.toExclusive, window?.earliest)) {
             return
         }
-        selectHistoryDay(day.plusDays(delta.toLong()))
+        selectHistoryDay(dayAfterPagingIntoMonth(day.plusDays(delta.toLong()), day, today))
     }
 
     /** Swipe on the history chart. One step is the adjacent Sunday–Saturday week. */
@@ -283,7 +355,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
         val focus = DetroitCalendar.shiftWeek(month, week, delta)
         val monthChanged = focus.month != month || state.historyMonth == null
-        _uiState.update { it.copy(historyMonth = focus.month, selectedWeek = focus.week) }
+        val enteredCurrent = monthChanged && focus.month == YearMonth.from(today)
+        _uiState.update {
+            it.copy(
+                historyMonth = focus.month,
+                selectedWeek = focus.week,
+                selectedDay = if (enteredCurrent) today else it.selectedDay
+            )
+        }
         if (monthChanged) loadHistory()
     }
 
@@ -291,7 +370,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * Loads the visible month once. Week taps reuse that page.
      * A failed fetch keeps the previous page and shows [HomeUiState.historyError].
      */
-    fun loadHistory() {
+    fun loadHistory(force: Boolean = false) {
         val today = DetroitCalendar.today(_uiState.value.now)
         val month = _uiState.value.historyMonth ?: YearMonth.from(today)
         val weeks = DetroitCalendar.monthWeeks(month)
@@ -306,9 +385,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val (from, to) = DetroitCalendar.monthFetchRange(weeks)
         val key = historyFetchKey(from, to)
         val current = _uiState.value
-        if (current.historyKey == key && current.history != null && current.historyError == null) return
+        val havePage = current.historyKey == key && current.history != null && current.historyError == null
+        if (!force && havePage) return
         val generation = ++historyGeneration
-        _uiState.update { it.copy(historyLoading = true, historyError = null) }
+        _uiState.update {
+            it.copy(
+                historyLoading = !havePage,
+                historyError = if (havePage) it.historyError else null
+            )
+        }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { historyApi.fetch(storage.cacheUrlOnce(), from, to) }
