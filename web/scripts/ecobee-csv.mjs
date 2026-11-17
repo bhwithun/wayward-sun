@@ -50,6 +50,32 @@ function parseSeconds(raw) {
   return Math.round(value);
 }
 
+/**
+ * Map heat runtime into heat_pump_sec / aux_heat_sec.
+ *
+ * Older portal exports have "Aux Heat 1 (sec)" and must keep the original
+ * mapping: Heat Stage 1 is the heat pump, Aux Heat 1 is the gas furnace.
+ * After about 2026-11-11 the Aux Heat 1 column disappeared and furnace
+ * runtime moved into Heat Stage 1 on heatStage1On / heatOff rows. In that
+ * format, classify Heat Stage 1 by System Mode: compressor* is the heat
+ * pump, and heatStage1On / heatOff / any Aux Heat 1 seconds are the furnace.
+ */
+export function classifyHeatRuntime(systemMode, heatStageSec, auxColSec, hasAuxColumn) {
+  if (hasAuxColumn && auxColSec != null) {
+    return { heatPumpSec: heatStageSec, auxHeatSec: auxColSec };
+  }
+  const mode = systemMode ?? "";
+  const isFurnace = mode === "heatStage1On" || mode === "heatOff";
+  const zeroIfPresent = heatStageSec != null ? 0 : null;
+  if (isFurnace || (auxColSec != null && auxColSec > 0)) {
+    return {
+      heatPumpSec: zeroIfPresent,
+      auxHeatSec: auxColSec != null && auxColSec > 0 ? auxColSec : heatStageSec,
+    };
+  }
+  return { heatPumpSec: heatStageSec, auxHeatSec: zeroIfPresent };
+}
+
 export function parseEcobeeCsv(text) {
   const stripped = String(text).replace(/^\uFEFF/, "");
   const lines = stripped.split(/\r?\n/);
@@ -105,14 +131,17 @@ export function parseEcobeeCsv(text) {
     if (Number.isNaN(sampledAt.getTime())) continue;
     const mode = cells[modeIndex]?.trim() || null;
     const cell = (index) => (index == null ? null : cells[index]);
+    const heatStageSec = parseSeconds(cell(heatPumpIndex));
+    const auxColSec = parseSeconds(cell(auxIndex));
+    const { heatPumpSec, auxHeatSec } = classifyHeatRuntime(mode, heatStageSec, auxColSec, auxIndex != null);
     rows.push({
       sampledAt: sampledAt.toISOString(),
       indoorF: indoor,
       coolSetF: parseEcobeeSetpoint(cells[coolIndex]),
       heatSetF: parseEcobeeSetpoint(cells[heatIndex]),
       systemMode: mode,
-      heatPumpSec: parseSeconds(cell(heatPumpIndex)),
-      auxHeatSec: parseSeconds(cell(auxIndex)),
+      heatPumpSec,
+      auxHeatSec,
       coolSec: parseSeconds(cell(coolRunIndex)),
       fanSec: parseSeconds(cell(fanIndex)),
       outdoorF: parseEcobeeSetpoint(cell(outdoorIndex)),
