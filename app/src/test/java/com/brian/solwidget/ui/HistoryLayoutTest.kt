@@ -95,13 +95,13 @@ class HistoryLayoutTest {
         assertEquals(chart.bottom, cal.top, 2f)
         val day = rule.onNodeWithContentDescription(probe).fetchSemanticsNode().boundsInRoot
         val half = with(rule.density) { cal.height.toDp() }
-        val expected = CalendarFit.dayCellHeight(half, weeks)
+        val expected = CalendarFit.layout(half, weeks).cell
         val actual = with(rule.density) { day.height.toDp() }
         assertEquals(expected.value, actual.value, 1.5f)
         if (expectUnder40 && half <= 300.dp) {
             assertTrue(
                 "6-week cell is ${actual.value}dp inside a ${half.value}dp half",
-                actual < CalendarFit.comfortableCell
+                actual < 40.dp
             )
         }
     }

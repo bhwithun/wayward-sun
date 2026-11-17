@@ -1354,31 +1354,35 @@ internal fun HistoryCalendar(
             }
     ) {
         val finite = maxHeight.value.isFinite()
-        val cell = if (finite && weeks.isNotEmpty()) {
-            CalendarFit.dayCellHeight(maxHeight, weeks.size)
+        val metrics = if (finite && weeks.isNotEmpty()) {
+            CalendarFit.layout(maxHeight, weeks.size)
         } else {
-            CalendarFit.comfortableCell
+            CalendarFit.preferred(weeks.size)
         }
-        val dayFont = if (cell < 36.dp) 13.sp else 14.sp
-        val dot = if (cell < 36.dp) 3.dp else 4.dp
-        val chipHeight = if (cell < 32.dp) (cell - 2.dp).coerceAtLeast(14.dp) else 26.dp
+        val cell = metrics.cell
+        val dayFont = metrics.daySp.sp
+        val titleFont = if (metrics.header < CalendarFit.headerRoomy) 14.sp else 16.sp
+        val chevronFont = if (metrics.header < CalendarFit.headerRoomy) 18.sp else 22.sp
+        val dot = if (cell < CalendarFit.tightenBelow) 3.dp else 4.dp
+        val chipHeight = minOf(26.dp, (cell - 2.dp).coerceAtLeast(0.dp))
         Column(
             Modifier
                 .fillMaxWidth()
                 .then(if (finite) Modifier.fillMaxHeight() else Modifier)
-                .padding(horizontal = 8.dp, vertical = CalendarFit.verticalPadding / 2)
+                .padding(horizontal = 8.dp, vertical = metrics.verticalPadding / 2)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(CalendarFit.header),
+                    .height(metrics.header),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                MonthChevron("‹", "Previous month", enabled = true) { shiftMonth(-1) }
+                MonthChevron("‹", "Previous month", chevronFont, enabled = true) { shiftMonth(-1) }
                 Text(
                     text = MonthLabel.format(month),
                     color = SolColors.Ink,
-                    fontSize = 16.sp,
+                    fontSize = titleFont,
+                    lineHeight = titleFont,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
@@ -1392,16 +1396,17 @@ internal fun HistoryCalendar(
                 MonthChevron(
                     "›",
                     "Next month",
+                    chevronFont,
                     enabled = DetroitCalendar.canShiftMonth(month, 1, today)
                 ) { shiftMonth(1) }
             }
-            Spacer(Modifier.height(CalendarFit.gap))
+            Spacer(Modifier.height(metrics.gap))
             Box(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(CalendarFit.weekday),
+                            .height(metrics.weekday),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(Modifier.width(44.dp))
@@ -1420,7 +1425,7 @@ internal fun HistoryCalendar(
                     weeks.forEach { week ->
                         val weekOn = week.id == selectedWeek
                         val shape = RoundedCornerShape(8.dp)
-                        Spacer(Modifier.height(CalendarFit.gap))
+                        Spacer(Modifier.height(metrics.gap))
                         key(week.id) {
                         Row(
                             modifier = Modifier
@@ -1537,7 +1542,13 @@ internal fun HistoryCalendar(
 }
 
 @Composable
-private fun MonthChevron(label: String, description: String, enabled: Boolean, onClick: () -> Unit) {
+private fun MonthChevron(
+    label: String,
+    description: String,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
     Box(
         modifier = Modifier
             .width(40.dp)
@@ -1549,8 +1560,8 @@ private fun MonthChevron(label: String, description: String, enabled: Boolean, o
         Text(
             text = label,
             color = if (enabled) SolColors.Forecast else SolColors.Muted,
-            fontSize = 22.sp,
-            lineHeight = 22.sp
+            fontSize = fontSize,
+            lineHeight = fontSize
         )
     }
 }
