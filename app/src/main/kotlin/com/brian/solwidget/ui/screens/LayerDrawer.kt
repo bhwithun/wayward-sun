@@ -383,6 +383,7 @@ fun LayerDrawerContent(
     showHouse: Boolean = false,
     widgetHouse: Boolean = false,
     onWidgetHouse: (Boolean) -> Unit = {},
+    details: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -401,6 +402,7 @@ fun LayerDrawerContent(
             widgetHouse = widgetHouse,
             onWidgetHouse = onWidgetHouse
         )
+        details()
         HorizontalDivider(
             modifier = Modifier.padding(vertical = 8.dp),
             color = SolColors.TableStripe

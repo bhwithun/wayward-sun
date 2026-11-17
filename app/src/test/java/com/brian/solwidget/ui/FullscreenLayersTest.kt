@@ -31,23 +31,18 @@ import com.brian.solwidget.ScreenshotActivity
 import com.brian.solwidget.data.ChartLayers
 import com.brian.solwidget.data.DetroitCalendar
 import com.brian.solwidget.data.HouseSample
-import com.brian.solwidget.data.ForecastSnapshot
 import com.brian.solwidget.data.HistoryInterval
 import com.brian.solwidget.data.HistoryPage
-import com.brian.solwidget.data.PowerPoint
-import com.brian.solwidget.data.SeriesKind
 import com.brian.solwidget.data.historyFetchKey
 import com.brian.solwidget.ui.screens.ChartControls
 import com.brian.solwidget.ui.screens.FullscreenPlotHeadroom
 import com.brian.solwidget.ui.screens.HistoryPane
 import com.brian.solwidget.ui.screens.HouseCapRise
-import com.brian.solwidget.ui.screens.LivePane
 import com.brian.solwidget.ui.theme.SolColors
 import com.brian.solwidget.ui.theme.SolWidgetTheme
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
-import java.time.ZoneId
 import java.util.Locale
 import org.junit.Before
 import org.junit.Rule
@@ -212,11 +207,11 @@ class FullscreenLayersTest {
     }
 
     @Test
-    fun liveFullscreenUsesTheSameLayerSheet() {
-        rule.setContent { LiveHost() }
+    fun dayFullscreenUsesTheSameLayerSheet() {
+        rule.setContent { HistoryHost(weekSelected = false) }
         val button = rule.onNodeWithTag("fullscreen-layers-button").fetchSemanticsNode().boundsInRoot
         val plot = rule.onNodeWithTag("fullscreen-plot").fetchSemanticsNode().boundsInRoot
-        check(button.bottom <= plot.top + 1f) { "Live layers button covers the plot" }
+        check(button.bottom <= plot.top + 1f) { "Layers button covers the plot" }
         rule.onNodeWithTag("fullscreen-layers-button").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Solcast").assertIsDisplayed()
@@ -334,47 +329,6 @@ class FullscreenLayersTest {
         }
     }
 
-    @Composable
-    private fun LiveHost() {
-        val zone = ZoneId.of("America/Detroit")
-        val now = Instant.parse("2026-11-11T17:00:00Z")
-        var expanded by remember { mutableStateOf(true) }
-        var layersOpen by remember { mutableStateOf(false) }
-        var layers by remember { mutableStateOf(ChartLayers()) }
-        BackHandler(enabled = expanded && !layersOpen) { expanded = false }
-        SolWidgetTheme {
-            Column(Modifier.fillMaxSize().background(SolColors.Navy)) {
-                LivePane(
-                    snapshot = liveSnapshot(now, zone),
-                    weather = null,
-                    livePast = null,
-                    ecobee = emptyList(),
-                    layers = layers,
-                    now = now,
-                    zone = zone,
-                    isLoading = false,
-                    onOpenSettings = {},
-                    expandedPanel = null,
-                    onToggleExpand = {},
-                    gasDollarsPerHour = 0.60,
-                    modifier = Modifier.fillMaxSize(),
-                    controls = layerControls(
-                        expanded = expanded,
-                        layersOpen = layersOpen,
-                        onChartTap = {
-                            layersOpen = false
-                            expanded = false
-                        },
-                        onToggleLayers = { layersOpen = !layersOpen },
-                        onDismissLayers = { layersOpen = false },
-                        onToggleLayer = { layer, visible -> layers = layers.with(layer, visible) },
-                        onResetLayers = { layers = ChartLayers() }
-                    )
-                )
-            }
-        }
-    }
-
     private fun layerControls(
         expanded: Boolean,
         layersOpen: Boolean,
@@ -409,30 +363,6 @@ class FullscreenLayersTest {
             cursor = cursor.plusSeconds(12 * 3600)
         }
         return points
-    }
-
-    private fun liveSnapshot(now: Instant, zone: ZoneId): ForecastSnapshot {
-        val (from, to) = ForecastSnapshot.range(now, zone)
-        val points = ArrayList<PowerPoint>()
-        var cursor = from.plusSeconds(30 * 60)
-        while (!cursor.isAfter(to)) {
-            val hour = cursor.atZone(zone).hour
-            points += PowerPoint(
-                periodEnd = cursor,
-                kw = if (hour in 8..16) 3.0 else 0.0,
-                periodHours = 0.5,
-                kind = if (cursor.isAfter(now)) SeriesKind.FORECAST else SeriesKind.LIVE
-            )
-            cursor = cursor.plusSeconds(30 * 60)
-        }
-        return ForecastSnapshot(
-            resourceId = "84d7-8b52-33f3-bd7b",
-            points = points,
-            fetchedAt = now,
-            requestsUsed = 1,
-            requestLimit = 10,
-            isDemo = false
-        )
     }
 
     private companion object {
