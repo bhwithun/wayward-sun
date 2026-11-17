@@ -59,4 +59,43 @@ describe("ecobee csv", () => {
     expect(rows[1].auxHeatSec).toBe(0);
     expect(rows[1].heatPumpSec).toBe(180);
   });
+
+
+  it("keeps old-format Heat Stage 1 and Aux Heat 1 mapping even on furnace modes", () => {
+    const csv = [
+      "Date,Time,System Mode,Cool Set Temp (F),Heat Set Temp (F),Current Temp (F),Heat Stage 1 (sec),Aux Heat 1 (sec),Cool Stage 1 (sec),Fan (sec)",
+      "2026-01-15,06:00:00,heatStage1On,off,68.0,66.0,0,300,0,300",
+      "2026-01-15,06:05:00,heatOff,off,68.0,66.2,0,120,0,120",
+      "2026-01-15,07:00:00,compressorHeatStage1On,off,68.0,65.8,300,0,0,300",
+    ].join("\n");
+    const rows = parseEcobeeCsv(csv);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ systemMode: "heatStage1On", heatPumpSec: 0, auxHeatSec: 300 });
+    expect(rows[1]).toMatchObject({ systemMode: "heatOff", heatPumpSec: 0, auxHeatSec: 120 });
+    expect(rows[2]).toMatchObject({ systemMode: "compressorHeatStage1On", heatPumpSec: 300, auxHeatSec: 0 });
+  });
+
+  it("classifies new-format Heat Stage 1 by System Mode when Aux Heat 1 is absent", () => {
+    const csv = [
+      "Date,Time,System Mode,Cool Set Temp (F),Heat Set Temp (F),Current Temp (F),Heat Stage 1 (sec),Cool Stage 1 (sec),Fan (sec)",
+      "2026-11-12,06:00:00,heatStage1On,off,66.0,65.0,300,0,300",
+      "2026-11-12,06:05:00,heatOff,off,66.0,65.4,120,0,120",
+      "2026-11-08,07:50:00,compressorHeatStage1On,off,66.0,65.8,0,0,300",
+      "2026-11-08,08:00:00,compressorHeatStage1On,off,66.0,65.6,180,0,180",
+      "2026-11-11,17:25:00,compressorCoolStage2On,off,66.0,70.0,150,135,300",
+    ].join("\n");
+    const rows = parseEcobeeCsv(csv);
+    expect(rows.hasRuntime).toBe(true);
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toMatchObject({ systemMode: "heatStage1On", heatPumpSec: 0, auxHeatSec: 300 });
+    expect(rows[1]).toMatchObject({ systemMode: "heatOff", heatPumpSec: 0, auxHeatSec: 120 });
+    expect(rows[2]).toMatchObject({ systemMode: "compressorHeatStage1On", heatPumpSec: 0, auxHeatSec: 0 });
+    expect(rows[3]).toMatchObject({ systemMode: "compressorHeatStage1On", heatPumpSec: 180, auxHeatSec: 0 });
+    expect(rows[4]).toMatchObject({
+      systemMode: "compressorCoolStage2On",
+      heatPumpSec: 150,
+      auxHeatSec: 0,
+      coolSec: 135,
+    });
+  });
 });
