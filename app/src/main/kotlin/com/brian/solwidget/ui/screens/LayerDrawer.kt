@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -89,6 +90,34 @@ private fun Modifier.expandTapTarget(): Modifier = layout { measurable, constrai
     if (first != AlignmentLine.Unspecified) lines[FirstBaseline] = first + y
     if (last != AlignmentLine.Unspecified) lines[LastBaseline] = last + y
     layout(width, height, lines) { placeable.place(x, y) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun TodayButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = "Today",
+        color = Color.White.copy(alpha = 0.70f),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        modifier = modifier
+            .expandTapTarget()
+            .testTag("today-button")
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = false),
+                onClick = onClick
+            )
+            .clearAndSetSemantics {
+                role = Role.Button
+                contentDescription = "Show today"
+            }
+            .padding(horizontal = 2.dp)
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

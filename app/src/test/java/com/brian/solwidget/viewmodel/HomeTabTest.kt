@@ -1,6 +1,8 @@
 package com.brian.solwidget.viewmodel
 
+import com.brian.solwidget.data.DetroitCalendar
 import java.time.LocalDate
+import java.time.YearMonth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,6 +28,37 @@ class HomeTabTest {
         assertTrue(viewingTodayDay(weekSelected = false, selectedDay = today, today = today))
         assertFalse(viewingTodayDay(weekSelected = true, selectedDay = today, today = today))
         assertFalse(viewingTodayDay(weekSelected = false, selectedDay = yesterday, today = today))
+    }
+
+    @Test
+    fun todayButtonIsHiddenOnlyOnTodaysDay() {
+        assertFalse(showTodayButton(weekSelected = false, selectedDay = null, today = today))
+        assertFalse(showTodayButton(weekSelected = false, selectedDay = today, today = today))
+        assertTrue(showTodayButton(weekSelected = true, selectedDay = today, today = today))
+        assertTrue(showTodayButton(weekSelected = false, selectedDay = yesterday, today = today))
+        assertTrue(showTodayButton(weekSelected = false, selectedDay = today.plusDays(3), today = today))
+    }
+
+    @Test
+    fun returningToTheCurrentMonthSelectsTodayNotTheFirst() {
+        val december = YearMonth.of(2026, 12)
+        val november = YearMonth.from(today)
+        val decWeeks = DetroitCalendar.monthWeeks(december)
+        val novWeeks = DetroitCalendar.monthWeeks(november)
+        val decFirst = LocalDate.of(2026, 12, 1)
+        assertTrue(novWeeks.any { week -> week.days.any { it.date == decFirst } })
+
+        assertEquals(decFirst, dayForMonthShift(december, today, today, decWeeks))
+        assertEquals(today, dayForMonthShift(november, decFirst, today, novWeeks))
+        assertEquals(LocalDate.of(2026, 10, 1), dayForMonthShift(YearMonth.of(2026, 10), today, today, DetroitCalendar.monthWeeks(YearMonth.of(2026, 10))))
+    }
+
+    @Test
+    fun pagingOntoTheFirstOfTheCurrentMonthSelectsToday() {
+        assertEquals(today, dayAfterPagingIntoMonth(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 10, 31), today))
+        assertEquals(LocalDate.of(2026, 11, 30), dayAfterPagingIntoMonth(LocalDate.of(2026, 11, 30), LocalDate.of(2026, 12, 1), today))
+        assertEquals(LocalDate.of(2026, 12, 1), dayAfterPagingIntoMonth(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 11, 30), today))
+        assertEquals(LocalDate.of(2026, 11, 1), dayAfterPagingIntoMonth(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 2), today))
     }
 
     @Test

@@ -95,8 +95,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
@@ -147,6 +149,7 @@ import com.brian.solwidget.data.houseHalfHourPeak
 import com.brian.solwidget.data.solarDisplayName
 import com.brian.solwidget.viewmodel.HomeViewModel
 import com.brian.solwidget.viewmodel.isSolcastQuotaMessage
+import com.brian.solwidget.viewmodel.showTodayButton
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -373,6 +376,7 @@ fun HomeScreen(
             onShiftDay = viewModel::shiftHistoryDay,
             onSelectDay = viewModel::selectHistoryDay,
             onShowToday = viewModel::showCurrentHistory,
+            onShowTodayDay = viewModel::showToday,
             gasDollarsPerHour = state.gasDollarsPerHour,
             onHouseChip = { showHouseChip = it },
             onPeriodReadout = { periodReadout = it },
@@ -550,6 +554,7 @@ internal fun HistoryPane(
     onShiftDay: (Int) -> Unit,
     onSelectDay: (LocalDate) -> Unit,
     onShowToday: () -> Unit,
+    onShowTodayDay: () -> Unit = {},
     gasDollarsPerHour: Double,
     onHouseChip: (Boolean) -> Unit = {},
     onPeriodReadout: (PeriodReadout) -> Unit = {},
@@ -712,7 +717,9 @@ internal fun HistoryPane(
                 }
             },
             showDots = false,
-            title = historyPeriodLabel(weekSelected, shownDay, shownWeek)
+            title = historyPeriodLabel(weekSelected, shownDay, shownWeek),
+            showToday = showTodayButton(weekSelected, selectedDay, today),
+            onToday = onShowTodayDay
         )
         return
     }
@@ -731,7 +738,12 @@ internal fun HistoryPane(
             }
             historyError?.let { StatusBanner(it) }
             if (weekSelected || week != null) {
-                ChartHeading(historyPeriodLabel(weekSelected, shownDay, shownWeek), controls, legend)
+                ChartHeading(
+                    historyPeriodLabel(weekSelected, shownDay, shownWeek),
+                    controls,
+                    showToday = showTodayButton(weekSelected, selectedDay, today),
+                    onToday = onShowTodayDay
+                )
                 if (controls.showExpandHint) {
                     Text("Tap chart to expand", color = SolColors.Muted, fontSize = 12.sp)
                 }
@@ -825,7 +837,12 @@ private fun HouseSummaryRow(summary: HouseSummary?) {
 }
 
 @Composable
-private fun ChartHeading(title: String, controls: ChartControls, legend: LegendModel) {
+private fun ChartHeading(
+    title: String,
+    controls: ChartControls,
+    showToday: Boolean,
+    onToday: () -> Unit
+) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = title,
@@ -833,6 +850,9 @@ private fun ChartHeading(title: String, controls: ChartControls, legend: LegendM
             style = MaterialTheme.typography.titleMedium,
             color = SolColors.Ink
         )
+        if (showToday) {
+            TodayButton(onClick = onToday, modifier = Modifier.alignByBaseline())
+        }
         LegendButton(
             open = controls.legendOpen,
             onClick = controls.onToggleLegend,
@@ -902,7 +922,9 @@ private fun ExpandedChart(
     pagerKey: Any,
     onSettled: (Int) -> Unit,
     showDots: Boolean,
-    title: String
+    title: String,
+    showToday: Boolean,
+    onToday: () -> Unit
 ) {
     BackHandler(enabled = controls.layersOpen) { controls.onDismissLayers() }
     if (pages.isEmpty()) return
@@ -971,6 +993,9 @@ private fun ExpandedChart(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (showToday) {
+                    TodayButton(onClick = onToday, modifier = Modifier.alignByBaseline())
+                }
                 if (showDots && pages.size in 2..6) {
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                         repeat(pages.size) { index ->
@@ -1856,8 +1881,17 @@ private fun RateTable(type: MetaType, expanded: Boolean, onDrawer: Boolean = fal
         onDrawer -> SolColors.Panel
         else -> Color.Transparent
     }
+    val measurer = rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val plan = rateHeaderPlan(maxWidth.value) { sample ->
+        with(density) {
+            measurer.measure(AnnotatedString(sample), style = headerStyle).size.width.toDp().value
+        }
+    }
     Column(
         modifier = Modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(even),
         verticalArrangement = Arrangement.spacedBy(0.dp)
@@ -1865,8 +1899,13 @@ private fun RateTable(type: MetaType, expanded: Boolean, onDrawer: Boolean = fal
         RateTableRow(
             label = "",
             off = "Off-peak",
-            mid = "Mid-peak",
+            mid = plan.mid,
             peak = "Peak",
+            labelWeight = plan.labelWeight,
+            offWeight = plan.offWeight,
+            midWeight = plan.midWeight,
+            peakWeight = plan.peakWeight,
+            singleLine = true,
             labelColor = SolColors.Muted,
             offColor = SolColors.Live.copy(alpha = 0.75f),
             midColor = SolColors.Forecast.copy(alpha = 0.85f),
@@ -1880,6 +1919,10 @@ private fun RateTable(type: MetaType, expanded: Boolean, onDrawer: Boolean = fal
             off = Formatters.cents(DteTou.BASE_OFF_PEAK_CENTS),
             mid = Formatters.cents(DteTou.BASE_MID_PEAK_CENTS),
             peak = Formatters.cents(DteTou.BASE_PEAK_CENTS),
+            labelWeight = plan.labelWeight,
+            offWeight = plan.offWeight,
+            midWeight = plan.midWeight,
+            peakWeight = plan.peakWeight,
             textStyle = cellStyle,
             rowColor = even,
             verticalPadding = rowPad
@@ -1889,6 +1932,10 @@ private fun RateTable(type: MetaType, expanded: Boolean, onDrawer: Boolean = fal
             off = Formatters.cents(DteTou.OFF_PEAK_CENTS),
             mid = Formatters.cents(DteTou.MID_PEAK_CENTS),
             peak = Formatters.cents(DteTou.PEAK_CENTS),
+            labelWeight = plan.labelWeight,
+            offWeight = plan.offWeight,
+            midWeight = plan.midWeight,
+            peakWeight = plan.peakWeight,
             textStyle = cellStyle,
             rowColor = stripe,
             verticalPadding = rowPad
@@ -1898,6 +1945,10 @@ private fun RateTable(type: MetaType, expanded: Boolean, onDrawer: Boolean = fal
             off = Formatters.cents(DteTou.OUTFLOW_OFF_PEAK_CENTS),
             mid = Formatters.cents(DteTou.OUTFLOW_MID_PEAK_CENTS),
             peak = Formatters.cents(DteTou.OUTFLOW_PEAK_CENTS),
+            labelWeight = plan.labelWeight,
+            offWeight = plan.offWeight,
+            midWeight = plan.midWeight,
+            peakWeight = plan.peakWeight,
             textStyle = cellStyle,
             rowColor = even,
             verticalPadding = rowPad
@@ -1907,10 +1958,15 @@ private fun RateTable(type: MetaType, expanded: Boolean, onDrawer: Boolean = fal
             off = Formatters.cents(DteTou.OUTFLOW_OFF_PEAK_WITH_PSCR_CENTS),
             mid = Formatters.cents(DteTou.OUTFLOW_MID_PEAK_WITH_PSCR_CENTS),
             peak = Formatters.cents(DteTou.OUTFLOW_PEAK_WITH_PSCR_CENTS),
+            labelWeight = plan.labelWeight,
+            offWeight = plan.offWeight,
+            midWeight = plan.midWeight,
+            peakWeight = plan.peakWeight,
             textStyle = cellStyle,
             rowColor = stripe,
             verticalPadding = rowPad
         )
+    }
     }
 }
 
@@ -1920,13 +1976,18 @@ private fun RateTableRow(
     off: String,
     mid: String,
     peak: String,
+    labelWeight: Float,
+    offWeight: Float,
+    midWeight: Float,
+    peakWeight: Float,
     labelColor: Color = SolColors.Muted,
     offColor: Color = SolColors.Ink,
     midColor: Color = SolColors.Ink,
     peakColor: Color = SolColors.Ink,
     textStyle: TextStyle,
     rowColor: Color,
-    verticalPadding: Dp
+    verticalPadding: Dp,
+    singleLine: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -1935,11 +1996,30 @@ private fun RateTableRow(
             .padding(horizontal = 8.dp, vertical = verticalPadding),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(label, color = labelColor, style = textStyle, modifier = Modifier.weight(1.15f), maxLines = 2)
-        Text(off, color = offColor, style = textStyle, modifier = Modifier.weight(0.95f), maxLines = 2)
-        Text(mid, color = midColor, style = textStyle, modifier = Modifier.weight(0.95f), maxLines = 2)
-        Text(peak, color = peakColor, style = textStyle, modifier = Modifier.weight(0.85f), maxLines = 2)
+        RateCell(label, labelColor, textStyle, labelWeight, singleLine = false)
+        RateCell(off, offColor, textStyle, offWeight, singleLine)
+        RateCell(mid, midColor, textStyle, midWeight, singleLine)
+        RateCell(peak, peakColor, textStyle, peakWeight, singleLine)
     }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.RateCell(
+    text: String,
+    color: Color,
+    textStyle: TextStyle,
+    weight: Float,
+    singleLine: Boolean
+) {
+    Text(
+        text = text,
+        color = color,
+        style = textStyle,
+        modifier = Modifier.weight(weight.coerceAtLeast(0.01f)),
+        maxLines = if (singleLine) 1 else 2,
+        softWrap = !singleLine,
+        overflow = if (singleLine) TextOverflow.Clip else TextOverflow.Clip
+    )
 }
 
 

@@ -51,6 +51,41 @@ const val HOME_CLOCK_MS = 30_000L
 fun viewingTodayDay(weekSelected: Boolean, selectedDay: LocalDate?, today: LocalDate): Boolean =
     !weekSelected && (selectedDay == null || selectedDay == today)
 
+/** The date-row control is hidden while today's day chart is already showing. */
+fun showTodayButton(weekSelected: Boolean, selectedDay: LocalDate?, today: LocalDate): Boolean =
+    !viewingTodayDay(weekSelected, selectedDay, today)
+
+/**
+ * Day to show after the month changes by the arrows, a calendar swipe, or paging.
+ * Other months still open on the 1st (or on the day that is still in that grid).
+ * Coming back to the current month selects today, including when the 1st of the
+ * month you left is still drawn on this month's grid.
+ */
+fun dayForMonthShift(
+    nextMonth: YearMonth,
+    previousDay: LocalDate?,
+    today: LocalDate,
+    weeks: List<com.brian.solwidget.data.CalendarWeek>
+): LocalDate {
+    if (nextMonth == YearMonth.from(today)) return today
+    val stillThere = previousDay != null &&
+        weeks.any { week -> week.days.any { it.date == previousDay && it.inMonth } }
+    if (stillThere) return previousDay
+    return LocalDate.of(nextMonth.year, nextMonth.monthValue, 1)
+}
+
+/**
+ * One day step from the chart pager. Stepping onto the 1st of the current month
+ * from another month selects today. The 1st of any other month stays the 1st,
+ * and a step that stays inside the month is unchanged.
+ */
+fun dayAfterPagingIntoMonth(target: LocalDate, from: LocalDate, today: LocalDate): LocalDate {
+    val enteredCurrent = YearMonth.from(target) != YearMonth.from(from) &&
+        YearMonth.from(target) == YearMonth.from(today) &&
+        target.dayOfMonth == 1
+    return if (enteredCurrent) today else target
+}
+
 /** True once a full clock interval has passed while today's day is the open chart. */
 fun todayClockDue(elapsedMs: Long, viewingToday: Boolean): Boolean =
     viewingToday && elapsedMs >= HOME_CLOCK_MS
@@ -237,17 +272,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { state ->
             val next = current.plusMonths(delta.toLong())
             val weeks = DetroitCalendar.monthWeeks(next)
-            val selected = weeks.find { it.id == state.selectedWeek }?.id
-                ?: weeks.find { week -> week.days.any { it.date == today } }?.id
-                ?: weeks.firstOrNull()?.id
-            val dayStillVisible = state.selectedDay != null &&
-                weeks.any { week -> week.days.any { it.date == state.selectedDay } }
-            val nextDay = when {
-                dayStillVisible -> state.selectedDay
-                weeks.any { week -> week.days.any { it.date == today && it.inMonth } } -> today
-                else -> LocalDate.of(next.year, next.monthValue, 1)
+            val nextDay = dayForMonthShift(next, state.selectedDay, today, weeks)
+            val selected = if (next == YearMonth.from(today)) {
+                DetroitCalendar.weekStart(today)
+            } else {
+                weeks.find { it.id == state.selectedWeek }?.id
+                    ?: weeks.find { week -> week.days.any { it.date == nextDay } }?.id
+                    ?: weeks.firstOrNull()?.id
             }
             state.copy(historyMonth = next, selectedWeek = selected, selectedDay = nextDay)
+        }
+        loadHistory()
+    }
+
+    /** Date-row Today. Opens today's day and moves the calendar to this month. */
+    fun showToday() {
+        val today = DetroitCalendar.today(_uiState.value.now)
+        _uiState.update {
+            it.copy(
+                historyMonth = YearMonth.from(today),
+                selectedWeek = DetroitCalendar.weekStart(today),
+                selectedDay = today,
+                historyWeekSelected = false
+            )
         }
         loadHistory()
     }
@@ -293,7 +340,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (!DetroitCalendar.canStepDay(day, delta, today, window?.from, window?.toExclusive, window?.earliest)) {
             return
         }
-        selectHistoryDay(day.plusDays(delta.toLong()))
+        selectHistoryDay(dayAfterPagingIntoMonth(day.plusDays(delta.toLong()), day, today))
     }
 
     /** Swipe on the history chart. One step is the adjacent Sunday–Saturday week. */
@@ -308,7 +355,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
         val focus = DetroitCalendar.shiftWeek(month, week, delta)
         val monthChanged = focus.month != month || state.historyMonth == null
-        _uiState.update { it.copy(historyMonth = focus.month, selectedWeek = focus.week) }
+        val enteredCurrent = monthChanged && focus.month == YearMonth.from(today)
+        _uiState.update {
+            it.copy(
+                historyMonth = focus.month,
+                selectedWeek = focus.week,
+                selectedDay = if (enteredCurrent) today else it.selectedDay
+            )
+        }
         if (monthChanged) loadHistory()
     }
 
