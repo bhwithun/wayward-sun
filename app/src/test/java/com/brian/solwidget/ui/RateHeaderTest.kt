@@ -4,10 +4,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.test.junit4.createComposeRule
-import com.brian.solwidget.ui.screens.rateHeaderPlan
+import com.brian.solwidget.ui.screens.RateTablePlan
+import com.brian.solwidget.ui.screens.rateTablePlan
 import com.brian.solwidget.ui.screens.rateTableWidthDp
 import com.brian.solwidget.ui.theme.SolWidgetTheme
 import java.util.concurrent.atomic.AtomicReference
@@ -26,42 +28,54 @@ class RateHeaderTest {
     val rule = createComposeRule()
 
     @Test
-    fun aNarrowColumnUsesMidInsteadOfBreakingTheWord() {
-        val plan = rateHeaderPlan(tableWidthDp = 80f) { text -> text.length * 8f }
-        assertEquals("Mid", plan.mid)
-        assertTrue(plan.midWeight + 0.1f >= 3f * 8f)
+    fun aTinyTableDropsToTheShortestWholeTokens() {
+        val plan = rateTablePlan(tableWidthDp = 40f, headerWidth = { it.length * 8f }, bodyWidth = { it.length * 8f })
+        assertEquals("Mid", plan.midHeader)
+        assertEquals("¢/kWh", plan.unitNote)
+        assertTrue(plan.labels.all { !it.contains(' ') || it.length < 8 })
     }
 
     @Test
-    fun midPeakStaysOneTokenAt360And411() {
-        val found = AtomicReference<List<String>>(emptyList())
+    fun everyRateCellFitsOnOneLineAt360And411() {
+        val found = AtomicReference<List<RateTablePlan>>(emptyList())
         rule.setContent {
             SolWidgetTheme {
-                val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold)
+                val header = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold)
+                val body = MaterialTheme.typography.bodySmall
                 val measurer = rememberTextMeasurer()
                 val density = LocalDensity.current
                 SideEffect {
-                    fun width(text: String) = with(density) {
+                    fun width(text: String, style: TextStyle) = with(density) {
                         measurer.measure(AnnotatedString(text), style = style).size.width.toDp().value
                     }
                     found.set(listOf(360f, 411f).map { screen ->
                         val table = rateTableWidthDp(screen)
-                        val plan = rateHeaderPlan(table, ::width)
-                        check(plan.mid == "Mid-peak" || plan.mid == "Mid") {
-                            "Header ${plan.mid} is not a whole token"
+                        val plan = rateTablePlan(
+                            table,
+                            headerWidth = { width(it, header) },
+                            bodyWidth = { width(it, body) }
+                        )
+                        check(plan.fits(table)) { "Rates table does not fit a ${screen.toInt()}dp phone" }
+                        check(plan.midHeader == "Mid-peak" || plan.midHeader == "Mid")
+                        fun fits(text: String, column: Float, style: TextStyle, name: String) {
+                            val measured = width(text, style)
+                            check(measured <= column + 0.5f) {
+                                "$name '$text' is ${measured}dp in a ${column}dp column at ${screen.toInt()}dp"
+                            }
                         }
-                        check(!plan.mid.contains(' ') && plan.mid != "Mid-pea")
-                        check(width(plan.mid) <= plan.midWeight + 0.5f) {
-                            "${plan.mid} is ${width(plan.mid)}dp in a ${plan.midWeight}dp column at ${screen}dp"
-                        }
-                        check(width("Off-peak") <= plan.offWeight + 0.5f)
-                        check(width("Peak") <= plan.peakWeight + 0.5f)
-                        "${screen.toInt()}:${plan.mid}"
+                        plan.labels.forEach { fits(it, plan.labelWidth, body, "label") }
+                        fits(plan.offHeader, plan.offWidth, header, "off header")
+                        fits(plan.midHeader, plan.midWidth, header, "mid header")
+                        fits(plan.peakHeader, plan.peakWidth, header, "peak header")
+                        plan.offValues.forEach { fits(it, plan.offWidth, body, "off") }
+                        plan.midValues.forEach { fits(it, plan.midWidth, body, "mid") }
+                        plan.peakValues.forEach { fits(it, plan.peakWidth, body, "peak") }
+                        plan
                     })
                 }
             }
         }
         rule.waitForIdle()
-        assertEquals(listOf("360:Mid-peak", "411:Mid-peak"), found.get())
+        assertEquals(2, found.get().size)
     }
 }

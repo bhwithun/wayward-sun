@@ -836,6 +836,8 @@ private fun HouseSummaryRow(summary: HouseSummary?) {
     }
 }
 
+private val DateRowHeight = 48.dp
+
 @Composable
 private fun ChartHeading(
     title: String,
@@ -843,20 +845,26 @@ private fun ChartHeading(
     showToday: Boolean,
     onToday: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(DateRowHeight),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
             text = title,
-            modifier = Modifier.weight(1f).alignByBaseline(),
+            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.titleMedium,
-            color = SolColors.Ink
+            color = SolColors.Ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         if (showToday) {
-            TodayButton(onClick = onToday, modifier = Modifier.alignByBaseline())
+            TodayButton(onClick = onToday)
         }
         LegendButton(
             open = controls.legendOpen,
-            onClick = controls.onToggleLegend,
-            modifier = Modifier.alignByBaseline()
+            onClick = controls.onToggleLegend
         )
     }
 }
@@ -985,8 +993,7 @@ private fun ExpandedChart(
                     text = title,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(start = 4.dp)
-                        .alignByBaseline(),
+                        .padding(start = 4.dp),
                     color = SolColors.Ink,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
@@ -994,7 +1001,7 @@ private fun ExpandedChart(
                     overflow = TextOverflow.Ellipsis
                 )
                 if (showToday) {
-                    TodayButton(onClick = onToday, modifier = Modifier.alignByBaseline())
+                    TodayButton(onClick = onToday)
                 }
                 if (showDots && pages.size in 2..6) {
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1013,7 +1020,7 @@ private fun ExpandedChart(
                     open = controls.legendOpen,
                     onClick = controls.onToggleLegend,
                     compact = true,
-                    modifier = Modifier.padding(start = 8.dp).alignByBaseline()
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
             Box(
@@ -1884,89 +1891,59 @@ private fun RateTable(type: MetaType, expanded: Boolean, onDrawer: Boolean = fal
     val measurer = rememberTextMeasurer()
     val density = androidx.compose.ui.platform.LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-    val plan = rateHeaderPlan(maxWidth.value) { sample ->
-        with(density) {
-            measurer.measure(AnnotatedString(sample), style = headerStyle).size.width.toDp().value
+        fun widthOf(text: String, style: TextStyle) = with(density) {
+            measurer.measure(AnnotatedString(text), style = style).size.width.toDp().value
         }
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(even),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
-        RateTableRow(
-            label = "",
-            off = "Off-peak",
-            mid = plan.mid,
-            peak = "Peak",
-            labelWeight = plan.labelWeight,
-            offWeight = plan.offWeight,
-            midWeight = plan.midWeight,
-            peakWeight = plan.peakWeight,
-            singleLine = true,
-            labelColor = SolColors.Muted,
-            offColor = SolColors.Live.copy(alpha = 0.75f),
-            midColor = SolColors.Forecast.copy(alpha = 0.85f),
-            peakColor = SolColors.TouPeak.copy(alpha = 1f),
-            textStyle = headerStyle,
-            rowColor = stripe,
-            verticalPadding = rowPad
+        val plan = rateTablePlan(
+            maxWidth.value,
+            headerWidth = { widthOf(it, headerStyle) },
+            bodyWidth = { widthOf(it, cellStyle) }
         )
-        RateTableRow(
-            label = "Import base",
-            off = Formatters.cents(DteTou.BASE_OFF_PEAK_CENTS),
-            mid = Formatters.cents(DteTou.BASE_MID_PEAK_CENTS),
-            peak = Formatters.cents(DteTou.BASE_PEAK_CENTS),
-            labelWeight = plan.labelWeight,
-            offWeight = plan.offWeight,
-            midWeight = plan.midWeight,
-            peakWeight = plan.peakWeight,
-            textStyle = cellStyle,
-            rowColor = even,
-            verticalPadding = rowPad
-        )
-        RateTableRow(
-            label = "Import effective",
-            off = Formatters.cents(DteTou.OFF_PEAK_CENTS),
-            mid = Formatters.cents(DteTou.MID_PEAK_CENTS),
-            peak = Formatters.cents(DteTou.PEAK_CENTS),
-            labelWeight = plan.labelWeight,
-            offWeight = plan.offWeight,
-            midWeight = plan.midWeight,
-            peakWeight = plan.peakWeight,
-            textStyle = cellStyle,
-            rowColor = stripe,
-            verticalPadding = rowPad
-        )
-        RateTableRow(
-            label = "Export (R18)",
-            off = Formatters.cents(DteTou.OUTFLOW_OFF_PEAK_CENTS),
-            mid = Formatters.cents(DteTou.OUTFLOW_MID_PEAK_CENTS),
-            peak = Formatters.cents(DteTou.OUTFLOW_PEAK_CENTS),
-            labelWeight = plan.labelWeight,
-            offWeight = plan.offWeight,
-            midWeight = plan.midWeight,
-            peakWeight = plan.peakWeight,
-            textStyle = cellStyle,
-            rowColor = even,
-            verticalPadding = rowPad
-        )
-        RateTableRow(
-            label = "Export + PSCR",
-            off = Formatters.cents(DteTou.OUTFLOW_OFF_PEAK_WITH_PSCR_CENTS),
-            mid = Formatters.cents(DteTou.OUTFLOW_MID_PEAK_WITH_PSCR_CENTS),
-            peak = Formatters.cents(DteTou.OUTFLOW_PEAK_WITH_PSCR_CENTS),
-            labelWeight = plan.labelWeight,
-            offWeight = plan.offWeight,
-            midWeight = plan.midWeight,
-            peakWeight = plan.peakWeight,
-            textStyle = cellStyle,
-            rowColor = stripe,
-            verticalPadding = rowPad
-        )
-    }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(even),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            plan.unitNote?.let { note ->
+                Text(
+                    text = note,
+                    color = SolColors.Muted,
+                    style = type.caption,
+                    modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 2.dp)
+                )
+            }
+            val gap = plan.gap.dp
+            RateTableRow(
+                label = "",
+                off = plan.offHeader,
+                mid = plan.midHeader,
+                peak = plan.peakHeader,
+                widths = plan,
+                gap = gap,
+                labelColor = SolColors.Muted,
+                offColor = SolColors.Live.copy(alpha = 0.75f),
+                midColor = SolColors.Forecast.copy(alpha = 0.85f),
+                peakColor = SolColors.TouPeak.copy(alpha = 1f),
+                textStyle = headerStyle,
+                rowColor = stripe,
+                verticalPadding = rowPad
+            )
+            plan.labels.forEachIndexed { index, label ->
+                RateTableRow(
+                    label = label,
+                    off = plan.offValues[index],
+                    mid = plan.midValues[index],
+                    peak = plan.peakValues[index],
+                    widths = plan,
+                    gap = gap,
+                    textStyle = cellStyle,
+                    rowColor = if (index % 2 == 0) even else stripe,
+                    verticalPadding = rowPad
+                )
+            }
+        }
     }
 }
 
@@ -1976,49 +1953,45 @@ private fun RateTableRow(
     off: String,
     mid: String,
     peak: String,
-    labelWeight: Float,
-    offWeight: Float,
-    midWeight: Float,
-    peakWeight: Float,
+    widths: RateTablePlan,
+    gap: Dp,
     labelColor: Color = SolColors.Muted,
     offColor: Color = SolColors.Ink,
     midColor: Color = SolColors.Ink,
     peakColor: Color = SolColors.Ink,
     textStyle: TextStyle,
     rowColor: Color,
-    verticalPadding: Dp,
-    singleLine: Boolean = false
+    verticalPadding: Dp
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(rowColor)
             .padding(horizontal = 8.dp, vertical = verticalPadding),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(gap)
     ) {
-        RateCell(label, labelColor, textStyle, labelWeight, singleLine = false)
-        RateCell(off, offColor, textStyle, offWeight, singleLine)
-        RateCell(mid, midColor, textStyle, midWeight, singleLine)
-        RateCell(peak, peakColor, textStyle, peakWeight, singleLine)
+        RateCell(label, labelColor, textStyle, widths.labelWidth)
+        RateCell(off, offColor, textStyle, widths.offWidth)
+        RateCell(mid, midColor, textStyle, widths.midWidth)
+        RateCell(peak, peakColor, textStyle, widths.peakWidth)
     }
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.RateCell(
+private fun RateCell(
     text: String,
     color: Color,
     textStyle: TextStyle,
-    weight: Float,
-    singleLine: Boolean
+    widthDp: Float
 ) {
     Text(
         text = text,
         color = color,
         style = textStyle,
-        modifier = Modifier.weight(weight.coerceAtLeast(0.01f)),
-        maxLines = if (singleLine) 1 else 2,
-        softWrap = !singleLine,
-        overflow = if (singleLine) TextOverflow.Clip else TextOverflow.Clip
+        modifier = Modifier.width(widthDp.dp),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip
     )
 }
 
