@@ -105,17 +105,17 @@ internal fun TodayButton(
         fontWeight = FontWeight.Medium,
         maxLines = 1,
         modifier = modifier
-            .expandTapTarget()
             .testTag("today-button")
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(bounded = false),
                 onClick = onClick
             )
-            .clearAndSetSemantics {
+            .semantics {
                 role = Role.Button
                 contentDescription = "Show today"
             }
+            .expandTapTarget()
             .padding(horizontal = 2.dp)
     )
 }

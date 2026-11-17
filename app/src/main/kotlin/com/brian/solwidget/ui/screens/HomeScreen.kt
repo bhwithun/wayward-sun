@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -838,6 +839,9 @@ private fun HouseSummaryRow(summary: HouseSummary?) {
 
 private val DateRowHeight = 48.dp
 
+/** Gap between a long date and the centered Today touch target. */
+private val TodayTitleGap = 8.dp
+
 @Composable
 private fun ChartHeading(
     title: String,
@@ -845,27 +849,77 @@ private fun ChartHeading(
     showToday: Boolean,
     onToday: () -> Unit
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(DateRowHeight),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleMedium,
-            color = SolColors.Ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        if (showToday) {
-            TodayButton(onClick = onToday)
+    DateTitleRow(
+        title = title,
+        titleStyle = MaterialTheme.typography.titleMedium,
+        showToday = showToday,
+        onToday = onToday,
+        trailing = {
+            LegendButton(
+                open = controls.legendOpen,
+                onClick = controls.onToggleLegend
+            )
         }
-        LegendButton(
-            open = controls.legendOpen,
-            onClick = controls.onToggleLegend
-        )
+    )
+}
+
+/**
+ * Date on the left, Legend on the right, and Today centered on the full row.
+ * The row is always [DateRowHeight]. A long title stops [TodayTitleGap] before
+ * the Today touch target so the two do not draw on top of each other.
+ */
+@Composable
+internal fun DateTitleRow(
+    title: String,
+    titleStyle: TextStyle,
+    showToday: Boolean,
+    onToday: () -> Unit,
+    leading: (@Composable () -> Unit)? = null,
+    leadingWidth: Dp = 0.dp,
+    titleStart: Dp = 0.dp,
+    modifier: Modifier = Modifier,
+    trailing: @Composable () -> Unit
+) {
+    BoxWithConstraints(
+        modifier
+            .fillMaxWidth()
+            .height(DateRowHeight)
+            .testTag("date-row")
+    ) {
+        val titleMax = (maxWidth / 2 - DateRowHeight / 2 - TodayTitleGap - leadingWidth - titleStart)
+            .coerceAtLeast(0.dp)
+        Row(
+            Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (leading != null) leading()
+            Box(
+                Modifier
+                    .weight(1f)
+                    .padding(start = titleStart)
+            ) {
+                Text(
+                    text = title,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .then(
+                            if (showToday) Modifier.widthIn(max = titleMax) else Modifier.fillMaxWidth()
+                        )
+                        .testTag("date-title"),
+                    style = titleStyle,
+                    color = SolColors.Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            trailing()
+        }
+        if (showToday) {
+            TodayButton(
+                onClick = onToday,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
     }
 }
 
@@ -981,48 +1035,42 @@ private fun ExpandedChart(
             .padding(fullscreenSafePadding())
     ) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(FullscreenHeaderHeight)
-                    .padding(end = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.size(FullscreenLayersButtonSize))
-                Text(
-                    text = title,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 4.dp),
-                    color = SolColors.Ink,
+            DateTitleRow(
+                title = title,
+                titleStyle = TextStyle(
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (showToday) {
-                    TodayButton(onClick = onToday)
-                }
-                if (showDots && pages.size in 2..6) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        repeat(pages.size) { index ->
-                            val selected = index == pagerState.currentPage
-                            Box(
-                                Modifier
-                                    .size(if (selected) 7.dp else 5.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = if (selected) 0.9f else 0.35f))
-                            )
+                    fontWeight = FontWeight.Medium
+                ),
+                showToday = showToday,
+                onToday = onToday,
+                leading = { Box(Modifier.size(FullscreenLayersButtonSize)) },
+                leadingWidth = FullscreenLayersButtonSize,
+                titleStart = 4.dp,
+                trailing = {
+                    if (showDots && pages.size in 2..6) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            repeat(pages.size) { index ->
+                                val selected = index == pagerState.currentPage
+                                Box(
+                                    Modifier
+                                        .size(if (selected) 7.dp else 5.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = if (selected) 0.9f else 0.35f))
+                                )
+                            }
                         }
                     }
+                    LegendButton(
+                        open = controls.legendOpen,
+                        onClick = controls.onToggleLegend,
+                        compact = true,
+                        modifier = Modifier.padding(start = 8.dp, end = 8.dp)
+                    )
                 }
-                LegendButton(
-                    open = controls.legendOpen,
-                    onClick = controls.onToggleLegend,
-                    compact = true,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-            }
+            )
             Box(
                 Modifier
                     .weight(1f)
