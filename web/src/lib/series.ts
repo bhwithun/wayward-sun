@@ -62,6 +62,35 @@ export type DayTotal = {
   forecastKwh: number;
 };
 
+/**
+ * Energy drawn under a day column. Past forecast is left off because the live
+ * point already covers that half-hour. A live point after now is not counted.
+ * Returns null when the day has no solar point in (midnight, next].
+ */
+export function columnKwh(points: SeriesPoint[], midnight: number, next: number, now: number): number | null {
+  let kwh = 0;
+  let saw = false;
+  for (const point of points) {
+    if (point.kind !== "live" && point.kind !== "forecast") continue;
+    if (point.t <= midnight || point.t > next) continue;
+    if (point.kind === "forecast" && point.t <= now) continue;
+    if (point.kind === "live" && point.t > now) continue;
+    kwh += point.kw * point.hours;
+    saw = true;
+  }
+  return saw ? kwh : null;
+}
+
+export function hasColumnKwh(points: SeriesPoint[], from: number, to: number, now: number): boolean {
+  const day = 24 * 60 * 60 * 1000;
+  for (let midnight = from; midnight < to; midnight += day) {
+    const noon = midnight + 12 * 60 * 60 * 1000;
+    if (noon < from || noon >= to) continue;
+    if (columnKwh(points, midnight, midnight + day, now) != null) return true;
+  }
+  return false;
+}
+
 export function dayTotals(points: SeriesPoint[], nowMs: number): DayTotal[] {
   const groups = new Map<string, DayTotal>();
   for (const point of points) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayTotals, forecastStrokes, seriesFromHistory } from "./series";
+import { columnKwh, dayTotals, forecastStrokes, hasColumnKwh, seriesFromHistory } from "./series";
 
 const now = Date.parse("2026-10-02T20:00:00.000Z");
 
@@ -31,6 +31,28 @@ describe("seriesFromHistory", () => {
     expect(day.kwh).toBeCloseTo(1.6);
     expect(day.liveKwh).toBeCloseTo(1.6);
     expect(day.forecastKwh).toBeCloseTo(1.25);
+  });
+});
+
+describe("columnKwh", () => {
+  const midnight = Date.parse("2026-11-20T05:00:00.000Z");
+  const next = Date.parse("2026-11-21T05:00:00.000Z");
+
+  it("matches the week column: measured past plus forecast still ahead", () => {
+    const points = seriesFromHistory(
+      [
+        { periodEnd: "2026-11-20T17:00:00.000Z", actualKw: 4, forecastKw: 5, periodHours: 0.5 },
+        { periodEnd: "2026-11-20T23:00:00.000Z", actualKw: null, forecastKw: 1, periodHours: 0.5 },
+      ],
+      Date.parse("2026-11-20T18:00:00.000Z")
+    );
+    expect(columnKwh(points, midnight, next, Date.parse("2026-11-20T18:00:00.000Z"))).toBeCloseTo(2.5);
+    expect(hasColumnKwh(points, midnight, next, Date.parse("2026-11-20T18:00:00.000Z"))).toBe(true);
+  });
+
+  it("is empty when the day has no solar point", () => {
+    expect(columnKwh([], midnight, next, midnight)).toBeNull();
+    expect(hasColumnKwh([], midnight, next, midnight)).toBe(false);
   });
 });
 

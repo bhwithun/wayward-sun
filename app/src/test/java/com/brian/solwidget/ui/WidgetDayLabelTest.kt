@@ -1,8 +1,10 @@
 package com.brian.solwidget.ui
 
+import com.brian.solwidget.data.DayTotals
 import com.brian.solwidget.ui.components.WidgetDayColumn
 import com.brian.solwidget.ui.components.chartDomainMillis
 import com.brian.solwidget.ui.components.croppedWidgetRange
+import com.brian.solwidget.ui.components.dayKwhOnHourAxis
 import com.brian.solwidget.ui.components.daysWithNoonInRange
 import com.brian.solwidget.ui.components.planWidgetDayLabels
 import com.brian.solwidget.ui.components.widgetRateWash
@@ -10,6 +12,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WidgetDayLabelTest {
@@ -73,5 +77,17 @@ class WidgetDayLabelTest {
         assertEquals(0.35f, on.edgeAlpha / 255f, 0.01f)
         assertEquals(0x33, off.fillAlpha)
         assertEquals(0x8C, off.edgeAlpha)
+    }
+
+    @Test
+    fun oneDayAxisStillKeepsACompleteSolcastDayTotal() {
+        val zone = ZoneId.of("America/Detroit")
+        val day = LocalDate.of(2026, 11, 20)
+        val from = day.atStartOfDay(zone).toInstant()
+        val to = day.plusDays(1).atStartOfDay(zone).toInstant()
+        val complete = DayTotals(day, 30.2, 5.0, 20.0, 10.2, complete = true)
+        assertTrue(dayKwhOnHourAxis(mapOf(day to complete), from, to, zone))
+        assertFalse(dayKwhOnHourAxis(mapOf(day to complete.copy(complete = false)), from, to, zone))
+        assertFalse(dayKwhOnHourAxis(emptyMap(), from, to, zone))
     }
 }

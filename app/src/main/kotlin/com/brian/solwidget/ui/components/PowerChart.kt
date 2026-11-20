@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import com.brian.solwidget.data.ChartLayers
+import com.brian.solwidget.data.DayTotals
 import com.brian.solwidget.data.DayTempRange
 import com.brian.solwidget.data.DteTou
 import com.brian.solwidget.data.EcobeeBand
@@ -79,6 +80,26 @@ private const val TOO_COOL_ALPHA = 0.50f
 private const val FREEZE_F = 32.0
 private const val WIDGET_DAY_LABEL_FULL = 40f
 private const val WIDGET_DAY_LABEL_MIN = 18f
+
+/** Lifts hour labels so the day kWh keeps the same baseline as the week columns. */
+private const val HOUR_AXIS_KWH_LIFT = 36f
+
+/** A one-day range still labels a complete day total, same as the week columns. */
+internal fun dayKwhOnHourAxis(
+    totals: Map<LocalDate, DayTotals>,
+    from: Instant?,
+    to: Instant?,
+    zone: ZoneId
+): Boolean {
+    if (from == null || to == null || !to.isAfter(from)) return false
+    var day = from.atZone(zone).toLocalDate()
+    val last = to.minusMillis(1).atZone(zone).toLocalDate()
+    while (!day.isAfter(last)) {
+        if (totals[day]?.complete == true) return true
+        day = day.plusDays(1)
+    }
+    return false
+}
 
 internal data class WidgetRateWash(val fillAlpha: Int, val edgeAlpha: Int)
 
@@ -246,8 +267,15 @@ fun PowerChart(
         val laneGap = if (layers.hvac) 4.dp.toPx() else 0f
         val hourAxis = rangeFrom != null && rangeTo != null &&
             Duration.between(rangeFrom, rangeTo).toHours() in 20..30
+        val dayTotals = if (layers.power) {
+            SolarDayLabels.summaries(points, zone).associateBy { it.date }
+        } else {
+            emptyMap()
+        }
+        val showHourKwh = hourAxis && dayKwhOnHourAxis(dayTotals, rangeFrom, rangeTo, zone)
         val top = 28.dp.toPx() + laneHeight + laneGap
         val bottom = size.height - when {
+            hourAxis && showHourKwh -> HOUR_AXIS_KWH_LIFT + 28f
             hourAxis -> 22.dp.toPx()
             layers.power || units == AxisUnits.SOLAR -> 28.dp.toPx()
             else -> 12.dp.toPx()
@@ -282,7 +310,7 @@ fun PowerChart(
             textAlign = android.graphics.Paint.Align.CENTER
         }
         val kwhPaint = android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#E8EEF7")
+            color = android.graphics.Color.parseColor("#F5C542")
             textSize = 26f
             isAntiAlias = true
             textAlign = android.graphics.Paint.Align.CENTER
@@ -429,11 +457,6 @@ fun PowerChart(
             )
         }
 
-        val dayTotals = if (layers.power) {
-            SolarDayLabels.summaries(points, zone).associateBy { it.date }
-        } else {
-            emptyMap()
-        }
         val firstDay = Instant.ofEpochMilli(minTime.toLong()).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(maxTime.toLong()).minusSeconds(1).atZone(zone).toLocalDate()
         var day = firstDay
@@ -451,8 +474,10 @@ fun PowerChart(
             }
             val label = DayLabel.format(day.atStartOfDay(zone))
             val labelX = xOf(noon)
-            if (labelX in left..right && !hourAxis) {
-                native.drawText(label, labelX, dayBaseline, gridPaint)
+            if (labelX in left..right) {
+                if (!hourAxis) {
+                    native.drawText(label, labelX, dayBaseline, gridPaint)
+                }
                 if (layers.power) {
                     val totals = dayTotals[day]
                     if (totals?.complete == true) {
@@ -468,7 +493,8 @@ fun PowerChart(
             day = day.plusDays(1)
         }
         if (hourAxis) {
-            drawHourAxis(native, rangeFrom, rangeTo, zone, ::xOf, left, right, top, bottom, size.height)
+            val hourLabelY = if (showHourKwh) size.height - 6f - HOUR_AXIS_KWH_LIFT else size.height - 8f
+            drawHourAxis(native, rangeFrom, rangeTo, zone, ::xOf, left, right, top, bottom, hourLabelY)
         }
 
         if (isDemo) {
@@ -511,7 +537,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHourAxis(
     right: Float,
     top: Float,
     bottom: Float,
-    height: Float
+    labelY: Float
 ) {
     val paint = Paint().apply {
         color = android.graphics.Color.parseColor("#E8EEF7")
@@ -528,7 +554,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHourAxis(
             if (x in left..right) {
                 drawLine(SolColors.Grid, Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
                 if (x > left + 28f && x < right - 28f) {
-                    canvas.drawText(hourClock(hour), x, height - 8f, paint)
+                    canvas.drawText(hourClock(hour), x, labelY, paint)
                 }
             }
         }
@@ -1111,7 +1137,7 @@ object ChartBitmapRenderer {
             textAlign = Paint.Align.CENTER
         }
         val kwhPaint = Paint().apply {
-            color = 0xFFE8EEF7.toInt()
+            color = 0xFFF5C542.toInt()
             textSize = labelPlan.textSize
             isAntiAlias = true
             textAlign = Paint.Align.CENTER

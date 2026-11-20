@@ -20,7 +20,7 @@ import {
   houseStepRuns,
   type HouseSample,
 } from "@/lib/house";
-import { FORECAST_GAP_MS, forecastStrokes, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
+import { columnKwh, FORECAST_GAP_MS, forecastStrokes, hasColumnKwh, isNight, type SeriesPoint, type SunSpan } from "@/lib/series";
 import { detroitParts } from "@/lib/time";
 
 const LIVE = "#2EE6A6";
@@ -115,8 +115,9 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   const showDegrees = props.layers.temp || props.layers.ecobee;
   const oneDay = props.to - props.from > 0 && props.to - props.from <= 26 * 60 * 60 * 1000;
   const weekColumns = !oneDay && props.to - props.from <= 10 * 24 * 60 * 60 * 1000;
+  const oneDayKwh = oneDay && (props.layers.solcast || props.layers.enphase) && hasColumnKwh(props.points, props.from, props.to, props.now);
   const top = (showDegrees ? 28 : 16) + (weekColumns ? 20 : 0);
-  const bottom = plotHeight - (oneDay || showSolarScale || weekColumns ? 36 : 28);
+  const bottom = plotHeight - ((oneDay || showSolarScale || weekColumns ? 36 : 28) + (oneDayKwh ? 18 : 0));
   const plotW = Math.max(1, right - left);
   const plotH = Math.max(1, bottom - top);
   const span = Math.max(1, props.to - props.from);
@@ -246,9 +247,12 @@ function paint(canvas: HTMLCanvasElement, props: Props) {
   }
 
   if (oneDay) {
-    drawHourAxis(ctx, props.from, props.to, xOf, left, right, top, bottom, height);
+    drawHourAxis(ctx, props.from, props.to, xOf, left, right, top, bottom, oneDayKwh ? bottom + 14 : height - 8);
+    if (oneDayKwh) {
+      drawDayColumns(ctx, props.from, props.to, xOf, left, right, laneTop, props.points, props.now, height, width, false);
+    }
   } else if (weekColumns) {
-    drawDayColumns(ctx, props.from, props.to, xOf, left, right, laneTop, props.points, props.now, height, width);
+    drawDayColumns(ctx, props.from, props.to, xOf, left, right, laneTop, props.points, props.now, height, width, true);
   }
 
   if (props.now >= props.from && props.now < props.to) {
@@ -274,7 +278,8 @@ function drawDayColumns(
   points: SeriesPoint[],
   now: number,
   height: number,
-  chartWidth: number
+  chartWidth: number,
+  dayNames: boolean
 ) {
   ctx.save();
   ctx.fillStyle = INK;
@@ -288,25 +293,21 @@ function drawDayColumns(
     if (noon < from || noon >= to) continue;
     const x = xOf(noon);
     if (x <= left + 8 || x >= right - 8) continue;
-    const parts = detroitParts(new Date(noon));
-    ctx.fillText(`${parts.weekday} ${parts.day}`, x, labelY);
-    const next = midnight + 24 * 60 * 60 * 1000;
-    let kwh = 0;
-    let saw = false;
-    for (const point of points) {
-      if (point.kind !== "live" && point.kind !== "forecast") continue;
-      if (point.t <= midnight || point.t > next) continue;
-      if (point.kind === "forecast" && point.t <= now) continue;
-      if (point.kind === "live" && point.t > now) continue;
-      kwh += point.kw * point.hours;
-      saw = true;
+    if (dayNames) {
+      ctx.fillStyle = INK;
+      const parts = detroitParts(new Date(noon));
+      ctx.fillText(`${parts.weekday} ${parts.day}`, x, labelY);
     }
-    if (saw) {
+    const next = midnight + 24 * 60 * 60 * 1000;
+    const kwh = columnKwh(points, midnight, next, now);
+    if (kwh != null) {
       anyEnergy = true;
+      ctx.fillStyle = FORECAST;
       ctx.fillText(`${Math.round(kwh)}`, x, kwhY);
     }
   }
   if (anyEnergy && chartWidth >= 400) {
+    ctx.fillStyle = FORECAST;
     ctx.textAlign = "left";
     ctx.fillText("kWh", 4, kwhY);
   }
@@ -329,7 +330,7 @@ function drawHourAxis(
   right: number,
   top: number,
   bottom: number,
-  height: number
+  labelY: number
 ) {
   ctx.save();
   ctx.strokeStyle = GRID;
@@ -347,7 +348,7 @@ function drawHourAxis(
     ctx.moveTo(x, top);
     ctx.lineTo(x, bottom);
     ctx.stroke();
-    if (x > left + 22 && x < right - 22) ctx.fillText(hourClock(hour), x, height - 8);
+    if (x > left + 22 && x < right - 22) ctx.fillText(hourClock(hour), x, labelY);
   }
   ctx.restore();
 }
