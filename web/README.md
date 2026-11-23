@@ -6,7 +6,8 @@ Next.js app on Vercel. It is the only Solcast client. Neon stores the latest sna
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/` | Dashboard |
+| GET | `/` | Dashboard. Opens on History. |
+| GET | `/live` | Redirects to `/`. The Live tab is gone. |
 | GET | `/health` | `{ ok, runtime, deployed }` |
 | GET | `/cache` | JSON snapshot for the Android app. Does not call Solcast. |
 | GET | `/history?from=&to=` | Stored half-hour rows, Ecobee samples when `ecobee_samples` exists, and house energy when `house_energy` / `house_energy_day` exist. `from` and `to` are ISO instants or `YYYY-MM-DD` (Detroit midnight). Max 366 days. |

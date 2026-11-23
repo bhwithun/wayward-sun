@@ -1,6 +1,6 @@
 {
   "name": "wayward-sun",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "private": true,
   "description": "Vercel app that is the only Solcast client, plus the household dashboard.",
   "scripts": {

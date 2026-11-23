@@ -33,8 +33,6 @@ import { dayTotals, seriesFromHistory, type SeriesPoint, type SunSpan } from "@/
 import {
   addDays,
   detroitParts,
-  livePeriod,
-  liveWindow,
   monthWeeks,
   parseYmd,
   periodRange,
@@ -83,13 +81,7 @@ function readLayers(): ChartLayers {
 }
 
 type CacheBody = {
-  resourceId?: string;
-  fetchedAt?: string | null;
   source?: string;
-  requestsDay?: string;
-  requestsUsed?: number;
-  autoFetchesUsed?: number;
-  actualsFetchesUsed?: number;
   message?: string | null;
   error?: string;
 };
@@ -129,7 +121,6 @@ type HistoryBody = {
   error?: string;
 };
 
-type Tab = "live" | "history";
 type HistoryFocus = "week" | "day";
 
 const RATES: Array<[string, string, string, string]> = [
@@ -150,10 +141,9 @@ const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-export function Dashboard() {
+export function Dashboard({ version }: { version: string }) {
   const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
   const [layersReady, setLayersReady] = useState(false);
-  const [tab, setTab] = useState<Tab>("live");
   const [legendOpen, setLegendOpen] = useState(false);
   const legendRow = useRef<HTMLDivElement>(null);
   const [focus, setFocus] = useState<HistoryFocus>("week");
@@ -198,18 +188,12 @@ export function Dashboard() {
   }, [dayId, month, todayParts]);
 
   const range = useMemo(() => {
-    const today = parseYmd(todayKey);
-    if (!today) return null;
-    if (tab === "live") {
-      const window = liveWindow(today);
-      return span(window.from, window.to);
-    }
     if (weeks.length === 0) return null;
     const start = parseYmd(weeks[0].id);
     const endSunday = parseYmd(weeks[weeks.length - 1].id);
     if (!start || !endSunday) return null;
     return span(start, addDays(endSunday, 7));
-  }, [tab, todayKey, weeks]);
+  }, [weeks]);
 
   const load = useCallback(async () => {
     if (!range) {
@@ -251,17 +235,14 @@ export function Dashboard() {
   }, [legendOpen]);
 
   const chartFocus =
-    tab === "history" && focus === "week" && selectedWeek
+    focus === "week" && selectedWeek
       ? { from: parseYmd(selectedWeek.id) ?? selectedDay, days: 7 }
-      : tab === "history"
-        ? { from: selectedDay, days: 1 }
-        : null;
-  const chart = chartModel(history, clock, chartFocus, todayParts);
+      : { from: selectedDay, days: 1 };
+  const chart = chartModel(history, clock, chartFocus);
   const runtime = hvacPresence(chart.ecobee, chart.fromMs, chart.toMs, clock);
   const solarVisible = layers.solcast || layers.enphase;
   const houseAvailable = houseChipVisible(chart.house, chart.houseDays, chart.fromMs, chart.toMs);
   const housePeak = houseHalfHourPeak(chart.house, chart.fromMs, chart.toMs);
-  const siteName = solarDisplayName(cache?.resourceId);
   const house = layers.house
     ? houseSummary(chart.house, chart.houseDays, chart.fromMs, chart.toMs, clock, solarVisible)
     : null;
@@ -269,17 +250,9 @@ export function Dashboard() {
 
   return (
     <main>
-      <h1>Wayward Sun</h1>
-      <div className="tabs" role="tablist" data-tab={tab}>
-        <button type="button" role="tab" aria-selected={tab === "live"} onClick={() => setTab("live")}>
-          Live
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
-          History
-        </button>
-        <span className="tab-indicator" aria-hidden="true">
-          <i />
-        </span>
+      <div className="title-row">
+        <h1>Wayward Sun</h1>
+        <span className="version">{version}</span>
       </div>
       <p className="muted">
         Shared Solcast cache on Vercel. Phones download <code>GET /cache</code>. Solcast itself runs only on the Detroit schedule.
@@ -304,9 +277,7 @@ export function Dashboard() {
       <section className="panel chart-wrap">
         <div className="period-row" ref={legendRow}>
           <p className="period">
-            {tab === "history" && selectedWeek
-              ? historyPeriod(focus, selectedWeek.id, selectedDay)
-              : livePeriod(todayParts)}
+            {selectedWeek ? historyPeriod(focus, selectedWeek.id, selectedDay) : ""}
           </p>
           <button
             type="button"
@@ -407,8 +378,7 @@ export function Dashboard() {
         {chart.empty && <p className="muted">No stored intervals in this range yet.</p>}
       </section>
 
-      {tab === "history" && (
-        <section className="panel calendar">
+      <section className="panel calendar">
           <div className="cal-nav">
             <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month.year, month.month, -1))}>
               ‹
@@ -484,8 +454,7 @@ export function Dashboard() {
             );
           })}
           </div>
-        </section>
-      )}
+      </section>
 
       {chart.totals.length > 0 && (
         <div className="totals">
@@ -501,66 +470,40 @@ export function Dashboard() {
         </div>
       )}
 
-      {tab === "live" && (
-        <>
-          <div className="grid">
-            <section className="panel">
-              <h2>Snapshot</h2>
-              <div className="stat">{cache?.source || "—"}</div>
-              <p className="muted">as of {cache?.fetchedAt ? new Date(cache.fetchedAt).toLocaleString() : "never"}</p>
-              {siteName && <p className="muted">{siteName}</p>}
-            </section>
-            <section className="panel">
-              <h2>Quota (UTC day {cache?.requestsDay || "—"})</h2>
-              <div className="stat">{cache?.requestsUsed ?? 0} / 10 requests</div>
-              <p className="muted">{cache?.autoFetchesUsed ?? 0} / 8 forecasts · {cache?.actualsFetchesUsed ?? 0} / 2 actuals</p>
-              <p className="muted">Forecasts at 6:00am, 8:30am, 11:00am, 1:30pm, 4:00pm, 6:30pm, 9:00pm, and 11:30pm Detroit. Actuals at 6:00am and 6:30pm.</p>
-            </section>
-          </div>
-
-          <section className="panel rates">
-            <h2>Rates</h2>
-            <p>{PLAN_CODE} · {PLAN_NAME} · {RIDER}</p>
-            <table>
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Off-peak</th>
-                  <th>Mid-peak</th>
-                  <th>Peak</th>
-                </tr>
-              </thead>
-              <tbody>
-                {RATES.map(([label, off, mid, peak]) => (
-                  <tr key={label}>
-                    <td>{label}</td>
-                    <td>{off}</td>
-                    <td>{mid}</td>
-                    <td>{peak}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="muted">Rates as of {RATES_AS_OF}. Import effective includes PSCR and volumetric surcharges. Excludes the $8.50 service charge and sales tax.</p>
-            <p className="muted">
-              Export is Rider 18 outflow (power supply only, before then plus PSCR {cents(PSCR_CENTS)}). Not 1:1 retail net metering. DTE rate book Sheet D-115, Case U-21860.
-            </p>
-          </section>
-        </>
-      )}
+      <section className="panel rates">
+        <h2>Rates</h2>
+        <p>{PLAN_CODE} · {PLAN_NAME} · {RIDER}</p>
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Off-peak</th>
+              <th>Mid-peak</th>
+              <th>Peak</th>
+            </tr>
+          </thead>
+          <tbody>
+            {RATES.map(([label, off, mid, peak]) => (
+              <tr key={label}>
+                <td>{label}</td>
+                <td>{off}</td>
+                <td>{mid}</td>
+                <td>{peak}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted">Rates as of {RATES_AS_OF}. Import effective includes PSCR and volumetric surcharges. Excludes the $8.50 service charge and sales tax.</p>
+        <p className="muted">
+          Export is Rider 18 outflow (power supply only, before then plus PSCR {cents(PSCR_CENTS)}). Not 1:1 retail net metering. DTE rate book Sheet D-115, Case U-21860.
+        </p>
+      </section>
     </main>
   );
 }
 
-function chartModel(
-  history: HistoryBody | null,
-  clock: number,
-  focus: { from: Ymd; days: number } | null,
-  today: Ymd
-) {
-  const bounds = focus
-    ? span(focus.from, addDays(focus.from, focus.days))
-    : span(liveWindow(today).from, liveWindow(today).to);
+function chartModel(history: HistoryBody | null, clock: number, focus: { from: Ymd; days: number }) {
+  const bounds = span(focus.from, addDays(focus.from, focus.days));
   const fromMs = Date.parse(bounds.from);
   const toMs = Date.parse(bounds.to);
   const rows = (history?.points ?? []).filter((point) => {
@@ -591,8 +534,8 @@ function chartModel(
   const sun: SunSpan[] = (history?.sun ?? [])
     .map((day) => ({ sunrise: Date.parse(day.sunrise), sunset: Date.parse(day.sunset) }))
     .filter((day) => day.sunset >= fromMs && day.sunrise < toMs);
-  const start = focus ? focus.from : liveWindow(today).from;
-  const totalDays = focus ? focus.days : 7;
+  const start = focus.from;
+  const totalDays = focus.days;
   let tooWarm = false;
   let tooCool = false;
   for (const sample of ecobee) {
@@ -610,7 +553,7 @@ function chartModel(
     toMs,
     rates: rows,
     ecobee,
-    totals: filledTotals(start ?? today, totalDays, points, clock),
+    totals: filledTotals(start, totalDays, points, clock),
     house: houseSamples(history, fromMs, toMs),
     houseDays: houseDaysOverlapping(houseDayRows(history), fromMs, toMs),
     empty: history != null && rows.length === 0 && houseSamples(history, fromMs, toMs).length === 0 && houseDaysOverlapping(houseDayRows(history), fromMs, toMs).length === 0 && !history.error,
@@ -659,13 +602,6 @@ function span(from: Ymd, to: Ymd): { from: string; to: string } {
     from: zonedTimeToUtc(from.year, from.month, from.day).toISOString(),
     to: zonedTimeToUtc(to.year, to.month, to.day).toISOString(),
   };
-}
-
-const DEFAULT_RESOURCE_ID = "84d7-8b52-33f3-bd7b";
-
-function solarDisplayName(resourceId: string | undefined): string | null {
-  if (!resourceId) return null;
-  return resourceId.toLowerCase() === DEFAULT_RESOURCE_ID ? "Enphase · Home" : null;
 }
 
 function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {

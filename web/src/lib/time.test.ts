@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { livePeriod, liveWindow, monthWeeks, periodRange, usWeekNumber, weekStart } from "./time";
+import { monthWeeks, periodRange, usWeekNumber, weekStart } from "./time";
 
 describe("weekStart", () => {
   it("returns the Sunday on or before a Thursday", () => {
@@ -56,21 +56,5 @@ describe("periodRange", () => {
     expect(periodRange({ year: 2026, month: 10, day: 30 }, { year: 2026, month: 11, day: 3 })).toBe(
       "Oct 30 – Nov 3"
     );
-  });
-});
-
-describe("livePeriod", () => {
-  it("names the inclusive live window", () => {
-    expect(livePeriod({ year: 2026, month: 11, day: 11 })).toBe("Nov 7 – 13");
-    expect(livePeriod({ year: 2026, month: 10, day: 1 })).toBe("Sep 27 – Oct 3");
-  });
-});
-
-describe("liveWindow", () => {
-  it("covers four days before today through two days after", () => {
-    expect(liveWindow({ year: 2026, month: 10, day: 1 })).toEqual({
-      from: { year: 2026, month: 9, day: 27 },
-      to: { year: 2026, month: 10, day: 4 },
-    });
   });
 });
