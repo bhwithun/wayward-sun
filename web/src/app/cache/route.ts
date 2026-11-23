@@ -11,7 +11,11 @@ export function OPTIONS() {
 
 export async function GET() {
   try {
-    return json(publicCache(await serveCache()));
+    const response = json(publicCache(await serveCache()));
+    // One Neon read per minute at most for every phone and the widget worker.
+    response.headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+    response.headers.set("Vercel-CDN-Cache-Control", "max-age=60, stale-while-revalidate=60");
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: message }, 500);

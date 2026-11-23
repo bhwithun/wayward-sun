@@ -297,8 +297,16 @@ function instantIso(value: unknown): string {
   return Number.isNaN(ms) ? String(value) : new Date(ms).toISOString();
 }
 
-export async function loadHistory(fromIso: string, toIso: string) {
-  await scrubDemoActuals(await loadState());
+export type HistoryOptions = {
+  /** Ecobee bucket size in minutes. Null or 5 or less returns the raw 5-minute rows. */
+  ecobeeBucketMinutes?: number | null;
+};
+
+/**
+ * Read-only. Demo-actual cleanup runs on `/cron` only, so a read never scans
+ * every stored actual or loads the snapshot.
+ */
+export async function loadHistory(fromIso: string, toIso: string, options: HistoryOptions = {}) {
   const points = await sql()`
     SELECT period_end, actual_kw, forecast_kw, period_hours, temp_f, precip_pct,
            rate_band, import_cents, outflow_cents
@@ -321,7 +329,10 @@ export async function loadHistory(fromIso: string, toIso: string) {
       sunrise: new Date(String(row.sunrise)).toISOString(),
       sunset: new Date(String(row.sunset)).toISOString(),
     })),
-    ecobee: await loadEcobee(fromIso, toIso),
+    ecobee:
+      options.ecobeeBucketMinutes && options.ecobeeBucketMinutes > 5
+        ? await loadEcobeeBuckets(fromIso, toIso, options.ecobeeBucketMinutes)
+        : await loadEcobee(fromIso, toIso),
     ...(await loadHouse(fromIso, toIso)),
   };
 }
@@ -443,6 +454,42 @@ export async function loadEcobee(fromIso: string, toIso: string): Promise<Ecobee
       ORDER BY sampled_at
     `;
     return (rows as Array<Record<string, unknown>>).map(mapEcobee);
+  }
+}
+
+/**
+ * Ecobee averaged in SQL so Neon sends one row per bucket. Indoor, setpoints,
+ * and outdoor are bucket means (0.1 °F). Runtime seconds are bucket sums.
+ * `t` is the bucket start. Buckets line up with UTC (and Detroit) hours.
+ */
+export async function loadEcobeeBuckets(
+  fromIso: string,
+  toIso: string,
+  minutes: number
+): Promise<EcobeeRow[]> {
+  const width = `${Math.round(minutes)} minutes`;
+  try {
+    const rows = await sql()`
+      SELECT date_bin(${width}::interval, sampled_at, TIMESTAMPTZ '2000-01-01 00:00:00+00') AS sampled_at,
+             round(avg(indoor_f)::numeric, 1) AS indoor_f,
+             round(avg(cool_set_f)::numeric, 1) AS cool_set_f,
+             round(avg(heat_set_f)::numeric, 1) AS heat_set_f,
+             sum(heat_pump_sec) AS heat_pump_sec,
+             sum(aux_heat_sec) AS aux_heat_sec,
+             sum(cool_sec) AS cool_sec,
+             sum(fan_sec) AS fan_sec,
+             round(avg(outdoor_f)::numeric, 1) AS outdoor_f
+      FROM ecobee_samples
+      WHERE sampled_at >= ${fromIso}::timestamptz
+        AND sampled_at < ${toIso}::timestamptz
+      GROUP BY 1
+      ORDER BY 1
+    `;
+    return (rows as Array<Record<string, unknown>>).map(mapEcobee);
+  } catch (error) {
+    if (isMissingEcobeeTable(error)) return [];
+    if (isMissingEcobeeRuntime(error)) return loadEcobee(fromIso, toIso);
+    throw error;
   }
 }
 
