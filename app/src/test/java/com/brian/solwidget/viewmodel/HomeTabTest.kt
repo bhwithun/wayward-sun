@@ -62,12 +62,14 @@ class HomeTabTest {
     }
 
     @Test
-    fun todayRefreshesOnTheSameThirtySecondClockLiveUsed() {
+    fun todayPollsOnlyTodayEveryFiveMinutesWhileResumed() {
         assertEquals(30_000L, HOME_CLOCK_MS)
-        assertFalse(todayClockDue(elapsedMs = 29_999L, viewingToday = true))
-        assertTrue(todayClockDue(elapsedMs = HOME_CLOCK_MS, viewingToday = true))
-        assertFalse(todayClockDue(elapsedMs = HOME_CLOCK_MS, viewingToday = false))
-        assertFalse(todayClockDue(elapsedMs = HOME_CLOCK_MS * 4, viewingToday = false))
+        assertEquals(300_000L, TODAY_POLL_MS)
+        assertFalse(todayPollDue(sinceLastMs = HOME_CLOCK_MS, viewingToday = true, foreground = true))
+        assertFalse(todayPollDue(sinceLastMs = TODAY_POLL_MS - 1, viewingToday = true, foreground = true))
+        assertTrue(todayPollDue(sinceLastMs = TODAY_POLL_MS, viewingToday = true, foreground = true))
+        assertFalse(todayPollDue(sinceLastMs = TODAY_POLL_MS * 4, viewingToday = false, foreground = true))
+        assertFalse(todayPollDue(sinceLastMs = TODAY_POLL_MS * 4, viewingToday = true, foreground = false))
     }
 
     @Test

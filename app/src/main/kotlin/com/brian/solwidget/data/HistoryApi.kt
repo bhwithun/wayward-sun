@@ -8,6 +8,17 @@ import java.time.LocalDate
 import org.json.JSONObject
 
 class HistoryApi {
+    /**
+     * One America/Detroit day. Sent as from/to, which every server version
+     * accepts, so this works before and after the web change that adds `day=`.
+     */
+    fun fetchDay(baseUrl: String, day: LocalDate): HistoryPage =
+        fetch(
+            baseUrl,
+            day.atStartOfDay(DetroitCalendar.ZONE).toInstant(),
+            day.plusDays(1).atStartOfDay(DetroitCalendar.ZONE).toInstant()
+        )
+
     fun fetch(baseUrl: String, from: Instant, to: Instant): HistoryPage {
         val fromEncoded = URLEncoder.encode(from.toString(), Charsets.UTF_8.name())
         val toEncoded = URLEncoder.encode(to.toString(), Charsets.UTF_8.name())

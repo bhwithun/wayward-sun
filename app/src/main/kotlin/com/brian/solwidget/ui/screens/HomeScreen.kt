@@ -183,6 +183,8 @@ fun HomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.setForeground(true)
+            if (event == Lifecycle.Event.ON_PAUSE) viewModel.setForeground(false)
             if (event != Lifecycle.Event.ON_START) return@LifecycleEventObserver
             val activity = context as? Activity ?: return@LifecycleEventObserver
             viewModel.reloadGasRate()

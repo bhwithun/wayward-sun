@@ -48,11 +48,16 @@ const state = vi.hoisted(() => {
     }
     throw new Error(`unexpected sql: ${text}`);
   }
-  return { box, query };
+  const seen: string[] = [];
+  return { box, query, seen };
 });
 
 vi.mock("@neondatabase/serverless", () => ({
-  neon: () => (strings: TemplateStringsArray) => state.query(strings.join(" ")),
+  neon: () => (strings: TemplateStringsArray) => {
+    const text = strings.join(" ");
+    state.seen.push(text);
+    return state.query(text);
+  },
 }));
 
 import { GET } from "./route";
@@ -91,5 +96,48 @@ describe("GET /history house energy", () => {
     expect(body.points).toHaveLength(1);
     expect(body.house).toEqual([]);
     expect(body.houseDays).toEqual([]);
+  });
+});
+
+describe("GET /history transfer guards", () => {
+  beforeEach(() => {
+    state.box.mode = "present";
+    state.seen.length = 0;
+  });
+
+  it("does not load the snapshot or scan every actual on a read", async () => {
+    const response = await GET(new Request(`http://localhost/history?from=${FROM}&to=${TO}`));
+    expect(response.status).toBe(200);
+    expect(state.seen.some((q) => q.includes("fetch_state"))).toBe(false);
+    expect(state.seen.some((q) => q.includes("actual_kw IS NOT NULL"))).toBe(false);
+  });
+
+  it("sets a CDN cache on success", async () => {
+    const response = await GET(new Request(`http://localhost/history?from=${FROM}&to=${TO}`));
+    expect(response.headers.get("Vercel-CDN-Cache-Control")).toMatch(/max-age=\d+/);
+  });
+
+  it("day= is the same window as from/to for that Detroit day", async () => {
+    const response = await GET(new Request("http://localhost/history?day=2026-11-11"));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { from: string; to: string };
+    expect(body.from).toBe(FROM);
+    expect(body.to).toBe(TO);
+  });
+
+  it("res=1h buckets Ecobee in SQL", async () => {
+    const response = await GET(new Request(`http://localhost/history?from=${FROM}&to=${TO}&res=1h`));
+    expect(response.status).toBe(200);
+    expect(state.seen.some((q) => q.includes("date_bin"))).toBe(true);
+  });
+
+  it("raw stays the default", async () => {
+    await GET(new Request(`http://localhost/history?from=${FROM}&to=${TO}`));
+    expect(state.seen.some((q) => q.includes("date_bin"))).toBe(false);
+  });
+
+  it("rejects an unknown res", async () => {
+    const response = await GET(new Request(`http://localhost/history?from=${FROM}&to=${TO}&res=2m`));
+    expect(response.status).toBe(400);
   });
 });

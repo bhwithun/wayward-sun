@@ -20,6 +20,7 @@ import com.brian.solwidget.data.PowerPoint
 import com.brian.solwidget.data.WeatherRepository
 import com.brian.solwidget.data.WeatherSnapshot
 import com.brian.solwidget.data.historyFetchKey
+import com.brian.solwidget.data.withDay
 import com.brian.solwidget.widget.WidgetUpdater
 import java.time.Instant
 import java.time.LocalDate
@@ -41,11 +42,15 @@ private data class HistoryBounds(
     val earliest: LocalDate?
 )
 
-/**
- * Clock that used to move the Live now-line. Today's day view uses the same
- * interval: the line moves, and that day's history is loaded again.
- */
+/** Local clock for the now-line. It never fetches anything by itself. */
 const val HOME_CLOCK_MS = 30_000L
+
+/**
+ * While today's day chart is open and the app is in the foreground, today's
+ * rows (one Detroit day, about 60 KB) are fetched again this often. The month
+ * page is never re-fetched on a timer; 2.10.0 did that every 30 seconds.
+ */
+const val TODAY_POLL_MS = 5 * 60 * 1000L
 
 /** The app opens here. A null [selectedDay] means today, until the first load fills it in. */
 fun viewingTodayDay(weekSelected: Boolean, selectedDay: LocalDate?, today: LocalDate): Boolean =
@@ -86,9 +91,12 @@ fun dayAfterPagingIntoMonth(target: LocalDate, from: LocalDate, today: LocalDate
     return if (enteredCurrent) today else target
 }
 
-/** True once a full clock interval has passed while today's day is the open chart. */
-fun todayClockDue(elapsedMs: Long, viewingToday: Boolean): Boolean =
-    viewingToday && elapsedMs >= HOME_CLOCK_MS
+/**
+ * True when today's rows should be fetched again: the app is resumed, today's
+ * day is the open chart, and [TODAY_POLL_MS] has passed since the last fetch.
+ */
+fun todayPollDue(sinceLastMs: Long, viewingToday: Boolean, foreground: Boolean): Boolean =
+    foreground && viewingToday && sinceLastMs >= TODAY_POLL_MS
 
 /**
  * When the open chart is the current day and the Detroit date rolls, follow it.
@@ -140,6 +148,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val livePastRepository = LivePastRepository(application)
     private var historyGeneration = 0
     private var liveGeneration = 0
+    private var foreground = false
+    private var lastTodayFetchMs = 0L
+    private var todayFetching = false
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -188,14 +199,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                 }
-                val open = _uiState.value
-                if (todayClockDue(
-                        HOME_CLOCK_MS,
-                        viewingTodayDay(open.historyWeekSelected, open.selectedDay, today)
-                    )
-                ) {
-                    loadHistory(force = true)
-                }
+                if (!foreground) continue
+                pollTodayIfDue()
                 if (loadLivePast(force = false)) {
                     WidgetUpdater.updateAll(getApplication())
                 }
@@ -207,6 +212,45 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val weather = weatherRepo.refresh(force = false)
                 _uiState.update { it.copy(weather = weather, now = Instant.now()) }
                 WidgetUpdater.updateAll(getApplication())
+            }
+        }
+    }
+
+    /** Called from the screen on ON_RESUME and ON_PAUSE. Network polling runs only while resumed. */
+    fun setForeground(resumed: Boolean) {
+        foreground = resumed
+        if (!resumed) return
+        _uiState.update { it.copy(now = Instant.now()) }
+        pollTodayIfDue()
+    }
+
+    /** Fetches today's Detroit day only and merges it into the open month page. */
+    private fun pollTodayIfDue() {
+        val state = _uiState.value
+        val nowMs = System.currentTimeMillis()
+        val today = DetroitCalendar.today(Instant.ofEpochMilli(nowMs))
+        val viewing = viewingTodayDay(state.historyWeekSelected, state.selectedDay, today)
+        if (!todayPollDue(nowMs - lastTodayFetchMs, viewing, foreground)) return
+        val page = state.history ?: return
+        if (state.historyLoading || todayFetching) return
+        val dayStart = today.atStartOfDay(DetroitCalendar.ZONE).toInstant()
+        if (dayStart.isBefore(page.from) || !dayStart.isBefore(page.to)) return
+        val key = state.historyKey
+        val generation = historyGeneration
+        todayFetching = true
+        lastTodayFetchMs = nowMs
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { historyApi.fetchDay(storage.cacheUrlOnce(), today) }
+            }
+            todayFetching = false
+            if (generation != historyGeneration) return@launch
+            result.onSuccess { day ->
+                _uiState.update { current ->
+                    val open = current.history
+                    if (open == null || current.historyKey != key) current
+                    else current.copy(history = open.withDay(day))
+                }
             }
         }
     }
@@ -402,6 +446,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { state ->
                 result.fold(
                     onSuccess = { page ->
+                        lastTodayFetchMs = System.currentTimeMillis()
                         state.copy(
                             history = page,
                             historyKey = key,

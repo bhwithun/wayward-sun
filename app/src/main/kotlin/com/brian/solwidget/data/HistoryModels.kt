@@ -147,3 +147,25 @@ fun liveStroke(points: List<PowerPoint>): List<PowerPoint> {
         ?: return live
     return live + next
 }
+
+/**
+ * Replaces this page's rows inside [day]'s window with [day]'s rows. Used to
+ * refresh today without re-fetching the whole month. Intervals and Ecobee use
+ * [from, to); house half-hours use (from, to], matching `GET /history`.
+ */
+fun HistoryPage.withDay(day: HistoryPage): HistoryPage {
+    val start = day.from
+    val end = day.to
+    fun inside(t: Instant) = !t.isBefore(start) && t.isBefore(end)
+    fun insideHouse(t: Instant) = t.isAfter(start) && !t.isAfter(end)
+    val sunDates = day.sun.map { it.date }.toSet()
+    val houseDayDates = day.houseDays.map { it.day }.toSet()
+    return copy(
+        points = (points.filterNot { inside(it.periodEnd) } + day.points).sortedBy { it.periodEnd },
+        sun = (sun.filterNot { it.date in sunDates } + day.sun).sortedBy { it.date },
+        ecobee = (ecobee.filterNot { inside(it.at) } + day.ecobee).sortedBy { it.at },
+        house = (house.filterNot { insideHouse(it.periodEnd) } + day.house).sortedBy { it.periodEnd },
+        houseDays = (houseDays.filterNot { it.day in houseDayDates } + day.houseDays).sortedBy { it.day }
+    )
+}
+

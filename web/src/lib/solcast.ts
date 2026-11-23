@@ -1,6 +1,6 @@
 import { demoSnapshot, type SnapshotBody } from "./demo";
 import { harvestEnphase } from "./enphase";
-import { loadState, persistState, scrubDemoActuals } from "./store";
+import { loadState, persistState, scrubDemoActuals, withoutDemoActuals } from "./store";
 import { detroitParts, utcDay, ymdKey } from "./time";
 import { fetchSiteWeather } from "./weather";
 
@@ -126,8 +126,8 @@ export async function serveCache(): Promise<SnapshotBody> {
   const now = new Date();
   const loaded = await loadState();
   if (!loaded) return demoSnapshot(resourceId(), now);
-  const state = (await scrubDemoActuals(loaded)) ?? loaded;
-  return attachWeather(state, now);
+  // Demo-actual cleanup runs on /cron. A read here would scan every stored actual.
+  return attachWeather(withoutDemoActuals(loaded), now);
 }
 
 /** Scheduled entry. Solcast runs only when `planSolcastCalls` says so. */
