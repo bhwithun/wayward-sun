@@ -31,50 +31,6 @@ code { color: #F5C542; }
   margin: 12px 0;
 }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
-.tabs {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-}
-.tabs button {
-  position: relative;
-  height: 48px;
-  min-height: 48px;
-  min-width: 96px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 15px;
-  font-weight: 500;
-  outline: none;
-}
-.tabs button:hover:not([aria-selected="true"]) {
-  color: rgba(255, 255, 255, 0.78);
-  background: rgba(255, 255, 255, 0.04);
-}
-.tabs button[aria-selected="true"] {
-  color: #E6E1F0;
-  background: transparent;
-}
-.tabs .tab-indicator {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  pointer-events: none;
-}
-.tabs .tab-indicator i {
-  display: block;
-  width: 60%;
-  height: 3px;
-  margin: 0 auto;
-  border-radius: 999px;
-  background: #FFC94A;
-}
 .calendar { margin-top: 12px; }
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cal-nav h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 1rem; color: #E8EEF7; }

@@ -254,14 +254,6 @@ export function Dashboard({ version }: { version: string }) {
         <h1>Wayward Sun</h1>
         <span className="version">{version}</span>
       </div>
-      <div className="tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={true}>
-          History
-          <span className="tab-indicator" aria-hidden="true">
-            <i />
-          </span>
-        </button>
-      </div>
       <p className="muted">
         Shared Solcast cache on Vercel. Phones download <code>GET /cache</code>. Solcast itself runs only on the Detroit schedule.
       </p>
