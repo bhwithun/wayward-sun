@@ -9,6 +9,8 @@ body {
 }
 main { max-width: 1100px; margin: 0 auto; padding: 28px 16px 72px; }
 h1 { font-size: 1.5rem; font-weight: 650; margin: 0; }
+.title-row { display: flex; align-items: baseline; justify-content: flex-start; gap: 10px; }
+.version { color: #9AA8BF; font-size: 12px; font-weight: 500; }
 h2 {
   font-size: 0.78rem;
   letter-spacing: 0.06em;
@@ -30,17 +32,17 @@ code { color: #F5C542; }
 }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
 .tabs {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  justify-content: flex-start;
   margin-top: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
 .tabs button {
+  position: relative;
   height: 48px;
   min-height: 48px;
-  min-width: 0;
-  padding: 0;
+  min-width: 96px;
+  padding: 0 20px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -60,11 +62,10 @@ code { color: #F5C542; }
 .tabs .tab-indicator {
   position: absolute;
   left: 0;
+  right: 0;
   bottom: 0;
-  width: 50%;
   height: 3px;
   pointer-events: none;
-  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .tabs .tab-indicator i {
   display: block;
@@ -74,7 +75,6 @@ code { color: #F5C542; }
   border-radius: 999px;
   background: #FFC94A;
 }
-.tabs[data-tab="history"] .tab-indicator { transform: translateX(100%); }
 .calendar { margin-top: 12px; }
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cal-nav h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 1rem; color: #E8EEF7; }
@@ -219,7 +219,6 @@ button.gold { background: #F5C542; color: #1A1403; }
 .legend-row { display: flex; gap: 14px; flex-wrap: nowrap; align-items: center; white-space: nowrap; }
 .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: middle; }
 .swatch.hairline { width: 12px; height: 2px; border-radius: 1px; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 8px; margin-top: 12px; }
 .stat { font-size: 1.3rem; font-weight: 650; }
 table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
@@ -228,6 +227,6 @@ tbody tr:nth-child(odd) { background: #1C2B45; }
 .rates { margin-top: 12px; }
 label { display: flex; gap: 8px; align-items: center; color: #9AA8BF; }
 @media (max-width: 720px) {
-  .grid, .totals { grid-template-columns: 1fr 1fr; }
+  .totals { grid-template-columns: 1fr 1fr; }
   h1 { font-size: 1.25rem; }
 }

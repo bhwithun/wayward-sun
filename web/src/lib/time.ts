@@ -158,17 +158,6 @@ export function periodRange(start: Ymd, end: Ymd): string {
   return `${MONTHS[start.month - 1]} ${start.day} – ${MONTHS[end.month - 1]} ${end.day}`;
 }
 
-/** Inclusive days of the live chart window. */
-export function livePeriod(today: Ymd): string {
-  const window = liveWindow(today);
-  return periodRange(window.from, addDays(window.to, -1));
-}
-
-/** Start of 4 local days before `today` through the start of the day after 2 days ahead. */
-export function liveWindow(today: Ymd): { from: Ymd; to: Ymd } {
-  return { from: addDays(today, -4), to: addDays(today, 3) };
-}
-
 export function shiftMonth(year: number, month: number, delta: number): Ymd {
   const shifted = new Date(Date.UTC(year, month - 1 + delta, 1));
   return {
